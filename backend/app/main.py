@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.api.analysis import router as analysis_router
 from app.api.plans import router as plans_router
 from app.api.strava import router as strava_router
@@ -13,9 +14,10 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Stride", description="AI-Powered Running Coach", version="0.1.0")
 
+_origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
