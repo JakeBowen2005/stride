@@ -80,6 +80,23 @@ When a new user connects Strava, the full pipeline should be:
 - Load settings → no race date, calibrated paces showing
 - Check that re-classification picked up all workouts correctly
 
+## Priority 2.5: Integrate Workout Analysis into Plan Generator
+
+### Problem
+- The pace calibrator parses Strava descriptions and extracts real workout paces (800m splits, tempo paces, threshold paces)
+- These calibrated paces feed into plan generation for prescribing paces
+- But the workout analysis (parsing interval details, avg/range calculations) displayed in the run-detail-sheet frontend component is NOT yet used by the plan generator
+- The plan generator should use parsed workout data to:
+  1. Understand what workouts the athlete has been doing recently (e.g., 6x800, 5x1mile, tempo runs)
+  2. Prescribe similar or progressive workouts (e.g., if they've been doing 5x1mile at 6:15, prescribe 5x1mile at 6:10 or 6x1mile at 6:15)
+  3. Avoid prescribing workouts that are too similar to what was just done (variety)
+  4. Use actual split data to validate that prescribed paces are achievable
+
+### Plan
+- Extend `pace_calibrator.py` to return a `recent_workouts` list with structured workout data (type, reps, distance, avg pace, date)
+- Pass `recent_workouts` into `plan_engine.py` so it can make smarter workout selections
+- The workout library rotation in `_pick_workout()` should factor in what was recently done
+
 ## Priority 3: Polish
 - The 6 activities flagged as workouts that aren't real workouts (#8 Apr 6, #19 Dec 3 4mi, #20 Dec 3 8mi, #21 Nov 28, #25 Oct 28, #31 Mar 25) — consider tightening the keyword matching
 - Add a way for the user to manually flag/unflag workouts

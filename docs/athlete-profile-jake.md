@@ -81,6 +81,10 @@ These define WHERE the athlete IS, not where they want to be:
 - **Progresses toward goal** as mileage builds — blends from base toward (goal MP - 25sec/mi)
 - At peak marathon shape: 6:30/mi or faster for sub-3 goal
 - **Round all workout paces to nearest 5 seconds** — no need for false precision
+- **Broken intervals (with rest) = ~10 sec/mi faster than continuous tempo**
+  - 2x10min Hard at 6:40/mi vs 20min Continuous Tempo at 6:50/mi
+  - Rest between reps allows harder sustained effort
+  - Distance intervals (2x2mi, 3x2mi) also get the faster pace
 
 ### Extended Reps (1.5mi reps)
 - **4x1.5mi is NOT an interval workout** — it's an easier threshold day
@@ -160,6 +164,42 @@ These are the real marathon long runs for the final 2 months of a training cycle
 - Has massive aerobic engine from marathon training, needs to sharpen it for 5K
 - 10K PR (44:52) seems soft — likely has sub-40 fitness based on marathon
 - Key development path: current 800m pace (5:52) → extend that to 3.1 miles
+
+## Workout Progression Starting Points (May 2026)
+
+### Interval Ladder Position: Level 5
+- Evidence: 6x800 at 5:52 avg + 4x200 in Strava (combo session = Level 6 work)
+- Start prescription at Level 5: 6x800 at 5:50-6:00/mi
+- Next progression: Level 6 combo (6x800 + 4x200) — already doing this naturally
+- Interval fitness is AHEAD of threshold — normal for post-marathon rebuild
+
+### Threshold Ladder Position: Level 1
+- Evidence: 2x2mi threshold at 7:02/6:56/mi is the only recent data point
+- Start prescription at Level 1: 2x10min Hard at 6:40/mi (broken intervals = faster pace)
+- Continuous tempo equivalent: 20min at 6:50/mi (10 sec/mi slower — no rest)
+- Threshold fitness lags interval fitness — needs aggressive progression
+- Plan should advance threshold 2 levels per block when execution is excellent
+- Target: close the gap between threshold and interval fitness over 4-6 blocks
+
+### Progression Strategy
+- Progress threshold aggressively (2 levels/block if execution is excellent)
+- Progress intervals normally (1 level/block)
+- Recalibrate paces after every 4th block using latest Strava workout data
+- See `docs/workout-progression-system.md` for full ladder definitions
+
+### Athlete Type: Experienced Rebuilder
+Jake is NOT a beginner despite currently low mileage (19-25 mpw). Key indicators:
+- **2:58 marathon** — sub-3 proves massive aerobic capacity
+- **70 mpw peak** — body handled high volume successfully
+- **1:29 half marathon** — strong endurance base
+- **5:52/mi 800m repeats** — raw speed exists
+
+This means the system should:
+- Progress threshold work aggressively (2 levels/block) — the aerobic base is there, it just needs reactivating
+- Progress intervals at normal rate (1 level/block) — speed takes longer to rebuild
+- Allow faster mileage ramp (15-20%/week) compared to true beginners
+- Recognize that current easy pace (9:00-10:00) will drop significantly as mileage rebuilds
+- The gap between current fitness and goal fitness is smaller than raw numbers suggest
 
 ## Deload Weeks
 

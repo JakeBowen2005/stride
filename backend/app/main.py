@@ -6,6 +6,7 @@ from app.api.plans import router as plans_router
 from app.api.strava import router as strava_router
 from app.api.users import router as users_router
 from app.database import Base, engine
+import app.models  # noqa: F401 — registers all models so create_all picks them up
 
 # Create all tables
 Base.metadata.create_all(bind=engine)

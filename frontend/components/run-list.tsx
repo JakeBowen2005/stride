@@ -34,11 +34,11 @@ export function RunList({ activities, onSelect }: RunListProps) {
           <h3 className="mb-2 text-sm font-medium text-muted-foreground">
             {month}
           </h3>
-          <div className="space-y-1">
+          <div className="space-y-2.5">
             {runs.map((run) => (
               <div
                 key={run.id}
-                className="cursor-pointer rounded-md border p-3 transition-colors hover:bg-secondary/50"
+                className="cursor-pointer rounded-md border p-3.5 transition-colors hover:bg-secondary/50"
                 onClick={() => onSelect(run)}
                 role="button"
                 tabIndex={0}

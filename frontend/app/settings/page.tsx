@@ -81,6 +81,8 @@ export default function SettingsPage() {
   const [goal, setGoal] = useState<GoalData | null>(null);
   const [calibrated, setCalibrated] = useState<CalibratedPaces | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -107,6 +109,24 @@ export default function SettingsPage() {
     }
     load();
   }, []);
+
+  async function handleResync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch(`${API}/api/strava/sync/1`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setSyncResult(`Synced: ${data.new_activities} new runs imported.`);
+      } else {
+        setSyncResult("Sync failed. Check your Strava connection.");
+      }
+    } catch {
+      setSyncResult("Sync failed. Is the backend running?");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -386,13 +406,16 @@ export default function SettingsPage() {
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Data</h2>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              Re-sync Strava
+            <Button variant="outline" size="sm" onClick={handleResync} disabled={syncing}>
+              {syncing ? "Syncing..." : "Re-sync Strava"}
             </Button>
             <Button variant="outline" size="sm">
               Re-run Onboarding
             </Button>
           </div>
+          {syncResult && (
+            <p className="text-sm text-muted-foreground">{syncResult}</p>
+          )}
         </CardContent>
       </Card>
     </div>

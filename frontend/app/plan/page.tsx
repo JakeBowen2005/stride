@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
-import { formatDateShort } from "@/lib/format";
+import { formatDateShort, localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType, Workout } from "@/lib/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -15,20 +15,52 @@ interface ApiPlanDay {
   day: string;
   type: string;
   title: string;
-  description: string;
-  purpose: string;
+  description: string | null;
+  purpose: string | null;
   distance_miles: number;
   warmup: string | null;
   cooldown: string | null;
+  prescribed?: boolean;
+  actual?: {
+    distance_miles: number;
+    avg_pace: string | null;
+    duration_seconds: number;
+    average_heartrate: number | null;
+    description: string | null;
+    feel_rating: number | null;
+    name: string | null;
+    activity_count?: number;
+    activities?: { name: string; distance_miles: number; avg_pace: string | null; duration_seconds: number }[];
+  } | null;
+  comparison?: {
+    distance_diff_miles: number;
+    summary: string;
+  } | null;
+  feedback?: {
+    feel_rating: number | null;
+    feel_notes: string | null;
+    pace_assessment: string | null;
+    swapped: boolean;
+    swap_reason: string | null;
+    actual_workout_type: string | null;
+    coach_response: string | null;
+  } | null;
+}
+
+interface ApiWeek {
+  week_number: number;
+  target_mileage: number;
+  actual_mileage?: number;
+  days: ApiPlanDay[];
 }
 
 interface ApiPlan {
+  id: number;
   start_date: string;
   end_date: string;
   block_number: number;
   is_deload: boolean;
-  week1: { target_mileage: number; days: ApiPlanDay[] };
-  week2: { target_mileage: number; days: ApiPlanDay[] };
+  weeks: ApiWeek[];
   pacing_guide: Record<string, string>;
   notes: string[];
   goal: {
@@ -47,25 +79,27 @@ interface ApiPlan {
   };
 }
 
-function mapApiToWeek(
-  apiWeek: { target_mileage: number; days: ApiPlanDay[] },
-  weekNum: number
-): PlanWeekType {
+function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
   return {
-    week_number: weekNum,
+    week_number: apiWeek.week_number,
     total_miles: apiWeek.target_mileage,
+    actual_miles: apiWeek.actual_mileage,
     workouts: apiWeek.days.map((d, i) => ({
-      id: weekNum * 100 + i,
+      id: apiWeek.week_number * 100 + i,
       date: d.date,
-      type: d.type === "workout" ? "threshold" : (d.type as Workout["type"]),
+      type: d.type as Workout["type"],
       title: d.title,
       description: d.description,
       purpose: d.purpose,
       distance_miles: d.distance_miles,
       warmup: d.warmup || undefined,
       cooldown: d.cooldown || undefined,
-      completed: false,
+      completed: !!d.actual,
       skipped: false,
+      prescribed: d.prescribed !== false,
+      actual: d.actual || null,
+      comparison: d.comparison || null,
+      feedback: d.feedback || null,
     })),
   };
 }
@@ -73,39 +107,83 @@ function mapApiToWeek(
 export default function PlanPage() {
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noPlan, setNoPlan] = useState(false);
+
+  const fetchPlan = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/plans/1/current`);
+      if (res.status === 404) {
+        setNoPlan(true);
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Failed to load plan");
+        return;
+      }
+      setNoPlan(false);
+      setPlan(await res.json());
+    } catch {
+      setError("Failed to connect to server");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const generatePlan = useCallback(async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/api/plans/1/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Failed to generate plan");
+        return;
+      }
+      // Re-fetch via GET to get matched actuals
+      setLoading(true);
+      await fetchPlan();
+    } catch {
+      setError("Failed to connect to server");
+    } finally {
+      setGenerating(false);
+    }
+  }, [fetchPlan]);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`${API}/api/plans/1/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.detail || "Failed to generate plan");
-          return;
-        }
-        setPlan(await res.json());
-      } catch (e) {
-        console.error("Failed to load plan:", e);
-        setError("Failed to connect to server");
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    fetchPlan();
+  }, [fetchPlan]);
 
   if (loading) {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Current Plan</h1>
         <div className="py-20 text-center text-muted-foreground">
-          Generating your plan...
+          Loading your plan...
         </div>
+      </div>
+    );
+  }
+
+  if (noPlan) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground mb-4">No plan yet. Generate your first training plan.</p>
+            <Button onClick={generatePlan} disabled={generating}>
+              {generating ? "Generating..." : "Generate Your First Plan"}
+            </Button>
+            {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -123,12 +201,9 @@ export default function PlanPage() {
     );
   }
 
-  const weeks: PlanWeekType[] = [
-    mapApiToWeek(plan.week1, 1),
-    mapApiToWeek(plan.week2, 2),
-  ];
+  const weeks: PlanWeekType[] = plan.weeks.map(mapApiToWeek);
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateStr();
   const currentWeekIndex = weeks.findIndex((w) =>
     w.workouts.some((wo) => wo.date >= today)
   );
@@ -136,12 +211,7 @@ export default function PlanPage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Current Plan</h1>
-          <Button variant="outline" size="sm">
-            Regenerate
-          </Button>
-        </div>
+        <h1 className="text-xl font-semibold">Current Plan</h1>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">
             {plan.goal.description}
@@ -198,6 +268,10 @@ export default function PlanPage() {
           key={week.week_number}
           week={week}
           isCurrent={i === (currentWeekIndex >= 0 ? currentWeekIndex : 0)}
+          onPlanChanged={() => {
+            setLoading(true);
+            fetchPlan();
+          }}
         />
       ))}
 

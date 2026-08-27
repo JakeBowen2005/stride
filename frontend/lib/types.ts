@@ -4,6 +4,7 @@ export type WorkoutType =
   | "tempo"
   | "intervals"
   | "threshold"
+  | "workout"
   | "fartlek"
   | "hill_repeats"
   | "progression"
@@ -50,13 +51,45 @@ export interface Goal {
   race_date?: string;
 }
 
+export interface ActualRun {
+  distance_miles: number;
+  avg_pace: string | null;
+  duration_seconds: number;
+  average_heartrate: number | null;
+  description: string | null;
+  feel_rating: number | null;
+  name: string | null;
+  activity_count?: number;
+  activities?: {
+    name: string;
+    distance_miles: number;
+    avg_pace: string | null;
+    duration_seconds: number;
+  }[];
+}
+
+export interface DayFeedback {
+  feel_rating: number | null;
+  feel_notes: string | null;
+  pace_assessment: string | null;
+  swapped: boolean;
+  swap_reason: string | null;
+  actual_workout_type: string | null;
+  coach_response: string | null;
+}
+
+export interface RunComparison {
+  distance_diff_miles: number;
+  summary: string;
+}
+
 export interface Workout {
   id: number;
   date: string;
   type: WorkoutType;
   title: string;
-  description: string;
-  purpose: string;
+  description: string | null;
+  purpose: string | null;
   distance_miles: number;
   target_pace?: string;
   warmup?: string;
@@ -64,11 +97,16 @@ export interface Workout {
   intervals?: string;
   completed: boolean;
   skipped: boolean;
+  prescribed?: boolean;
+  actual?: ActualRun | null;
+  comparison?: RunComparison | null;
+  feedback?: DayFeedback | null;
 }
 
 export interface PlanWeek {
   week_number: number;
   total_miles: number;
+  actual_miles?: number;
   workouts: Workout[];
 }
 

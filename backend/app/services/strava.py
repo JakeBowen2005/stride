@@ -210,6 +210,50 @@ def parse_strava_activity(raw: dict) -> dict | None:
     }
 
 
+async def fetch_and_save_single_activity(user: User, activity_id: str, db: Session) -> Activity | None:
+    """Fetch a single activity from Strava and upsert into the DB."""
+    token = await get_valid_token(user)
+    detail = await fetch_activity_detail(token, activity_id)
+    if not detail:
+        return None
+
+    parsed = parse_strava_activity(detail)
+    if parsed is None:  # not a run
+        return None
+
+    # Upsert: update if exists, create if new
+    existing = db.query(Activity).filter(
+        Activity.external_id == parsed["external_id"], Activity.user_id == user.id
+    ).first()
+
+    if existing:
+        for key, val in parsed.items():
+            if key != "external_id" and val is not None:
+                setattr(existing, key, val)
+        activity = existing
+    else:
+        activity = Activity(user_id=user.id, **parsed)
+        if isinstance(activity.date, str):
+            try:
+                activity.date = datetime.fromisoformat(activity.date.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+        db.add(activity)
+
+    # Save description and splits from detail
+    if detail.get("description"):
+        activity.description = detail["description"]
+        activity.has_workout_description = is_workout_description(detail["description"])
+
+    splits_json = parse_splits_from_detail(detail)
+    if splits_json:
+        activity.splits = splits_json
+
+    db.commit()
+    db.refresh(activity)
+    return activity
+
+
 METERS_TO_MILES = 0.000621371
 METERS_TO_FEET = 3.28084
 

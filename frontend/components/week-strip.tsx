@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { workoutTypeShort, formatDistance, isHardWorkout } from "@/lib/format";
+import { workoutTypeShort, formatDistance, isHardWorkout, localDateStr } from "@/lib/format";
 import type { Workout } from "@/lib/types";
 
 interface WeekStripProps {
@@ -10,7 +10,7 @@ interface WeekStripProps {
 }
 
 export function WeekStrip({ workouts, totalPlanned }: WeekStripProps) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateStr();
   const completedMiles = workouts
     .filter((w) => w.completed)
     .reduce((sum, w) => sum + w.distance_miles, 0);

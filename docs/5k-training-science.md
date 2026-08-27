@@ -300,6 +300,34 @@
 | Race-pace in training | MP runs, long run finishes | 1K-mile reps at 5K pace |
 | Weekly structure | 2 quality + 1 quality long run | 2 quality + easy long run |
 
+## Workout Progression for 5K
+
+Workouts progress through defined ladders, not random selection.
+Full details in `docs/workout-progression-system.md`. Summary:
+
+### Threshold Ladder (12 Levels)
+Progresses from 2x10min Hard → 20min Tempo → 2x12min → 3x10min → 25min Tempo →
+2x15min → 3x12min → 30min Tempo → 2x2mi → 3x2mi → 2x3mi → 20-30-20 Sandwich.
+Alternates time-based and distance-based formats every 2-3 workouts.
+
+### Interval Ladder (12 Levels)
+Progresses from 4x800 → 6x400 speed → 5x800 → 5x1K → 6x800 → 6x800+4x200 combo →
+8x800 → 4x1mi → 5x1K at RP → 5x1200 at RP → 6x1K at RP → 4x1mi at RP-5sec.
+Shifts from VO2max stimulus → race-pace specificity over the training cycle.
+
+### Progression Triggers
+- **ADVANCE**: Hit paces + feel >= 7/10 + fade < 5 sec
+- **HOLD**: Hit paces but feel 5-6 or fade > 5 sec
+- **REGRESS**: Missed paces or feel <= 4
+- **RECALIBRATE**: Beat paces by 10+ sec → update training paces
+
+### Key Science
+- Add reps before adding pace (volume at intensity > intensity at volume)
+- VO2max work: once per week, 15-20 min accumulated time at intensity
+- Threshold work: build toward 30-40 min per session before increasing pace
+- Rotate workout formats every 3 weeks (Canova principle)
+- Recalibrate paces from Strava data every 4th block
+
 ## Sources
 - Daniels, J. — Daniels' Running Formula (VDOT system, training intensities)
 - Billat, V. — VO2max interval research (30/30 protocol, optimal rep duration)
@@ -308,3 +336,7 @@
 - Frontiers in Sports and Active Living (2024) — "Faster intervals, faster recoveries" study on time above 90% VO2max
 - Runners Connect — 5K workout protocols and taper research
 - Running Writings — Percentage-based training and critical velocity
+- Foster, C. (2001) — Session RPE for training load monitoring
+- Mujika & Padilla (2003) — Optimal taper/deload volume reduction
+- Magness, S. — Science of Running (neuromuscular patterns, short rep purpose)
+- Hudson, B. — Run Faster (adaptive training, daily adjustment)

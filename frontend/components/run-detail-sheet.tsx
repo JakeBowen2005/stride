@@ -119,7 +119,7 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
           </p>
         </SheetHeader>
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-4 px-4 pb-6">
           {/* Metrics grid */}
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
@@ -249,7 +249,7 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
                   {activity.splits.map((split) => (
                     <div
                       key={split.mile}
-                      className="flex items-center justify-between rounded px-2 py-1 text-sm odd:bg-secondary/30"
+                      className="flex items-center justify-between rounded px-2 py-1.5 text-sm odd:bg-secondary/30"
                     >
                       <span className="text-muted-foreground">
                         Mile {split.mile}
@@ -258,7 +258,7 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
                         <span className="font-mono">{split.pace}</span>
                         {split.heart_rate && (
                           <span className="font-mono text-xs text-muted-foreground">
-                            {split.heart_rate} bpm
+                            {Math.round(split.heart_rate)} bpm
                           </span>
                         )}
                       </div>

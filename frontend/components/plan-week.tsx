@@ -2,17 +2,20 @@
 
 import { useState } from "react";
 import { PlanDay } from "@/components/plan-day";
-import { formatDistance } from "@/lib/format";
+import { formatDistance, localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType } from "@/lib/types";
 
 interface PlanWeekProps {
   week: PlanWeekType;
   isCurrent: boolean;
+  onPlanChanged?: () => void;
 }
 
-export function PlanWeek({ week, isCurrent }: PlanWeekProps) {
+export function PlanWeek({ week, isCurrent, onPlanChanged }: PlanWeekProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateStr();
+
+  const hasActuals = week.actual_miles !== undefined && week.actual_miles > 0;
 
   return (
     <div className="space-y-2">
@@ -25,6 +28,9 @@ export function PlanWeek({ week, isCurrent }: PlanWeekProps) {
         </h3>
         <span className="font-mono text-sm text-muted-foreground">
           {formatDistance(week.total_miles)} mi planned
+          {hasActuals && (
+            <> / {formatDistance(week.actual_miles!)} mi actual</>
+          )}
         </span>
       </div>
       <div className="space-y-1.5">
@@ -37,6 +43,7 @@ export function PlanWeek({ week, isCurrent }: PlanWeekProps) {
             onToggle={() =>
               setExpandedId(expandedId === w.id ? null : w.id)
             }
+            onPlanChanged={onPlanChanged}
           />
         ))}
       </div>

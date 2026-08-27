@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { WeeklyMileageChartWrapper } from "@/components/charts-wrapper";
-import { formatDistance, formatDate, secondsToTime } from "@/lib/format";
+import { DailyMileageChart } from "@/components/charts/daily-mileage-chart";
+import { formatDistance, formatDate, secondsToTime, localDateStr } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -32,6 +34,28 @@ export default function TodayPage() {
   const [nextWorkout, setNextWorkout] = useState<PlanDay | null>(null);
   const [nextRun, setNextRun] = useState<PlanDay | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  async function handleResync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch(`${API}/api/strava/sync/1`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setSyncResult(`Synced: ${data.new_activities} new runs imported.`);
+        // Reload data after sync
+        window.location.reload();
+      } else {
+        setSyncResult("Sync failed. Check your Strava connection.");
+      }
+    } catch {
+      setSyncResult("Sync failed. Is the backend running?");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -40,11 +64,7 @@ export default function TodayPage() {
           fetch(`${API}/api/analysis/1/activities?limit=20`),
           fetch(`${API}/api/analysis/1/weekly-mileage?weeks=8`),
           fetch(`${API}/api/plans/1/goal`),
-          fetch(`${API}/api/plans/1/generate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          }),
+          fetch(`${API}/api/plans/1/current`),
         ]);
 
         // Last 7 days of runs
@@ -54,7 +74,10 @@ export default function TodayPage() {
           sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
           const recent = data
             .map((a: Record<string, unknown>) => ({ ...a, splits: a.splits || [] }))
-            .filter((a: Activity) => new Date(a.date) >= sevenDaysAgo);
+            .filter((a: Activity) => {
+              const safe = a.date.includes("T") ? a.date : `${a.date}T12:00:00`;
+              return new Date(safe) >= sevenDaysAgo;
+            });
           setRecentRuns(recent);
         }
 
@@ -76,14 +99,11 @@ export default function TodayPage() {
           if (data) setGoal(data);
         }
 
-        // Plan — extract next workout and next run
+        // Plan — extract next workout and next run (GET /current, 404 = no plan yet)
         if (planRes.ok) {
           const plan = await planRes.json();
-          const today = new Date().toISOString().split("T")[0];
-          const allDays: PlanDay[] = [
-            ...(plan.week1?.days || []),
-            ...(plan.week2?.days || []),
-          ];
+          const today = localDateStr();
+          const allDays: PlanDay[] = plan.weeks?.flatMap((w: { days: PlanDay[] }) => w.days) || [];
           const upcoming = allDays.filter((d: PlanDay) => d.date >= today);
           const workout = upcoming.find(
             (d: PlanDay) => d.type === "workout" || d.type === "long_run"
@@ -109,6 +129,21 @@ export default function TodayPage() {
         ? "Good afternoon"
         : "Good evening";
 
+  const notableWorkout = useMemo(() => {
+    const notable = recentRuns.filter((run) => {
+      const text = `${run.title || ""} ${run.description || ""}`.toLowerCase();
+      return /\d+x\d+/.test(text) || /threshold|tempo|interval|fartlek|hill/.test(text);
+    });
+    if (notable.length === 0) return null;
+    return notable
+      .map((run) => {
+        const text = run.title || run.description || "";
+        const matches = text.match(/\d+x\d+\w*/gi);
+        return matches ? matches.join(" + ") : run.title;
+      })
+      .join(", ");
+  }, [recentRuns]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -120,50 +155,79 @@ export default function TodayPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">{greeting}, Jake</h1>
-        <span className="text-sm text-muted-foreground">
-          {today.toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </span>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">{greeting}, Jake</h1>
+          <span className="text-sm text-muted-foreground">
+            {today.toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResync}
+            disabled={syncing}
+          >
+            {syncing ? "Syncing..." : "Sync Strava"}
+          </Button>
+          {syncResult && (
+            <span className="text-xs text-muted-foreground">{syncResult}</span>
+          )}
+        </div>
       </div>
 
       {/* Hero stats */}
       <div className="grid grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <div className="font-mono text-2xl font-bold">
-              {formatDistance(lastWeekMiles)}
-            </div>
-            <div className="text-xs text-muted-foreground">last week mi</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <div className="text-lg font-bold leading-tight">
-              {goal ? goal.description : "No goal set"}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {goal?.race_date ? `Race: ${goal.race_date}` : "current goal"}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <div className="text-sm font-bold leading-tight">
-              {nextWorkout ? nextWorkout.title : "—"}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {nextWorkout
-                ? formatDate(nextWorkout.date)
-                : "no upcoming workout"}
-            </div>
-          </CardContent>
-        </Card>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Last Week</p>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <div className="font-mono text-2xl font-bold">
+                {formatDistance(lastWeekMiles)}
+              </div>
+              <div className="text-xs text-muted-foreground">miles</div>
+              {notableWorkout && (
+                <div className="mt-1.5 text-[10px] text-muted-foreground font-medium truncate">
+                  {notableWorkout}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Current Goal</p>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <div className="text-lg font-bold leading-tight">
+                {goal ? goal.description : "No goal set"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {goal?.race_date ? `Race: ${goal.race_date}` : "\u00A0"}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Next Workout</p>
+          <Card>
+            <CardContent className="pt-4 text-center">
+              <div className="text-sm font-bold leading-tight">
+                {nextWorkout ? nextWorkout.title : "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {nextWorkout
+                  ? formatDate(nextWorkout.date)
+                  : "no upcoming workout"}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Next Run Card */}
@@ -187,11 +251,21 @@ export default function TodayPage() {
         </Card>
       )}
 
+      {/* Last 7 Days Chart */}
+      {recentRuns.length > 0 && (
+        <Card>
+          <CardContent className="pt-4">
+            <h3 className="text-sm font-medium mb-2">Last 7 Days</h3>
+            <DailyMileageChart activities={recentRuns} />
+          </CardContent>
+        </Card>
+      )}
+
       <WeeklyMileageChartWrapper data={weeklyMileage} />
 
-      {/* Last 7 Days */}
+      {/* Last 7 Days Listing */}
       <div>
-        <h3 className="text-sm font-medium mb-2">Last 7 Days</h3>
+        <h3 className="text-sm font-medium mb-2">Recent Runs</h3>
         {recentRuns.length > 0 ? (
           <div className="space-y-1.5">
             {recentRuns.map((run) => (

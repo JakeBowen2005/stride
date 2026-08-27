@@ -1,3 +1,8 @@
+/** Local-timezone YYYY-MM-DD string. Avoids the UTC off-by-one from toISOString(). */
+export function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function formatPace(paceStr: string): string {
   return paceStr;
 }
@@ -23,7 +28,9 @@ export function formatDistance(miles: number): string {
 }
 
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  // Append T12:00:00 to date-only strings to avoid UTC→local timezone shift
+  const safe = dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00`;
+  const date = new Date(safe);
   return date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -32,7 +39,8 @@ export function formatDate(dateStr: string): string {
 }
 
 export function formatDateLong(dateStr: string): string {
-  const date = new Date(dateStr);
+  const safe = dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00`;
+  const date = new Date(safe);
   return date.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -42,7 +50,8 @@ export function formatDateLong(dateStr: string): string {
 }
 
 export function formatDateShort(dateStr: string): string {
-  const date = new Date(dateStr);
+  const safe = dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00`;
+  const date = new Date(safe);
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -57,6 +66,7 @@ export function workoutTypeLabel(type: string): string {
     tempo: "Tempo",
     intervals: "Intervals",
     threshold: "Threshold",
+    workout: "Quality",
     fartlek: "Fartlek",
     hill_repeats: "Hills",
     progression: "Progression",
@@ -75,6 +85,7 @@ export function workoutTypeShort(type: string): string {
     tempo: "Tempo",
     intervals: "Int",
     threshold: "Thresh",
+    workout: "Quality",
     fartlek: "Fart",
     hill_repeats: "Hills",
     progression: "Prog",

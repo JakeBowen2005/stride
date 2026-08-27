@@ -13,6 +13,7 @@ from datetime import date, timedelta
 
 from app.core.pacing import format_pace, goal_paces, pace_range
 from app.core.workouts import get_workout_library
+from app.core.workout_ladders import get_workout_at_level, get_deload_workout, get_week2_variant
 
 
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -20,6 +21,33 @@ DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 DEFAULT_WORKOUT_DAYS = [1, 3]
 DEFAULT_LONG_RUN_DAY = 5
 DEFAULT_REST_DAY = 6
+
+
+def calculate_plan_params() -> dict:
+    """Calculate start_date, end_date, and num_weeks for a plan.
+
+    ALL plans start from Monday of the current week:
+      - Mon-Wed (weekday <= 2): 2 weeks (rest of this week + 1 full week)
+      - Thu-Sun (weekday >= 3): 3 weeks (rest of this week + 2 full weeks)
+    Days before today in the current week show as non-prescribed.
+    """
+    today = date.today()
+    weekday = today.weekday()  # 0=Mon, 6=Sun
+
+    # Start from Monday of current week
+    start_date = today - timedelta(days=weekday)
+    if weekday <= 2:  # Mon-Wed
+        num_weeks = 2  # rest of this week + 1 full week
+    else:  # Thu-Sun
+        num_weeks = 3  # rest of this week + 2 full weeks
+    end_date = start_date + timedelta(days=num_weeks * 7 - 1)
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "num_weeks": num_weeks,
+        "first_prescribe_date": today,
+    }
 
 
 def _round_half(d: float) -> float:
@@ -45,7 +73,11 @@ def generate_plan(
     easy_pace_seconds: float,
     current_workout_paces: dict | None = None,
     start_date: date | None = None,
+    end_date: date | None = None,
+    num_weeks: int = 2,
+    first_prescribe_date: date | None = None,
     block_number: int = 1,
+    progression_state: dict | None = None,
 ) -> dict:
     if start_date is None:
         today = date.today()
@@ -53,6 +85,9 @@ def generate_plan(
         if days_until_monday == 0:
             days_until_monday = 7
         start_date = today + timedelta(days=days_until_monday)
+
+    if end_date is None:
+        end_date = start_date + timedelta(days=num_weeks * 7 - 1)
 
     # Check if this block should be a deload
     is_deload = _is_deload_block(block_number, experience_level)
@@ -62,17 +97,14 @@ def generate_plan(
     )
 
     if is_deload:
-        # Week 1 = deload (reduced ~25%), Week 2 = back to building
         deload_mileage = round(current_weekly_mileage * 0.75, 1)
         week1_target = deload_mileage
-        # Week 2 resumes normal progression from current mileage
-        week2_target = round(current_weekly_mileage * (1 + 0.05), 1)  # slight bump back
+        week2_target = round(current_weekly_mileage * (1 + 0.05), 1)
 
     goal_pace_data = None
     if goal_type == "race" and goal_distance and target_time_seconds:
         goal_pace_data = goal_paces(goal_distance, target_time_seconds)
 
-    # Build paces with progression toward goal
     current_paces = _build_current_paces(
         easy_pace_seconds, current_workout_paces,
         goal_pace_data=goal_pace_data,
@@ -89,54 +121,80 @@ def generate_plan(
     rest_indices = [DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]
     long_run_idx = DAY_NAMES.index(long_run_day)
 
-    week1 = _build_week(
-        week_num=1, start_date=start_date, block_start=start_date,
-        target_mileage=week1_target, days_per_week=days_per_week,
-        rest_indices=rest_indices, long_run_idx=long_run_idx,
-        easy_pace=easy_pace_seconds, current_paces=current_paces,
-        workout_lib=workout_lib, include_workouts=include_workouts,
-        num_workouts=min(workouts_per_week, 1) if is_deload else workouts_per_week,
-        goal_distance=goal_distance,
-        current_mileage=current_weekly_mileage, is_deload=is_deload,
-    )
-    week2 = _build_week(
-        week_num=2, start_date=start_date + timedelta(days=7),
-        block_start=start_date, target_mileage=week2_target,
-        days_per_week=days_per_week, rest_indices=rest_indices,
-        long_run_idx=long_run_idx, easy_pace=easy_pace_seconds,
-        current_paces=current_paces, workout_lib=workout_lib,
-        include_workouts=include_workouts, num_workouts=workouts_per_week,
-        goal_distance=goal_distance, current_mileage=current_weekly_mileage,
-        is_deload=False,  # week 2 is back to normal
-    )
-
     easy_range = pace_range(easy_pace_seconds * 0.95, easy_pace_seconds * 1.05)
-    week1_actual = round(sum(d["distance_miles"] for d in week1), 1)
-    week2_actual = round(sum(d["distance_miles"] for d in week2), 1)
 
-    # Week 2 must always be >= week 1. If not, bump the long run.
-    if week2_actual < week1_actual:
-        deficit = week1_actual - week2_actual + 0.5
-        for d in week2:
-            if d["type"] == "long_run":
-                d["distance_miles"] = _round_half(d["distance_miles"] + deficit)
-                # Regenerate the description with updated distance
-                long_wo = _pick_long_run(workout_lib, include_workouts, 2, current_weekly_mileage, start_date + timedelta(days=7))
-                run_type = long_wo["run_type"] if long_wo and long_wo.get("run_type") else "easy"
-                lr = _long_run_structure(d["distance_miles"], run_type, current_paces)
-                d["title"] = lr["title"]
-                d["description"] = lr["description"]
-                d["purpose"] = lr["purpose"]
-                break
-        week2_actual = round(sum(d["distance_miles"] for d in week2), 1)
+    # Build all weeks
+    weeks = []
+    # For mileage targets beyond week 2, interpolate
+    targets = [week1_target, week2_target]
+    for extra in range(2, num_weeks):
+        targets.append(round(week2_target * (1 + 0.03 * (extra - 1)), 1))
+
+    for wk in range(num_weeks):
+        wk_num = wk + 1
+        wk_start = start_date + timedelta(days=wk * 7)
+        wk_target = targets[wk] if wk < len(targets) else targets[-1]
+        # Only deload if this week doesn't overlap today (never deload the current week)
+        wk_end = wk_start + timedelta(days=6)
+        fpd = first_prescribe_date or date.today()
+        current_week_overlap = wk_start <= fpd <= wk_end
+        wk_is_deload = is_deload and wk == 0 and not current_week_overlap
+
+        week_days = _build_week(
+            week_num=wk_num, start_date=wk_start, block_start=start_date,
+            target_mileage=wk_target, days_per_week=days_per_week,
+            rest_indices=rest_indices, long_run_idx=long_run_idx,
+            easy_pace=easy_pace_seconds, current_paces=current_paces,
+            workout_lib=workout_lib, include_workouts=include_workouts,
+            num_workouts=min(workouts_per_week, 1) if wk_is_deload else workouts_per_week,
+            goal_distance=goal_distance,
+            current_mileage=current_weekly_mileage, is_deload=wk_is_deload,
+            progression_state=progression_state,
+        )
+
+        wk_actual = round(sum(d["distance_miles"] for d in week_days), 1)
+
+        # Each week should be >= previous week. Bump long run if not.
+        if weeks:
+            prev_mileage = weeks[-1]["target_mileage"]
+            if wk_actual < prev_mileage:
+                deficit = prev_mileage - wk_actual + 0.5
+                for d in week_days:
+                    if d["type"] == "long_run":
+                        d["distance_miles"] = _round_half(d["distance_miles"] + deficit)
+                        long_wo = _pick_long_run(workout_lib, include_workouts, wk_num, current_weekly_mileage, wk_start)
+                        run_type = long_wo["run_type"] if long_wo and long_wo.get("run_type") else "easy"
+                        lr = _long_run_structure(d["distance_miles"], run_type, current_paces)
+                        d["title"] = lr["title"]
+                        d["description"] = lr["description"]
+                        d["purpose"] = lr["purpose"]
+                        break
+                wk_actual = round(sum(d["distance_miles"] for d in week_days), 1)
+
+        # For first plan's current week, mark pre-today days as prescribe=False
+        if first_prescribe_date:
+            for d in week_days:
+                d_date = date.fromisoformat(d["date"])
+                if d_date < first_prescribe_date and d["type"] != "rest":
+                    d["prescribed"] = False
+                else:
+                    d["prescribed"] = True
+        else:
+            for d in week_days:
+                d["prescribed"] = True
+
+        weeks.append({
+            "week_number": wk_num,
+            "target_mileage": wk_actual,
+            "days": week_days,
+        })
 
     plan = {
         "start_date": start_date.isoformat(),
-        "end_date": (start_date + timedelta(days=13)).isoformat(),
+        "end_date": end_date.isoformat(),
         "block_number": block_number,
         "is_deload": is_deload,
-        "week1": {"target_mileage": week1_actual, "days": week1},
-        "week2": {"target_mileage": week2_actual, "days": week2},
+        "weeks": weeks,
         "pacing_guide": {
             "easy": easy_range,
             "steady": format_pace(current_paces["steady_pace"]),
@@ -414,6 +472,7 @@ def _build_week(
     workout_lib: dict, include_workouts: bool, num_workouts: int,
     goal_distance: str | None, current_mileage: float,
     is_deload: bool = False,
+    progression_state: dict | None = None,
 ) -> list[dict]:
     run_days = [i for i in range(7) if i not in rest_indices]
 
@@ -441,7 +500,7 @@ def _build_week(
     workout1 = None
     workout2 = None
     if include_workouts:
-        preferred_workout_days = [1, 3]
+        preferred_workout_days = [1, 3]  # Tue, Thu
         placed = 0
         for wd in preferred_workout_days:
             if placed >= num_workouts:
@@ -449,11 +508,21 @@ def _build_week(
             if wd in run_days and day_assignments.get(wd) == "easy":
                 placed += 1
                 if placed == 1:
-                    day_assignments[wd] = "workout_threshold"
-                    workout1 = _pick_workout(workout_lib, "threshold", week_num, block_start, deload=is_deload)
-                else:
+                    # Intervals (hard speed work) early in the week
                     day_assignments[wd] = "workout_speed"
-                    workout2 = _pick_workout(workout_lib, "intervals", week_num, block_start, deload=is_deload)
+                    workout1 = _pick_workout_progressive(
+                        workout_lib, "intervals", week_num, block_start,
+                        current_paces, goal_distance or "5k",
+                        is_deload, progression_state,
+                    )
+                else:
+                    # Threshold later in the week
+                    day_assignments[wd] = "workout_threshold"
+                    workout2 = _pick_workout_progressive(
+                        workout_lib, "threshold", week_num, block_start,
+                        current_paces, goal_distance or "5k",
+                        is_deload, progression_state,
+                    )
 
     wo1_miles = _round_half(workout1["total_miles"]) if workout1 and workout1.get("total_miles") else 0
     wo2_miles = _round_half(workout2["total_miles"]) if workout2 and workout2.get("total_miles") else 0
@@ -513,7 +582,7 @@ def _build_week(
                     "warmup": None, "cooldown": None,
                 })
 
-        elif assignment == "workout_threshold":
+        elif assignment == "workout_speed":
             days.append({
                 "date": day_date.isoformat(), "day": day_name,
                 "type": "workout",
@@ -525,7 +594,7 @@ def _build_week(
                 "cooldown": workout1.get("cooldown", "1.5mi easy"),
             })
 
-        elif assignment == "workout_speed":
+        elif assignment == "workout_threshold":
             days.append({
                 "date": day_date.isoformat(), "day": day_name,
                 "type": "workout",
@@ -601,6 +670,41 @@ def _distribute_mileage(
             distribution[f"easy_{d}"] = max(per_easy, 3.0)
 
     return distribution
+
+
+def _pick_workout_progressive(
+    workout_lib: dict, category: str, week_num: int, block_start: date,
+    current_paces: dict, goal_distance: str,
+    is_deload: bool, progression_state: dict | None,
+) -> dict:
+    """Pick a workout using the progression ladder if state exists,
+    falling back to the old rotation system if not.
+    """
+    # If no progression state, fall back to old system
+    if not progression_state or category not in progression_state:
+        return _pick_workout(workout_lib, category, week_num, block_start, deload=is_deload)
+
+    state = progression_state[category]
+    level = state.get("current_level", 1)
+
+    # Apply pace override from recalibration
+    paces = dict(current_paces)
+    if state.get("current_pace_sec"):
+        if category == "intervals":
+            paces["interval_pace"] = state["current_pace_sec"]
+            paces["interval_pace_fast"] = state["current_pace_sec"] - 10
+        elif category == "threshold":
+            paces["tempo_pace"] = state["current_pace_sec"]
+            paces["threshold_pace"] = state["current_pace_sec"]
+
+    if is_deload:
+        return get_deload_workout(category, level, paces, goal_distance)
+
+    # Week 1 = current level, Week 2 = variant (next level preview)
+    if week_num % 2 == 0:
+        return get_week2_variant(category, level, paces, goal_distance)
+    else:
+        return get_workout_at_level(category, level, paces, goal_distance)
 
 
 def _pick_workout(workout_lib: dict, category: str, week_num: int,

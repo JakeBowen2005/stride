@@ -52,6 +52,47 @@ miles per week will beat a runner doing 30 miles with fancy workouts every time.
 - After injury/break: start at 50% of previous volume, rebuild over 3-4 weeks
 - NEVER increase mileage AND intensity in the same week
 
+### Workout Progression (One Lever at a Time)
+Workouts progress through defined ladders — NOT random rotation. Each 2-week block
+advances the athlete ONE level on the ladder if execution was good.
+
+**Progression levers (in order)**:
+1. **Volume** — add reps or time (e.g., 2x10min → 2x12min, or 4x800 → 5x800)
+2. **Variety** — change workout format (time-based ↔ distance-based, intervals ↔ continuous)
+3. **Pace** — 5-10 sec/mi faster (ONLY after volume is established)
+4. **Rest reduction** — 15-30 sec shorter recovery (LAST lever to pull)
+
+Never increase more than one lever per block. Never increase volume AND pace in the same
+workout. Source: Daniels — "manipulate one variable at a time."
+
+### Threshold Pace Differentiation
+Broken threshold intervals (with rest) should be prescribed ~10 sec/mi FASTER than
+continuous tempo runs. The rest between reps allows the athlete to sustain a harder effort.
+- **Continuous tempo** (20min, 25min, 30min): standard threshold pace (e.g., 6:50/mi)
+- **Broken intervals** (2x10min, 3x12min, 2x2mi): ~10 sec/mi faster (e.g., 6:40/mi)
+- **Distance intervals** (2x2mi, 3x2mi, 2x3mi): also faster — rest enables harder pace
+
+This mirrors real coaching practice: "2x10min with rest, you can push harder than a
+straight 20min tempo." The pace differential is built into the ladder templates.
+
+### Experience-Based Progression Rate
+Not all athletes progress at the same rate. The system should identify athlete type from
+data and adjust accordingly:
+
+| Athlete Type | Indicators | Progression Rate |
+|-------------|-----------|-----------------|
+| Experienced rebuilder | Strong PRs, high peak mileage history, currently low mileage | Fast — 2 levels/block for lagging categories |
+| Experienced steady | Consistent mileage, recent race results | Normal — 1 level/block |
+| Intermediate | 1-3 years running, moderate PRs | Normal — 1 level/block |
+| Beginner | <1 year, no race history | Conservative — hold at each level for 2+ blocks |
+
+**Key insight**: An athlete with a 2:58 marathon and 70 mpw peak who is currently at 25 mpw
+is NOT a beginner. Their body remembers the fitness. They should progress threshold work
+aggressively (2 levels/block) because the aerobic base exists — it just needs reactivating.
+Interval work progresses normally since speed takes longer to rebuild.
+
+See `docs/workout-progression-system.md` for the complete ladder definitions and rules.
+
 ## Principle 5: Every Workout Has a Purpose
 
 When prescribing a workout, always include:
@@ -74,6 +115,20 @@ Runners should be able to remember the workout without checking their phone mid-
 - If a runner crushes workouts consistently, consider progressing faster
 - Post-run feel rating (1-10) + objective data = adjustment decisions
 - Never blindly follow the plan if the runner is struggling
+
+### Strava-Informed Evaluation
+After each workout syncs from Strava, the system evaluates:
+1. **Did they hit the prescribed paces?** (parse splits from description)
+2. **Did they fade?** (compare first-half vs second-half split averages)
+3. **Did they do the prescribed workout?** (match description to prescription)
+4. **How did they feel?** (1-10 rating from feedback)
+
+This produces a decision: ADVANCE (progress next workout), HOLD (repeat),
+REGRESS (step back), or RECALIBRATE (update training paces from new data).
+
+If the runner beats prescribed paces by 10+ sec/mi for 2+ sessions, bump
+training paces by 5 sec/mi. Always adjust conservatively — 5 sec at a time.
+See `docs/workout-progression-system.md` for the full evaluation matrix.
 
 ## Principle 8: Race-Specific Training Gets More Specific Over Time
 

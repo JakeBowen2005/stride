@@ -1,18 +1,25 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.activity import Activity
 from app.models.user import User
+import httpx
+
+from app.config import settings
 from app.services.strava import (
     exchange_token,
+    fetch_activity_detail,
     fetch_all_activities,
+    fetch_and_save_single_activity,
     fetch_descriptions_for_activities,
     get_authorization_url,
     get_valid_token,
     is_workout_description,
+    parse_splits_from_detail,
     parse_strava_activity,
 )
 
@@ -65,11 +72,16 @@ async def sync_activities(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found or Strava not connected")
 
     access_token = await get_valid_token(user)
-    raw_activities = await fetch_all_activities(access_token)
+    try:
+        raw_activities = await fetch_all_activities(access_token)
+    except Exception as e:
+        if "429" in str(e):
+            raise HTTPException(status_code=429, detail="Strava rate limit reached. Try again in 15 minutes.")
+        raise
 
     new_count = 0
     skipped = 0
-    needs_description = []  # activity IDs we want to fetch descriptions for
+    needs_detail = []  # activity IDs to fetch full details (description + splits)
 
     for raw in raw_activities:
         parsed = parse_strava_activity(raw)
@@ -107,54 +119,77 @@ async def sync_activities(user_id: int, db: Session = Depends(get_db)):
         )
         db.add(activity)
         new_count += 1
-
-        # Decide whether to fetch description for this activity
-        # Rules:
-        #   1. Marathon block (Aug 1 2025 - Feb 7 2026): fetch for 12+ miles always
-        #   2. Marathon block: fetch for 7-12 miles IF avg pace < 8:30/mi
-        #   3. Outside marathon block: skip descriptions
-        act_date = activity.date.replace(tzinfo=None) if activity.date else None
-        distance_miles = parsed["distance_meters"] / 1609.34
-        pace_per_mile_sec = (parsed["average_pace_per_km"] * 1.60934) if parsed["average_pace_per_km"] else None
-
-        marathon_block_start = datetime(2025, 8, 1)
-        marathon_block_end = datetime(2026, 2, 7)
-        in_marathon_block = act_date is not None and marathon_block_start <= act_date <= marathon_block_end
-        pace_under_830 = pace_per_mile_sec is not None and pace_per_mile_sec < 510  # 8:30 = 510 seconds
-
-        if in_marathon_block:
-            if distance_miles >= 12:
-                needs_description.append(parsed["external_id"])
-            elif distance_miles >= 7 and pace_under_830:
-                needs_description.append(parsed["external_id"])
+        needs_detail.append(parsed["external_id"])
 
     db.commit()
 
-    # Now fetch descriptions for key activities
-    desc_count = 0
-    if needs_description:
-        descriptions = await fetch_descriptions_for_activities(
-            access_token, needs_description, batch_size=10, delay=2.0
+    # Fetch full details (description + splits) for all new activities
+    detail_count = 0
+    for i, ext_id in enumerate(needs_detail):
+        try:
+            detail = await fetch_activity_detail(access_token, ext_id)
+            if detail:
+                act = (
+                    db.query(Activity)
+                    .filter(Activity.external_id == ext_id, Activity.user_id == user_id)
+                    .first()
+                )
+                if act:
+                    if detail.get("description"):
+                        act.description = detail["description"]
+                        act.has_workout_description = is_workout_description(detail["description"])
+                    splits_json = parse_splits_from_detail(detail)
+                    if splits_json:
+                        act.splits = splits_json
+                    detail_count += 1
+        except Exception:
+            pass
+        # Rate limit: batch of 10 then pause
+        if (i + 1) % 10 == 0 and i + 1 < len(needs_detail):
+            await asyncio.sleep(2.0)
+    db.commit()
+
+    # Backfill: fetch details for recent activities missing description or splits (last 30 days)
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    missing_detail = (
+        db.query(Activity)
+        .filter(
+            Activity.user_id == user_id,
+            Activity.date >= thirty_days_ago,
+            (Activity.description.is_(None)) | (Activity.splits.is_(None)),
         )
-        for ext_id, desc in descriptions.items():
-            activity = (
-                db.query(Activity)
-                .filter(Activity.external_id == ext_id, Activity.user_id == user_id)
-                .first()
-            )
-            if activity and desc:
-                activity.description = desc
-                activity.has_workout_description = is_workout_description(desc)
-                desc_count += 1
-        db.commit()
+        .order_by(Activity.date.desc())
+        .all()
+    )
+    backfill_count = 0
+    for i, act in enumerate(missing_detail):
+        if not act.external_id:
+            continue
+        try:
+            detail = await fetch_activity_detail(access_token, act.external_id)
+            if detail:
+                if act.description is None and detail.get("description"):
+                    act.description = detail["description"]
+                    act.has_workout_description = is_workout_description(detail["description"])
+                if act.splits is None:
+                    splits_json = parse_splits_from_detail(detail)
+                    if splits_json:
+                        act.splits = splits_json
+                backfill_count += 1
+        except Exception:
+            pass
+        if (i + 1) % 10 == 0 and i + 1 < len(missing_detail):
+            db.commit()
+            await asyncio.sleep(2.0)
+    db.commit()
 
     return {
-        "message": f"Sync complete. {new_count} new runs imported, {skipped} already existed.",
+        "message": f"Sync complete. {new_count} new, {backfill_count} backfilled, {skipped} skipped.",
         "new_activities": new_count,
         "skipped": skipped,
         "total_strava_activities": len(raw_activities),
-        "descriptions_fetched": desc_count,
-        "activities_queued_for_descriptions": len(needs_description),
+        "details_fetched": detail_count,
+        "backfilled": backfill_count,
     }
 
 
@@ -222,6 +257,70 @@ def get_workout_activities(user_id: int, db: Session = Depends(get_db)):
         }
         for a in activities
     ]
+
+
+@router.get("/webhook")
+async def strava_webhook_validation(request: Request):
+    """Strava subscription validation — echo back the hub.challenge.
+
+    Strava sends query params with dots (hub.mode, hub.verify_token, hub.challenge)
+    which FastAPI can't auto-map, so we read from raw query params.
+    """
+    params = request.query_params
+    hub_verify_token = params.get("hub.verify_token")
+    hub_challenge = params.get("hub.challenge")
+
+    if hub_verify_token != settings.strava_webhook_verify_token:
+        raise HTTPException(status_code=403, detail="Invalid verify token")
+
+    return {"hub.challenge": hub_challenge}
+
+
+@router.post("/webhook")
+async def strava_webhook_event(request: Request, db: Session = Depends(get_db)):
+    """Receive Strava activity webhook events."""
+    body = await request.json()
+
+    object_type = body.get("object_type")
+    aspect_type = body.get("aspect_type")
+    object_id = str(body.get("object_id"))
+    owner_id = body.get("owner_id")
+
+    # Only process activity create/update events
+    if object_type != "activity" or aspect_type not in ("create", "update"):
+        return {"status": "ignored"}
+
+    # Find user by strava_athlete_id
+    user = db.query(User).filter(User.strava_athlete_id == owner_id).first()
+    if not user:
+        return {"status": "unknown_user"}
+
+    try:
+        await fetch_and_save_single_activity(user, object_id, db)
+    except Exception as e:
+        # Log but don't fail — Strava expects fast 200 response
+        print(f"Webhook activity sync error: {e}")
+
+    return {"status": "ok"}
+
+
+@router.post("/subscribe")
+async def create_webhook_subscription():
+    """Register a Strava webhook subscription (one-time setup)."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://www.strava.com/api/v3/push_subscriptions",
+            data={
+                "client_id": settings.strava_client_id,
+                "client_secret": settings.strava_client_secret,
+                "callback_url": settings.strava_webhook_url,
+                "verify_token": settings.strava_webhook_verify_token,
+            },
+        )
+        if response.status_code == 409:
+            return {"message": "Subscription already exists", "detail": response.json()}
+        response.raise_for_status()
+        return {"message": "Subscription created", "subscription": response.json()}
 
 
 def _seconds_to_pace(seconds_per_unit: float) -> str:
