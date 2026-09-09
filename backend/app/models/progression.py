@@ -16,6 +16,11 @@ class WorkoutProgression(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False, index=True)
     category = Column(String, nullable=False)  # "threshold" or "intervals"
+    # Which ladder these levels refer to. Level 5 on the 5K interval ladder
+    # (6x800m) is a different workout from level 5 on the marathon one
+    # (4x1mi), so a goal change has to re-seed rather than carry the number
+    # across.
+    distance = Column(String, nullable=False, default="5k")
     current_level = Column(Integer, nullable=False, default=1)
     last_workout_date = Column(Date, nullable=True)
     last_workout_name = Column(String, nullable=True)
@@ -26,4 +31,4 @@ class WorkoutProgression(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
-        return f"<WorkoutProgression user={self.user_id} cat={self.category} level={self.current_level}>"
+        return f"<WorkoutProgression user={self.user_id} cat={self.category} dist={self.distance} level={self.current_level}>"

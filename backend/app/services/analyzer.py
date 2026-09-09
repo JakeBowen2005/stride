@@ -41,7 +41,10 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     df["year"] = df["date"].dt.year
     df["year_week"] = df["year"].astype(str) + "-W" + df["week"].astype(str).str.zfill(2)
 
-    now = datetime.utcnow()
+    # Activity dates are naive LOCAL datetimes (see strava.parse_local_datetime),
+    # so the comparison window has to be local wall-clock too. utcnow() would
+    # shift every window by the athlete's UTC offset.
+    now = datetime.now()
 
     # --- Overall Stats ---
     total_runs = len(df)
@@ -64,15 +67,22 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     recent_8w = df[df["date"] >= now - timedelta(weeks=8)]
     recent_12w = df[df["date"] >= now - timedelta(weeks=12)]
 
-    def weekly_avg(subset):
+    def weekly_avg(subset, window_weeks):
+        """Average miles per week over a FIXED window.
+
+        The denominator must be the window length, not the span between the
+        first and last run inside it. Dividing by the observed span means a
+        two-week layoff followed by one 40mi week reports as "40 mpw" instead
+        of the true 10 mpw -- and that number feeds straight into the mileage
+        ramp, so it has to be conservative.
+        """
         if subset.empty:
             return 0
-        weeks = max((subset["date"].max() - subset["date"].min()).days / 7, 1)
-        return round(subset["distance_miles"].sum() / weeks, 1)
+        return round(subset["distance_miles"].sum() / window_weeks, 1)
 
-    current_weekly_avg = weekly_avg(recent_4w)
-    eight_week_avg = weekly_avg(recent_8w)
-    twelve_week_avg = weekly_avg(recent_12w)
+    current_weekly_avg = weekly_avg(recent_4w, 4)
+    eight_week_avg = weekly_avg(recent_8w, 8)
+    twelve_week_avg = weekly_avg(recent_12w, 12)
 
     # Peak mileage week ever
     peak_week = weekly.loc[weekly["miles"].idxmax()]
@@ -126,7 +136,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     consistency_pct = round((weeks_with_runs / 12) * 100)
 
     # Runs per week average (last 8 weeks)
-    runs_per_week = round(len(recent_8w) / max((recent_8w["date"].max() - recent_8w["date"].min()).days / 7, 1), 1) if not recent_8w.empty else 0
+    runs_per_week = round(len(recent_8w) / 8, 1) if not recent_8w.empty else 0
 
     # --- Heart Rate ---
     hr_data = df[df["average_heartrate"].notna()]
@@ -141,16 +151,23 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     avg_cadence = round(cadence_data["cadence"].median() * 2, 0) if not cadence_data.empty else None  # Strava reports half cadence
 
     # --- Experience Level ---
-    if peak_weekly_mileage >= 50 and date_range_days > 365:
+    # Judged on demonstrated volume first, history length second. Requiring a
+    # full year classified an athlete with six months at 48 mpw as a beginner
+    # and capped their ramp at 10%/week, which is not what their body needs.
+    if peak_weekly_mileage >= 45 and (date_range_days > 240 or total_runs >= 150):
         experience = "advanced"
-    elif peak_weekly_mileage >= 25 and date_range_days > 180:
+    elif peak_weekly_mileage >= 25 and (date_range_days > 120 or total_runs >= 60):
         experience = "intermediate"
     else:
         experience = "beginner"
 
     # --- Injury Risk: Acute/Chronic Workload ---
-    acute_load = recent_4w["distance_miles"].sum() / 4 if not recent_4w.empty else 0
-    chronic_load = twelve_week_avg if twelve_week_avg > 0 else 1
+    # Standard ACWR is the last 7 days against the rolling 28-day average.
+    # The previous version compared a 4-week average to a 12-week average,
+    # which smooths away exactly the one-week spike the ratio exists to catch.
+    recent_1w = df[df["date"] >= now - timedelta(days=7)]
+    acute_load = recent_1w["distance_miles"].sum() if not recent_1w.empty else 0
+    chronic_load = (recent_4w["distance_miles"].sum() / 4) if not recent_4w.empty else 0
     acwr = round(acute_load / chronic_load, 2) if chronic_load > 0 else 0
 
     if acwr > 1.5:
@@ -402,7 +419,7 @@ def classify_activities(user_id: int, db: Session) -> dict:
 
 def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[dict]:
     """Compute weekly mileage for the last N weeks."""
-    now = datetime.utcnow()
+    now = datetime.now()
     start = now - timedelta(weeks=weeks)
 
     activities = (

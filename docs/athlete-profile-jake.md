@@ -9,14 +9,63 @@
 - **Half Marathon**: 1:29:27 (Oct 2025) — 6:48/mi
 - **Marathon**: 2:58:42 (Feb 2026) — 6:46/mi
 
-## Current Status (May 2026)
-- Rebuilding after post-marathon break
-- Currently ~19-25 mpw, 4-5 runs/week
-- Targeting sub-17 5K (need to drop from 18:22 → 16:59 = 83 seconds)
-- After 5K goal: 100-miler (future)
-- Easy pace currently ~9:06-9:09/mi, trail runs ~12:00+ with elevation
-- 160 spm cadence, easy HR ~143
-- Now fully locked in on sub-17 goal
+## PRIMARY GOAL: Sub-2:45 Marathon - February 2028
+
+> Changed from sub-17 5K on 2026-09-09. Race date is a placeholder for
+> "February 2028" - replace with the actual race once it is picked.
+
+- **Target**: 2:45:00 marathon = **6:17/mi** goal marathon pace
+- **Current marathon PR**: 2:58:42 (Feb 2026) at 6:46/mi
+- **Gap to close**: 13:42 total, or **29 sec/mi**
+- **Runway**: ~17 months. This is a long runway, and that changes everything
+  about how the plan should be built - there is no reason to rush anything.
+
+### What 2:45 Actually Requires
+| Metric | At 2:58 (Feb 2026) | Needed for 2:45 |
+|--------|-------------------|-----------------|
+| Marathon pace | 6:46/mi | **6:17/mi** |
+| Threshold pace | 6:20-6:40/mi | **5:50/mi** |
+| Peak weekly mileage | 70 | **75-85** |
+| Sustained build volume | 55-65 mpw | **65-75 mpw** |
+| Long run peak | 21mi | 20-22mi with 10-12 at MP |
+| Half marathon equivalent | 1:29 | **~1:18-1:20** |
+| 10K equivalent | (44:52 soft) | **~35:00-36:00** |
+
+The honest read: 2:45 off a 2:58 is a real jump, but 17 months and a
+demonstrated 70 mpw ceiling make it a reasonable target. The binding
+constraint is **threshold pace**, not speed. 6:17/mi has to become an
+aerobic, comfortable-ish pace, and that only happens by raising lactate
+threshold from ~6:30 to ~5:50 while sustaining higher volume.
+
+### Sequencing (proposed - confirm before committing)
+With 17 months, do NOT sit in marathon-specific training the whole time.
+1. **Base + threshold rebuild** (now -> ~spring 2027): mileage back to
+   55-65 mpw, threshold work as the primary quality session
+2. **Speed/10K block** (~mid 2027): a 10K or half cycle to raise the
+   aerobic ceiling. A 35:xx 10K or 1:19 half is strong evidence 2:45 is on.
+   This is also where the old sub-17 5K goal could live if it still matters.
+3. **Marathon specific** (~18 weeks out, Oct 2027 -> Feb 2028): peak
+   mileage 75-85, MP long runs, 3x2mi and 4x2mi threshold as staples
+4. **Taper**: 3 weeks, progressive volume cut, keep frequency and intensity
+
+### Rules for this goal
+- **MP work stays locked until threshold is under 6:02/mi.** Goal pace has
+  to sit comfortably below threshold. Prescribing 6:17 race-pace reps while
+  threshold is 6:35 is asking for a workout harder than the threshold
+  session it is supposed to support. The plan engine enforces this.
+- **Volume before intensity, always.** 2:45 is a volume result. The Feb 2026
+  block proved it: fitness clicked at the 70 mpw peak, not from any single
+  workout.
+- **Threshold is the lever.** 3x2mi and 4x2mi at threshold were the
+  bread-and-butter workouts that produced 2:58. Same staples, faster paces.
+
+## Current Status (verify against Strava on each plan generation)
+- Last confirmed snapshot was May 2026: rebuilding post-marathon,
+  ~19-25 mpw, 4-5 runs/week, easy pace ~9:06-9:09/mi, 160 spm, easy HR ~143
+- **This snapshot is stale.** Current mileage, easy pace and workout paces
+  come from the Strava analyzer and pace calibrator at generation time -
+  trust those numbers over anything hardcoded here.
+- Long-term after the marathon: 100-miler
 
 ## Recent Workout Paces (May 2026 — Current Fitness)
 These define WHERE the athlete IS, not where they want to be:
@@ -48,7 +97,8 @@ These define WHERE the athlete IS, not where they want to be:
 ### Mileage Targets by Goal (Guidelines)
 - Sub-20 5K: 30-40 mpw minimum
 - Sub-17 5K: 45-55+ mpw
-- Sub-3:00 marathon: 50-70 mpw (Jake's range)
+- Sub-3:00 marathon: 50-70 mpw (Jake's proven range)
+- **Sub-2:45 marathon: 65-75 mpw sustained, 75-85 peak (the current goal)**
 - Sub-1:30 half: 45-60 mpw
 - 100-miler: 60-80+ mpw with back-to-back long runs
 
@@ -165,41 +215,32 @@ These are the real marathon long runs for the final 2 months of a training cycle
 - 10K PR (44:52) seems soft — likely has sub-40 fitness based on marathon
 - Key development path: current 800m pace (5:52) → extend that to 3.1 miles
 
-## Workout Progression Starting Points (May 2026)
+## Workout Progression Starting Points (marathon ladders)
 
-### Interval Ladder Position: Level 5
-- Evidence: 6x800 at 5:52 avg + 4x200 in Strava (combo session = Level 6 work)
-- Start prescription at Level 5: 6x800 at 5:50-6:00/mi
-- Next progression: Level 6 combo (6x800 + 4x200) — already doing this naturally
-- Interval fitness is AHEAD of threshold — normal for post-marathon rebuild
+Starting levels are auto-detected from the last 8 weeks of Strava workout
+descriptions against the MARATHON ladders (not the 5K ones). From the Feb
+2026 marathon block, the detected positions were:
 
-### Threshold Ladder Position: Level 1
-- Evidence: 2x2mi threshold at 7:02/6:56/mi is the only recent data point
-- Start prescription at Level 1: 2x10min Hard at 6:40/mi (broken intervals = faster pace)
-- Continuous tempo equivalent: 20min at 6:50/mi (10 sec/mi slower — no rest)
-- Threshold fitness lags interval fitness — needs aggressive progression
-- Plan should advance threshold 2 levels per block when execution is excellent
-- Target: close the gap between threshold and interval fitness over 4-6 blocks
+### Threshold Ladder Position: ~Level 4 (3x2mi Threshold)
+- Evidence: 3x2mi at 6:36/6:36/6:20, 4x2mi at 6:30/6:25/6:19/5:58,
+  2x3mi at 6:47/6:45
+- Ladder: 2x2mi -> 20min tempo -> MP 4mi -> **3x2mi** -> 25min tempo ->
+  MP 6mi -> 2x3mi -> 4x2mi -> combo -> 3x3mi -> 2mi+6mi MP -> 3x3mi at MP
+- This is the ladder that has to climb for 2:45. Everything else supports it.
+
+### Interval Ladder Position: ~Level 5 (4x1mi)
+- Evidence: 4x1mi at 6:24/6:19/6:25/6:11, 5x1mi at 6:20-6:03, 5x1K, 6x800
+- For the marathon, VO2max work is MAINTENANCE, not the main course. One
+  session per week at most, and it is the session to drop when fatigued.
 
 ### Progression Strategy
-- Progress threshold aggressively (2 levels/block if execution is excellent)
-- Progress intervals normally (1 level/block)
-- Recalibrate paces after every 4th block using latest Strava workout data
-- See `docs/workout-progression-system.md` for full ladder definitions
+- Threshold advances aggressively when execution is clean (the evaluator
+  jumps two levels when paces are beaten with feel 9-10 and no fade)
+- Intervals advance one level at a time
+- Recalibrate paces from Strava splits continuously, not on a fixed schedule
+- **Levels are ladder-specific.** Changing goal distance re-seeds both
+  ladders from recent history rather than carrying the old level number over.
 
-### Athlete Type: Experienced Rebuilder
-Jake is NOT a beginner despite currently low mileage (19-25 mpw). Key indicators:
-- **2:58 marathon** — sub-3 proves massive aerobic capacity
-- **70 mpw peak** — body handled high volume successfully
-- **1:29 half marathon** — strong endurance base
-- **5:52/mi 800m repeats** — raw speed exists
-
-This means the system should:
-- Progress threshold work aggressively (2 levels/block) — the aerobic base is there, it just needs reactivating
-- Progress intervals at normal rate (1 level/block) — speed takes longer to rebuild
-- Allow faster mileage ramp (15-20%/week) compared to true beginners
-- Recognize that current easy pace (9:00-10:00) will drop significantly as mileage rebuilds
-- The gap between current fitness and goal fitness is smaller than raw numbers suggest
 
 ## Deload Weeks
 

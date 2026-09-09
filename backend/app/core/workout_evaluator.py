@@ -25,6 +25,8 @@ class WorkoutEvaluation:
     reps_prescribed: int    # how many were prescribed
     actual_pace_sec: float  # average pace from actual splits (sec/mi)
     new_pace_sec: float | None  # recalibrated pace if decision is recalibrate
+    pace_confidence: str = "none"  # "splits" | "none" -- is pace_diff meaningful?
+    advance_steps: int = 1  # how many ladder levels to move on an advance
 
 
 # ── Split Extraction ──────────────────────────────────────────────
@@ -65,7 +67,34 @@ def extract_splits_from_description(description: str) -> dict:
     if mile_splits:
         result["mile"] = mile_splits
 
+    # Distance reps longer than a mile -- "3x2 miles (6:36,6:36,6:20)",
+    # "2x3mi (6:47,6:45)". These are the staple marathon threshold workouts
+    # and the values logged are already per-mile PACES, not rep times, so
+    # they slot straight into the "mile" bucket (1.0 mi -> pace == time).
+    # Without this the evaluator saw no splits on any threshold session and
+    # fell back to effort-only judgement.
+    long_rep_paces = _extract_long_rep_paces(desc)
+    if long_rep_paces:
+        result["mile"] = (result.get("mile") or []) + long_rep_paces
+
     return result
+
+
+# Nx2mi / Nx3mi / Nx1.5 mile followed by a parenthesised list of paces.
+_LONG_REP_RE = re.compile(
+    r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(?:mi\b|miles?)[^()\n]{0,60}\(([^)]+)\)"
+)
+
+
+def _extract_long_rep_paces(desc: str) -> list[float]:
+    """Per-mile paces from multi-mile rep sets."""
+    paces: list[float] = []
+    for match in _LONG_REP_RE.finditer(desc):
+        rep_miles = float(match.group(2))
+        if rep_miles < 1.5:
+            continue  # 1mi reps are handled by _extract_mile_splits
+        paces.extend(_parse_time_list(match.group(3), "mile"))
+    return paces
 
 
 def _extract_splits_for_distance(desc: str, distance: str) -> list[float]:
@@ -192,13 +221,19 @@ def identify_workout_type(description: str) -> str | None:
 
     desc = description.lower()
 
+    # Threshold keywords and multi-mile reps come FIRST: "3x2 miles threshold"
+    # matches the generic NxN interval pattern but is threshold work, and
+    # misclassifying it sends the wrong ladder the progression signal.
+    if any(kw in desc for kw in ["threshold", "tempo", "cruise"]):
+        return "threshold"
+    if re.search(r'\d+\s*x\s*[2-9](?:\.\d+)?\s*(?:mi\b|miles?)', desc):
+        return "threshold"
+    if re.search(r'(?:@|at)\s*(?:goal\s*)?(?:mp|marathon pace)', desc):
+        return "threshold"
+
     # Interval patterns
     if re.search(r'\d+x\d+', desc):
         return "intervals"
-
-    # Threshold/tempo keywords
-    if any(kw in desc for kw in ["threshold", "tempo", "cruise"]):
-        return "threshold"
 
     # Time-based hard efforts
     if re.search(r'\d+\s*min\s*(hard|fast|at|@)', desc):
@@ -259,6 +294,8 @@ def evaluate_workout(
             primary_splits = splits
             primary_dist_key = dist_key
 
+    pace_confidence = "none"
+
     if primary_splits:
         reps_completed = len(primary_splits)
 
@@ -273,9 +310,13 @@ def evaluate_workout(
         # Pace difference (negative = faster than prescribed)
         if prescribed_pace_sec:
             pace_diff = actual_pace - prescribed_pace_sec
-    elif actual_avg_pace_sec and prescribed_pace_sec:
-        # No splits parsed — use overall average pace
-        pace_diff = actual_avg_pace_sec - prescribed_pace_sec
+            pace_confidence = "splits"
+
+    # NOTE: we deliberately do NOT fall back to the activity's overall average
+    # pace here. That average includes warmup, cooldown and every recovery jog,
+    # so on a 2x10min threshold session it reads ~90 sec/mi "slow" no matter how
+    # well the reps were run. Comparing it to the prescribed rep pace made the
+    # threshold ladder mathematically unable to ever ADVANCE.
 
     # Also count reps from description directly
     if reps_completed == 0 and actual_description:
@@ -290,116 +331,136 @@ def evaluate_workout(
 
     # ── Decision Logic ────────────────────────────────────────
 
-    if type_mismatch:
-        # Runner swapped hard day for easy — don't regress, just hold
+    def _result(decision, reason, new_pace=None, steps=1):
         return WorkoutEvaluation(
-            decision="hold",
-            reason="Swapped workout for easy run. Holding current level.",
-            pace_diff_sec=0,
-            fade_sec=0,
-            reps_completed=0,
-            reps_prescribed=reps_prescribed,
-            actual_pace_sec=actual_pace,
-            new_pace_sec=None,
-        )
-
-    # No data to evaluate (no splits, no pace, no feel)
-    if not primary_splits and not actual_avg_pace_sec and not feel_rating:
-        return WorkoutEvaluation(
-            decision="hold",
-            reason="Insufficient data to evaluate. Holding current level.",
-            pace_diff_sec=0,
-            fade_sec=0,
+            decision=decision,
+            reason=reason,
+            pace_diff_sec=pace_diff if pace_confidence == "splits" else 0.0,
+            fade_sec=fade,
             reps_completed=reps_completed,
             reps_prescribed=reps_prescribed,
             actual_pace_sec=actual_pace,
-            new_pace_sec=None,
+            new_pace_sec=new_pace,
+            pace_confidence=pace_confidence,
+            advance_steps=steps,
         )
+
+    if type_mismatch:
+        # Runner swapped hard day for easy -- don't regress, just hold
+        return _result("hold", "Swapped workout for easy run. Holding current level.")
+
+    # Bailed early on the session: cut short by 2+ reps means the level is
+    # not consolidated, regardless of how fast the reps they did were.
+    short_session = (
+        reps_prescribed > 0
+        and reps_completed > 0
+        and reps_completed <= reps_prescribed - 2
+    )
+    if short_session:
+        return _result(
+            "hold",
+            f"Completed {reps_completed} of {reps_prescribed} reps. "
+            f"Holding this level until the full session goes down.",
+        )
+
+    # ── No trustworthy pace data (time-based reps, continuous tempo, or a
+    # description we couldn't parse). Decide on effort + fade alone rather
+    # than comparing rep pace against a whole-run average that includes
+    # warmup and cooldown.
+    if pace_confidence == "none":
+        if not feel_rating:
+            return _result("hold", "No splits and no feel rating. Holding current level.")
+        if feel <= 4:
+            return _result(
+                "regress",
+                f"Felt {feel}/10 on this session. Stepping back one level to rebuild confidence.",
+            )
+        if feel >= 8:
+            return _result(
+                "advance",
+                f"Session felt strong ({feel}/10) and you completed it. Advancing to the next level.",
+            )
+        return _result(
+            "hold",
+            f"Solid effort at {feel}/10. Repeating this level to consolidate before progressing.",
+        )
+
+    # ── Pace evidence available (parsed rep splits) ──────────────
 
     # RECALIBRATE: beaten paces by 10+ sec/mi AND felt good
     if pace_diff < -10 and feel >= 7:
-        # Suggest new pace: 5 sec/mi bump (conservative)
         new_pace = (prescribed_pace_sec - 5) if prescribed_pace_sec else None
-        return WorkoutEvaluation(
-            decision="recalibrate",
-            reason=f"Beat prescribed pace by {abs(pace_diff):.0f} sec/mi with feel {feel}/10. Recalibrating training paces.",
-            pace_diff_sec=pace_diff,
-            fade_sec=fade,
-            reps_completed=reps_completed,
-            reps_prescribed=reps_prescribed,
-            actual_pace_sec=actual_pace,
-            new_pace_sec=new_pace,
+        return _result(
+            "recalibrate",
+            f"Beat prescribed pace by {abs(pace_diff):.0f} sec/mi with feel {feel}/10. "
+            f"Recalibrating training paces.",
+            new_pace=new_pace,
         )
 
-    # ADVANCE+: hit paces AND feel 9-10 AND low fade
+    # ADVANCE+: hit paces AND feel 9-10 AND low fade.
+    # Two levels only when they beat the target AND barely noticed -- this is
+    # the "experienced rebuilder" case where fitness is coming back faster
+    # than the ladder can climb.
     if pace_diff <= 5 and feel >= 9 and fade < 3:
         new_pace = (prescribed_pace_sec - 5) if prescribed_pace_sec else None
-        return WorkoutEvaluation(
-            decision="advance",
-            reason=f"Crushed it — paces on target, feel {feel}/10, minimal fade. Advancing and bumping pace.",
-            pace_diff_sec=pace_diff,
-            fade_sec=fade,
-            reps_completed=reps_completed,
-            reps_prescribed=reps_prescribed,
-            actual_pace_sec=actual_pace,
-            new_pace_sec=new_pace,
+        steps = 2 if pace_diff <= -5 else 1
+        suffix = " Jumping two levels." if steps == 2 else ""
+        return _result(
+            "advance",
+            f"Crushed it -- paces on target, feel {feel}/10, minimal fade.{suffix}",
+            new_pace=new_pace,
+            steps=steps,
         )
 
     # ADVANCE: hit paces AND feel 7-8 AND fade < 5sec
     if pace_diff <= 5 and feel >= 7 and fade < 5:
-        return WorkoutEvaluation(
-            decision="advance",
-            reason=f"Good execution — paces on target, feel {feel}/10, controlled fade. Advancing to next level.",
-            pace_diff_sec=pace_diff,
-            fade_sec=fade,
-            reps_completed=reps_completed,
-            reps_prescribed=reps_prescribed,
-            actual_pace_sec=actual_pace,
-            new_pace_sec=None,
+        return _result(
+            "advance",
+            f"Good execution -- paces on target, feel {feel}/10, controlled fade. "
+            f"Advancing to next level.",
         )
 
     # REGRESS: missed paces badly OR feel <= 4 OR big fade
     if (pace_diff > 10 and feel <= 5) or feel <= 4 or fade > 10:
-        return WorkoutEvaluation(
-            decision="regress",
-            reason=f"Struggled — pace off by {pace_diff:.0f}s, feel {feel}/10, fade {fade:.0f}s. Stepping back one level.",
-            pace_diff_sec=pace_diff,
-            fade_sec=fade,
-            reps_completed=reps_completed,
-            reps_prescribed=reps_prescribed,
-            actual_pace_sec=actual_pace,
-            new_pace_sec=None,
+        return _result(
+            "regress",
+            f"Struggled -- pace off by {pace_diff:.0f}s, feel {feel}/10, fade {fade:.0f}s. "
+            f"Stepping back one level.",
         )
 
     # HOLD: everything else (mediocre execution, moderate fade, etc.)
-    return WorkoutEvaluation(
-        decision="hold",
-        reason=f"Solid effort — feel {feel}/10, fade {fade:.0f}s. Repeating current level to consolidate.",
-        pace_diff_sec=pace_diff,
-        fade_sec=fade,
-        reps_completed=reps_completed,
-        reps_prescribed=reps_prescribed,
-        actual_pace_sec=actual_pace,
-        new_pace_sec=None,
+    return _result(
+        "hold",
+        f"Solid effort -- feel {feel}/10, fade {fade:.0f}s. Repeating current level to consolidate.",
     )
 
 
 def determine_starting_level(
     category: str,
     recent_workout_descriptions: list[str],
-    calibrated_pace_sec: float | None,
+    calibrated_pace_sec: float | None = None,
+    distance: str = "5k",
 ) -> int:
     """Determine starting ladder level from recent Strava history.
 
     Looks at the most challenging workout the runner has completed recently
-    and maps it to a ladder position.
+    and maps it to a ladder position. The mapping is ladder-specific: 6x800m
+    is level 5 on the 5K interval ladder but level 3 on the marathon one,
+    because the marathon ladder reserves its top rungs for longer reps.
     """
     if not recent_workout_descriptions:
         return 1
 
+    dist = (distance or "5k").lower()
+    is_endurance = dist in ("marathon", "half")
+
     max_reps_800 = 0
     max_reps_1k = 0
     max_reps_mile = 0
+    max_reps_1_5mi = 0
+    max_reps_2mi = 0
+    max_reps_3mi = 0
+    max_mp_miles = 0
     has_tempo = False
     max_tempo_minutes = 0
 
@@ -408,45 +469,97 @@ def determine_starting_level(
             continue
         d = desc.lower()
 
-        # Count 800m reps
-        match_800 = re.search(r'(\d+)x800', d)
+        match_800 = re.search(r'(\d+)\s*x\s*800', d)
         if match_800:
             max_reps_800 = max(max_reps_800, int(match_800.group(1)))
 
-        # Count 1K reps
-        match_1k = re.search(r'(\d+)x1k', d)
+        match_1k = re.search(r'(\d+)\s*x\s*1\s*k\b', d)
         if match_1k:
             max_reps_1k = max(max_reps_1k, int(match_1k.group(1)))
 
-        # Count mile reps
-        match_mile = re.search(r'(\d+)x1\s*mile', d)
+        match_mile = re.search(r'(\d+)\s*x\s*1\s*(?:mi\b|mile)', d)
         if match_mile:
             max_reps_mile = max(max_reps_mile, int(match_mile.group(1)))
 
-        # Check for tempo/threshold
+        match_15 = re.search(r'(\d+)\s*x\s*1\.5\s*(?:mi|mile)', d)
+        if match_15:
+            max_reps_1_5mi = max(max_reps_1_5mi, int(match_15.group(1)))
+
+        match_2mi = re.search(r'(\d+)\s*x\s*2\s*(?:mi\b|mile)', d)
+        if match_2mi:
+            max_reps_2mi = max(max_reps_2mi, int(match_2mi.group(1)))
+
+        match_3mi = re.search(r'(\d+)\s*x\s*3\s*(?:mi\b|mile)', d)
+        if match_3mi:
+            max_reps_3mi = max(max_reps_3mi, int(match_3mi.group(1)))
+
+        # Continuous marathon-pace blocks: "6 miles at MP", "5mi at marathon pace"
+        match_mp = re.search(r'(\d+)\s*(?:mi\b|miles?)\s*(?:@|at)\s*(?:goal\s*)?(?:mp|marathon pace)', d)
+        if match_mp:
+            max_mp_miles = max(max_mp_miles, int(match_mp.group(1)))
+
         if "tempo" in d or "threshold" in d:
             has_tempo = True
-            # Try to extract duration
             min_match = re.search(r'(\d+)\s*min', d)
             if min_match:
                 max_tempo_minutes = max(max_tempo_minutes, int(min_match.group(1)))
 
     if category == "intervals":
+        if is_endurance:
+            # INTERVAL_LADDER_MARATHON
+            if max_reps_mile >= 6:
+                return 11
+            # NB: 2mi reps are threshold work, not VO2max -- they seed the
+            # threshold ladder, not this one.
+            if max_reps_1k >= 6:
+                return 9
+            if max_reps_1_5mi >= 4:
+                return 8
+            if max_reps_mile >= 5:
+                return 7
+            if max_reps_mile >= 4:
+                return 5
+            if max_reps_1k >= 5:
+                return 4
+            if max_reps_800 >= 6:
+                return 3
+            return 1
+        # INTERVAL_LADDER_5K
         if max_reps_mile >= 4:
-            return 8  # 4x1mi level
+            return 8
         if max_reps_800 >= 8:
-            return 7  # 8x800 level
+            return 7
         if max_reps_800 >= 6:
-            return 5  # 6x800 level
+            return 5
         if max_reps_1k >= 5:
-            return 4  # 5x1K level
+            return 4
         if max_reps_800 >= 5:
-            return 3  # 5x800 level
-        if max_reps_800 >= 4:
-            return 1  # 4x800 level
+            return 3
         return 1
 
-    elif category == "threshold":
+    if category == "threshold":
+        if is_endurance:
+            # THRESHOLD_LADDER_MARATHON
+            if max_reps_3mi >= 3:
+                return 10
+            if max_mp_miles >= 6:
+                return 6
+            if max_reps_2mi >= 4:
+                return 8
+            if max_reps_3mi >= 2:
+                return 7
+            if max_reps_2mi >= 3:
+                return 4
+            if max_mp_miles >= 4:
+                return 3
+            if max_reps_2mi >= 2:
+                return 1
+            if max_tempo_minutes >= 25:
+                return 5
+            if max_tempo_minutes >= 20:
+                return 2
+            return 1
+        # THRESHOLD_LADDER_5K
         if max_tempo_minutes >= 30:
             return 8
         if max_tempo_minutes >= 25:

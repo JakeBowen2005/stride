@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,6 +26,26 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 class PlanRequest(BaseModel):
     start_date: str | None = None  # ISO date, defaults to smart calculation
+
+
+class DayEditRequest(BaseModel):
+    """Partial edit of a prescribed day. Only the fields sent are changed."""
+    type: str | None = None            # easy, workout, long_run, rest, race
+    title: str | None = None
+    description: str | None = None
+    purpose: str | None = None
+    distance_miles: float | None = None
+    warmup: str | None = None
+    cooldown: str | None = None
+
+
+class SwapRequest(BaseModel):
+    with_date: str  # ISO date of the day to swap with
+
+
+class RerollRequest(BaseModel):
+    category: str | None = None   # "threshold" | "intervals" — defaults to the day's own
+    level: int | None = None      # explicit ladder level, defaults to current progression
 
 
 class FeedbackRequest(BaseModel):
@@ -113,6 +133,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         first_prescribe_date=params.get("first_prescribe_date"),
         block_number=block_number,
         progression_state=progression_state,
+        race_date=goal.race_date,
     )
 
     goal_snapshot = {
@@ -363,6 +384,7 @@ async def submit_feedback(
             )
             evaluation_decision = eval_result.decision
 
+            goal_snapshot = json.loads(db_plan.goal_snapshot) if db_plan.goal_snapshot else {}
             _update_progression_from_evaluation(
                 user_id=user_id,
                 category=workout_category,
@@ -371,6 +393,8 @@ async def submit_feedback(
                 workout_date=feedback_date,
                 new_pace_sec=eval_result.new_pace_sec,
                 db=db,
+                advance_steps=eval_result.advance_steps,
+                goal_distance=goal_snapshot.get("distance") or "5k",
             )
 
     # If a hard workout was swapped, reschedule based on user intent
@@ -450,10 +474,20 @@ async def submit_feedback(
 
 
 def _get_activities_for_date(date_str: str, user_id: int, db: Session) -> list[Activity]:
-    """Get all activities for a user on a specific date."""
+    """Get all activities for a user on a specific date.
+
+    Uses a half-open datetime range rather than a date() or CAST() call:
+    func.date() is SQLite-only, CAST(x AS DATE) silently misbehaves on SQLite
+    (no DATE type, so NUMERIC affinity turns the timestamp into a year), and
+    a range comparison can still use an index on the column.
+    """
+    day = date.fromisoformat(date_str)
+    day_start = datetime.combine(day, time.min)
+    next_day = day_start + timedelta(days=1)
     return db.query(Activity).filter(
         Activity.user_id == user_id,
-        func.date(Activity.date) == date_str,
+        Activity.date >= day_start,
+        Activity.date < next_day,
     ).all()
 
 
@@ -558,17 +592,39 @@ def _parse_pace(pace_str: str) -> float:
         return 540.0
 
 
+# Titles that belong to the threshold ladder even though they contain a
+# rep pattern (Nx2mi, Nx3mi and MP work are threshold/race-pace sessions,
+# not VO2max intervals).
+_THRESHOLD_TITLE_RE = re.compile(
+    r"threshold|tempo|sandwich|continuous|\bmp\b|marathon pace|\d+\s*x\s*[23]\s*mi",
+    re.IGNORECASE,
+)
+# VO2max / speed sessions: reps of a mile or shorter.
+_INTERVAL_TITLE_RE = re.compile(
+    r"\d+\s*x\s*(?:200|400|600|800|1200|1600|1\s*k|1\.5\s*mi|1\s*mi(?:le)?)\b",
+    re.IGNORECASE,
+)
+
+
 def _detect_workout_category(title: str) -> str | None:
-    """Detect whether a planned workout is intervals or threshold from its title."""
+    """Detect whether a planned workout is intervals or threshold from its title.
+
+    Threshold is checked FIRST: "3x2mi Threshold" and "3x3mi at MP" both
+    contain a rep pattern but are threshold-ladder sessions. Only reps of a
+    mile or shorter count as interval work.
+    """
     if not title:
         return None
     t = title.lower()
-    # Interval indicators: Nx800, Nx1K, Nx400, NxMile patterns
-    # Require the interval pattern (NxDIST) to avoid matching "12-mile long run" as intervals
-    if any(kw in t for kw in ["800", "400", "1k", "1mi", "1200", "200"]) or re.search(r'\dx.*mile', t):
+
+    if _THRESHOLD_TITLE_RE.search(t):
+        return "threshold"
+    if _INTERVAL_TITLE_RE.search(t):
         return "intervals"
-    # Threshold/tempo indicators
-    if any(kw in t for kw in ["threshold", "tempo", "hard", "sandwich", "continuous"]):
+    # Time-based hard efforts: "2x10min Hard", "3x12min Hard"
+    if re.search(r"\d+\s*x\s*\d+\s*min", t) or "hard" in t:
+        return "threshold"
+    if "progressive" in t or "progression" in t:
         return "threshold"
     return None
 
@@ -607,13 +663,20 @@ def _extract_prescribed_pace(description: str) -> float | None:
 def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k") -> dict:
     """Load or initialize workout progression state for plan generation.
 
+    Levels are ladder-specific: level 5 on the 5K interval ladder is 6x800m,
+    level 5 on the marathon ladder is 4x1mi. So when the goal distance
+    changes, the stored level number is meaningless and we re-seed from
+    recent Strava history against the new ladder instead of carrying it over.
+
     Returns dict like:
         {
             "intervals": {"current_level": 5, "current_pace_sec": 352, ...},
             "threshold": {"current_level": 1, "current_pace_sec": 410, ...},
         }
     """
+    goal_distance = (goal_distance or "5k").lower()
     result = {}
+    recent_descriptions = None  # loaded lazily, only if we need to seed
 
     for category in ("intervals", "threshold"):
         prog = db.query(WorkoutProgression).filter(
@@ -621,36 +684,37 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
             WorkoutProgression.category == category,
         ).first()
 
-        if prog:
-            result[category] = {
-                "current_level": prog.current_level,
-                "current_pace_sec": prog.current_pace_sec,
-                "format_rotation": prog.format_rotation,
-                "last_execution": prog.last_execution,
-                "sessions_at_level": prog.sessions_at_level,
-            }
-        else:
-            # Initialize from recent Strava workout history
-            recent_descriptions = _get_recent_workout_descriptions(user_id, db)
-            starting_level = determine_starting_level(category, recent_descriptions, None)
+        stored_distance = (getattr(prog, "distance", None) or "5k").lower() if prog else None
+        needs_seed = prog is None or stored_distance != goal_distance
 
-            prog = WorkoutProgression(
-                user_id=user_id,
-                category=category,
-                current_level=starting_level,
-                sessions_at_level=0,
-                format_rotation=0,
+        if needs_seed:
+            if recent_descriptions is None:
+                recent_descriptions = _get_recent_workout_descriptions(user_id, db)
+            starting_level = determine_starting_level(
+                category, recent_descriptions, None, goal_distance
             )
-            db.add(prog)
+
+            if prog is None:
+                prog = WorkoutProgression(user_id=user_id, category=category)
+                db.add(prog)
+            prog.distance = goal_distance
+            prog.current_level = starting_level
+            prog.sessions_at_level = 0
+            prog.format_rotation = 0
+            # Paces are ladder-relative too -- a threshold pace calibrated
+            # against 5K reps is the wrong target for marathon cruise
+            # intervals. Drop it and let the calibrator rebuild it.
+            prog.current_pace_sec = None
+            prog.last_execution = None
             db.flush()
 
-            result[category] = {
-                "current_level": starting_level,
-                "current_pace_sec": None,
-                "format_rotation": 0,
-                "last_execution": None,
-                "sessions_at_level": 0,
-            }
+        result[category] = {
+            "current_level": prog.current_level,
+            "current_pace_sec": prog.current_pace_sec,
+            "format_rotation": prog.format_rotation,
+            "last_execution": prog.last_execution,
+            "sessions_at_level": prog.sessions_at_level,
+        }
 
     db.commit()
     return result
@@ -678,8 +742,12 @@ def _update_progression_from_evaluation(
     workout_date: str,
     new_pace_sec: float | None,
     db: Session,
+    advance_steps: int = 1,
+    goal_distance: str = "5k",
 ):
     """Update the WorkoutProgression record based on an evaluation decision."""
+    from app.core.workout_ladders import max_level
+
     prog = db.query(WorkoutProgression).filter(
         WorkoutProgression.user_id == user_id,
         WorkoutProgression.category == category,
@@ -688,18 +756,20 @@ def _update_progression_from_evaluation(
     if not prog:
         return
 
+    ceiling = max_level(category, goal_distance)
+
     prog.last_workout_date = date.fromisoformat(workout_date)
     prog.last_workout_name = workout_name
     prog.last_execution = evaluation_decision
 
     if evaluation_decision == "advance":
-        prog.current_level = min(prog.current_level + 1, 12)
+        prog.current_level = min(prog.current_level + max(1, advance_steps), ceiling)
         prog.sessions_at_level = 0
         prog.format_rotation = (prog.format_rotation + 1) % 3
         if new_pace_sec:
             prog.current_pace_sec = new_pace_sec
     elif evaluation_decision == "recalibrate":
-        prog.current_level = min(prog.current_level + 1, 12)
+        prog.current_level = min(prog.current_level + 1, ceiling)
         prog.sessions_at_level = 0
         if new_pace_sec:
             prog.current_pace_sec = new_pace_sec
@@ -783,3 +853,230 @@ def _copy_workout_to_day(source: PlannedWorkout, target: PlannedWorkout):
     target.distance_miles = source.distance_miles
     target.warmup = source.warmup
     target.cooldown = source.cooldown
+
+
+# ── Plan editing ──────────────────────────────────────────────────
+#
+# Principle 4: respect the athlete. The plan is a suggestion, not a law —
+# the athlete gets to move days around, swap a session, or throw one out.
+# These endpoints warn when an edit breaks a training principle, but they
+# never refuse it.
+
+
+def _active_plan_or_404(user_id: int, db: Session) -> Plan:
+    plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="No active plan")
+    return plan
+
+
+def _day_or_404(plan_id: int, day_date: str, db: Session) -> PlannedWorkout:
+    pw = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.date == day_date,
+    ).first()
+    if not pw:
+        raise HTTPException(status_code=404, detail=f"No planned day for {day_date}")
+    return pw
+
+
+HARD_TYPES = {"workout", "long_run", "race"}
+
+
+def _adjacency_warnings(plan_id: int, db: Session) -> list[str]:
+    """Flag back-to-back hard days anywhere in the plan (Principle 3)."""
+    days = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id
+    ).order_by(PlannedWorkout.date).all()
+
+    warnings = []
+    for prev, nxt in zip(days, days[1:]):
+        if prev.type in HARD_TYPES and nxt.type in HARD_TYPES:
+            warnings.append(
+                f"{prev.day_name.capitalize()} ({prev.title}) and "
+                f"{nxt.day_name.capitalize()} ({nxt.title}) are now back-to-back hard days. "
+                f"That is the one rule worth not breaking — put an easy or rest day between them."
+            )
+    return warnings
+
+
+def _serialize_day(pw: PlannedWorkout) -> dict:
+    return {
+        "date": pw.date,
+        "day": pw.day_name,
+        "type": pw.type,
+        "title": pw.title,
+        "description": pw.description,
+        "purpose": pw.purpose,
+        "distance_miles": pw.distance_miles,
+        "warmup": pw.warmup,
+        "cooldown": pw.cooldown,
+    }
+
+
+@router.patch("/{user_id}/days/{day_date}")
+def edit_planned_day(
+    user_id: int, day_date: str, req: DayEditRequest, db: Session = Depends(get_db)
+):
+    """Edit one prescribed day. Only the fields provided are changed."""
+    plan = _active_plan_or_404(user_id, db)
+    pw = _day_or_404(plan.id, day_date, db)
+
+    changes = req.model_dump(exclude_unset=True, exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    valid_types = {"easy", "workout", "long_run", "rest", "race"}
+    if "type" in changes and changes["type"] not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"type must be one of {sorted(valid_types)}",
+        )
+
+    for field, value in changes.items():
+        setattr(pw, field, value)
+
+    if changes.get("type") == "rest":
+        pw.distance_miles = 0
+        pw.warmup = None
+        pw.cooldown = None
+
+    db.commit()
+    db.refresh(pw)
+
+    return {
+        "day": _serialize_day(pw),
+        "updated_fields": sorted(changes),
+        "warnings": _adjacency_warnings(plan.id, db),
+    }
+
+
+@router.post("/{user_id}/days/{day_date}/swap")
+def swap_planned_days(
+    user_id: int, day_date: str, req: SwapRequest, db: Session = Depends(get_db)
+):
+    """Swap the prescriptions on two days, keeping each day's own date."""
+    plan = _active_plan_or_404(user_id, db)
+    a = _day_or_404(plan.id, day_date, db)
+    b = _day_or_404(plan.id, req.with_date, db)
+
+    if a.id == b.id:
+        raise HTTPException(status_code=400, detail="Cannot swap a day with itself")
+
+    fields = ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown")
+    for field in fields:
+        a_val, b_val = getattr(a, field), getattr(b, field)
+        setattr(a, field, b_val)
+        setattr(b, field, a_val)
+
+    db.commit()
+    db.refresh(a)
+    db.refresh(b)
+
+    return {
+        "swapped": [_serialize_day(a), _serialize_day(b)],
+        "warnings": _adjacency_warnings(plan.id, db),
+    }
+
+
+@router.post("/{user_id}/days/{day_date}/skip")
+def skip_planned_day(user_id: int, day_date: str, db: Session = Depends(get_db)):
+    """Turn a prescribed day into a rest day."""
+    plan = _active_plan_or_404(user_id, db)
+    pw = _day_or_404(plan.id, day_date, db)
+
+    pw.type = "rest"
+    pw.title = "Rest Day"
+    pw.description = "Rest. Recovery is when adaptation actually happens."
+    pw.purpose = "Physical and mental recovery."
+    pw.distance_miles = 0
+    pw.warmup = None
+    pw.cooldown = None
+    db.commit()
+
+    return {"day": _serialize_day(pw), "warnings": []}
+
+
+@router.post("/{user_id}/days/{day_date}/reroll")
+def reroll_workout(
+    user_id: int, day_date: str, req: RerollRequest = None, db: Session = Depends(get_db)
+):
+    """Swap in a different session from the ladder for this day.
+
+    Useful when the prescribed workout doesn't suit the day — no track
+    available, bad weather, or it just doesn't appeal. Same training stimulus,
+    different shape.
+    """
+    from app.core.workout_ladders import get_workout_at_level, max_level
+
+    plan = _active_plan_or_404(user_id, db)
+    pw = _day_or_404(plan.id, day_date, db)
+
+    goal_snapshot = json.loads(plan.goal_snapshot) if plan.goal_snapshot else {}
+    goal_distance = goal_snapshot.get("distance") or "5k"
+
+    category = (req.category if req else None) or _detect_workout_category(pw.title) or "threshold"
+    if category not in ("threshold", "intervals"):
+        raise HTTPException(status_code=400, detail="category must be 'threshold' or 'intervals'")
+
+    prog = db.query(WorkoutProgression).filter(
+        WorkoutProgression.user_id == user_id,
+        WorkoutProgression.category == category,
+    ).first()
+
+    level = (req.level if req else None) or (prog.current_level if prog else 1)
+    level = max(1, min(level, max_level(category, goal_distance)))
+
+    calibrated = calibrate_paces(user_id, db)
+    paces = calibrated if "interval_pace" in calibrated else {}
+    if prog and prog.current_pace_sec:
+        if category == "intervals":
+            paces["interval_pace"] = prog.current_pace_sec
+            paces["interval_pace_fast"] = prog.current_pace_sec - 10
+        else:
+            paces["threshold_pace"] = prog.current_pace_sec
+            paces["tempo_pace"] = prog.current_pace_sec + 10
+
+    workout = get_workout_at_level(category, level, paces, goal_distance)
+
+    pw.type = "workout"
+    pw.title = workout["name"]
+    pw.description = workout["structure"]
+    pw.purpose = workout["purpose"]
+    pw.distance_miles = workout.get("total_miles", pw.distance_miles)
+    pw.warmup = workout.get("warmup")
+    pw.cooldown = workout.get("cooldown")
+    db.commit()
+
+    return {
+        "day": _serialize_day(pw),
+        "category": category,
+        "level": level,
+        "warnings": _adjacency_warnings(plan.id, db),
+    }
+
+
+@router.get("/{user_id}/weekly-summary")
+async def weekly_summary(
+    user_id: int, week_start: str | None = None, db: Session = Depends(get_db)
+):
+    """Coach recap for a week. Defaults to the week just finished.
+
+    The numbers are computed in Python; the LLM only interprets them.
+    """
+    from app.services.summary import build_weekly_summary
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if week_start:
+        try:
+            target = date.fromisoformat(week_start)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="week_start must be YYYY-MM-DD")
+    else:
+        # Last completed week — the current one is still in progress.
+        target = date.today() - timedelta(days=date.today().weekday() + 7)
+
+    return await build_weekly_summary(user_id, target, db)

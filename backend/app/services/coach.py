@@ -17,7 +17,31 @@ from app.models.activity import Activity
 from app.models.plan import Plan, PlannedWorkout
 from app.models.user import Goal, User
 
-DOCS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs"
+def _resolve_docs_dir() -> Path:
+    """Find the training science docs.
+
+    Locally these live at <repo>/docs. On Railway the service root is set to
+    backend/, so that path does not exist there and every science doc silently
+    resolved to "" -- the coach kept answering, just with none of the training
+    context. Check the plausible locations and let STRIDE_DOCS_DIR override.
+    """
+    override = os.environ.get("STRIDE_DOCS_DIR")
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    here = Path(__file__).resolve()
+    candidates += [
+        here.parent.parent.parent.parent / "docs",  # <repo>/docs
+        here.parent.parent.parent / "docs",         # backend/docs
+        Path.cwd() / "docs",
+    ]
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return candidates[-1]
+
+
+DOCS_DIR = _resolve_docs_dir()
 
 # Map goal distances to science doc filenames
 SCIENCE_DOCS = {
@@ -32,7 +56,8 @@ def _load_doc(filename: str) -> str:
     """Load a doc file, return empty string if not found."""
     path = DOCS_DIR / filename
     if path.exists():
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
+    print(f"[coach] WARNING: training doc not found: {path}")
     return ""
 
 

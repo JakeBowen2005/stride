@@ -6,11 +6,12 @@ from app.api.analysis import router as analysis_router
 from app.api.plans import router as plans_router
 from app.api.strava import router as strava_router
 from app.api.users import router as users_router
-from app.database import Base, engine
+from app.database import Base, engine, ensure_schema
 import app.models  # noqa: F401 — registers all models so create_all picks them up
 
-# Create all tables
+# Create all tables, then patch in any columns added to existing tables.
 Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 app = FastAPI(title="Stride", description="AI-Powered Running Coach", version="0.1.0")
 

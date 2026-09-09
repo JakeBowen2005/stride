@@ -1,7 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,7 +11,9 @@ from app.models.user import User
 import httpx
 
 from app.config import settings
+from app.database import SessionLocal
 from app.services.strava import (
+    StravaRateLimited,
     exchange_token,
     fetch_activity_detail,
     fetch_all_activities,
@@ -57,11 +60,10 @@ async def strava_callback(code: str, scope: str = "", db: Session = Depends(get_
     db.commit()
     db.refresh(user)
 
-    return {
-        "message": "Strava connected successfully",
-        "user_id": user.id,
-        "athlete_name": user.name,
-    }
+    # Send the browser back to the app rather than leaving the athlete
+    # staring at a JSON blob at the end of the OAuth handshake.
+    target = settings.frontend_url.rstrip("/")
+    return RedirectResponse(url=f"{target}/?strava=connected&user_id={user.id}", status_code=303)
 
 
 @router.post("/sync/{user_id}")
@@ -103,7 +105,7 @@ async def sync_activities(user_id: int, db: Session = Depends(get_db)):
             external_id=parsed["external_id"],
             source=parsed["source"],
             name=parsed["name"],
-            date=datetime.fromisoformat(parsed["date"]) if parsed["date"] else datetime.utcnow(),
+            date=parsed["date"] or datetime.now(),
             distance_meters=parsed["distance_meters"],
             duration_seconds=parsed["duration_seconds"],
             elapsed_seconds=parsed["elapsed_seconds"],
@@ -123,30 +125,37 @@ async def sync_activities(user_id: int, db: Session = Depends(get_db)):
 
     db.commit()
 
-    # Fetch full details (description + splits) for all new activities
+    # Fetch full details (description + splits) for all new activities.
+    # The service-level limiter paces these; a 429 stops the loop cleanly
+    # so we report progress instead of silently dropping descriptions.
     detail_count = 0
+    rate_limited = False
     for i, ext_id in enumerate(needs_detail):
         try:
             detail = await fetch_activity_detail(access_token, ext_id)
-            if detail:
-                act = (
-                    db.query(Activity)
-                    .filter(Activity.external_id == ext_id, Activity.user_id == user_id)
-                    .first()
-                )
-                if act:
-                    if detail.get("description"):
-                        act.description = detail["description"]
-                        act.has_workout_description = is_workout_description(detail["description"])
-                    splits_json = parse_splits_from_detail(detail)
-                    if splits_json:
-                        act.splits = splits_json
-                    detail_count += 1
+        except StravaRateLimited:
+            rate_limited = True
+            break
         except Exception:
-            pass
-        # Rate limit: batch of 10 then pause
-        if (i + 1) % 10 == 0 and i + 1 < len(needs_detail):
-            await asyncio.sleep(2.0)
+            continue
+
+        if detail:
+            act = (
+                db.query(Activity)
+                .filter(Activity.external_id == ext_id, Activity.user_id == user_id)
+                .first()
+            )
+            if act:
+                if detail.get("description"):
+                    act.description = detail["description"]
+                    act.has_workout_description = is_workout_description(detail["description"])
+                splits_json = parse_splits_from_detail(detail)
+                if splits_json:
+                    act.splits = splits_json
+                detail_count += 1
+
+        if (i + 1) % 25 == 0:
+            db.commit()
     db.commit()
 
     # Backfill: fetch details for recent activities missing description or splits (last 30 days)
@@ -165,31 +174,42 @@ async def sync_activities(user_id: int, db: Session = Depends(get_db)):
     for i, act in enumerate(missing_detail):
         if not act.external_id:
             continue
+        if rate_limited:
+            break
         try:
             detail = await fetch_activity_detail(access_token, act.external_id)
-            if detail:
-                if act.description is None and detail.get("description"):
-                    act.description = detail["description"]
-                    act.has_workout_description = is_workout_description(detail["description"])
-                if act.splits is None:
-                    splits_json = parse_splits_from_detail(detail)
-                    if splits_json:
-                        act.splits = splits_json
-                backfill_count += 1
+        except StravaRateLimited:
+            rate_limited = True
+            break
         except Exception:
-            pass
-        if (i + 1) % 10 == 0 and i + 1 < len(missing_detail):
+            continue
+
+        if detail:
+            if act.description is None and detail.get("description"):
+                act.description = detail["description"]
+                act.has_workout_description = is_workout_description(detail["description"])
+            if act.splits is None:
+                splits_json = parse_splits_from_detail(detail)
+                if splits_json:
+                    act.splits = splits_json
+            backfill_count += 1
+
+        if (i + 1) % 25 == 0:
             db.commit()
-            await asyncio.sleep(2.0)
     db.commit()
 
+    message = f"Sync complete. {new_count} new, {backfill_count} backfilled, {skipped} skipped."
+    if rate_limited:
+        message += " Strava rate limit reached — re-run in 15 minutes to finish fetching descriptions."
+
     return {
-        "message": f"Sync complete. {new_count} new, {backfill_count} backfilled, {skipped} skipped.",
+        "message": message,
         "new_activities": new_count,
         "skipped": skipped,
         "total_strava_activities": len(raw_activities),
         "details_fetched": detail_count,
         "backfilled": backfill_count,
+        "rate_limited": rate_limited,
     }
 
 
@@ -276,9 +296,42 @@ async def strava_webhook_validation(request: Request):
     return {"hub.challenge": hub_challenge}
 
 
+async def _process_webhook_activity(user_id: int, object_id: str) -> None:
+    """Background worker for a webhook event.
+
+    Runs on its own DB session: the request-scoped session from Depends()
+    is already closed by the time a BackgroundTask executes.
+    """
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return
+        activity = await fetch_and_save_single_activity(user, object_id, db)
+        if activity:
+            # Keep workout_type in sync so the plan view and history filters
+            # classify the new run without waiting for a manual re-classify.
+            from app.services.analyzer import classify_activities
+            classify_activities(user_id, db)
+    except StravaRateLimited as e:
+        print(f"Webhook sync deferred, rate limited: {e}")
+    except Exception as e:
+        print(f"Webhook activity sync error: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/webhook")
-async def strava_webhook_event(request: Request, db: Session = Depends(get_db)):
-    """Receive Strava activity webhook events."""
+async def strava_webhook_event(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Receive Strava activity webhook events.
+
+    Strava expects a 200 within 2 seconds and retries otherwise, so the
+    actual fetch happens in a background task rather than inline.
+    """
     body = await request.json()
 
     object_type = body.get("object_type")
@@ -286,22 +339,18 @@ async def strava_webhook_event(request: Request, db: Session = Depends(get_db)):
     object_id = str(body.get("object_id"))
     owner_id = body.get("owner_id")
 
-    # Only process activity create/update events
+    # Only process activity create/update events. "update" matters as much as
+    # "create": that is how an edited title or description (the splits the
+    # pace calibrator reads) reaches us.
     if object_type != "activity" or aspect_type not in ("create", "update"):
         return {"status": "ignored"}
 
-    # Find user by strava_athlete_id
     user = db.query(User).filter(User.strava_athlete_id == owner_id).first()
     if not user:
         return {"status": "unknown_user"}
 
-    try:
-        await fetch_and_save_single_activity(user, object_id, db)
-    except Exception as e:
-        # Log but don't fail — Strava expects fast 200 response
-        print(f"Webhook activity sync error: {e}")
-
-    return {"status": "ok"}
+    background_tasks.add_task(_process_webhook_activity, user.id, object_id)
+    return {"status": "accepted"}
 
 
 @router.post("/subscribe")

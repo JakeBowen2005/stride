@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     strava_webhook_url: str = "http://localhost:8000/api/strava/webhook"
     anthropic_api_key: str = ""
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"
+    # Where to send the browser after a successful Strava OAuth handshake.
+    frontend_url: str = "http://localhost:3000"
 
     model_config = {"env_file": ".env"}
 

@@ -42,6 +42,64 @@ WORKOUT_PATTERN = re.compile(
 )
 
 
+# ── Rate limiting ─────────────────────────────────────────────────
+
+READ_LIMIT_15MIN = 90     # Strava allows 100; leave headroom
+READ_LIMIT_DAILY = 900    # Strava allows 1000; leave headroom
+WINDOW_SECONDS = 15 * 60
+DAY_SECONDS = 24 * 60 * 60
+
+
+class StravaRateLimited(Exception):
+    """Raised when Strava's rate limit is hit and waiting is not appropriate."""
+
+    def __init__(self, retry_after_seconds: float = 900):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(f"Strava rate limit reached. Retry in ~{int(retry_after_seconds)}s.")
+
+
+class _RateLimiter:
+    """Process-local token bucket for Strava's 15-minute and daily windows.
+
+    Single-process only. If this ever runs on more than one worker, move the
+    counters into Redis or the database -- otherwise each worker will think
+    it has the whole budget.
+    """
+
+    def __init__(self):
+        self._calls: list[float] = []
+
+    def _prune(self, now: float) -> None:
+        self._calls = [t for t in self._calls if now - t < DAY_SECONDS]
+
+    def seconds_until_slot(self) -> float:
+        now = time.monotonic()
+        self._prune(now)
+        window = [t for t in self._calls if now - t < WINDOW_SECONDS]
+        if len(window) >= READ_LIMIT_15MIN:
+            return WINDOW_SECONDS - (now - window[0]) + 1
+        if len(self._calls) >= READ_LIMIT_DAILY:
+            return DAY_SECONDS - (now - self._calls[0]) + 1
+        return 0.0
+
+    async def acquire(self, max_wait: float = 0.0) -> None:
+        """Wait for a slot. Raises StravaRateLimited if the wait exceeds max_wait."""
+        wait = self.seconds_until_slot()
+        if wait > 0:
+            if wait > max_wait:
+                raise StravaRateLimited(wait)
+            await asyncio.sleep(wait)
+        self._calls.append(time.monotonic())
+
+    def record_429(self) -> None:
+        """Strava says we are over. Fill the window so we back off fully."""
+        now = time.monotonic()
+        self._calls.extend([now] * READ_LIMIT_15MIN)
+
+
+limiter = _RateLimiter()
+
+
 def get_authorization_url() -> str:
     """Generate the Strava OAuth authorization URL."""
     params = {
@@ -99,7 +157,8 @@ async def get_valid_token(user) -> str:
 
 async def fetch_activities(access_token: str, page: int = 1, per_page: int = 200) -> list[dict]:
     """Fetch a page of activities from Strava."""
-    async with httpx.AsyncClient() as client:
+    await limiter.acquire(max_wait=60)
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
             f"{STRAVA_API_BASE}/athlete/activities",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -122,15 +181,26 @@ async def fetch_all_activities(access_token: str) -> list[dict]:
     return all_activities
 
 
-async def fetch_activity_detail(access_token: str, activity_id: str) -> dict | None:
-    """Fetch detailed activity data (includes description)."""
-    async with httpx.AsyncClient() as client:
+async def fetch_activity_detail(
+    access_token: str, activity_id: str, max_wait: float = 0.0
+) -> dict | None:
+    """Fetch detailed activity data (includes description).
+
+    Raises StravaRateLimited rather than returning None on a 429, so bulk
+    callers can stop and report progress instead of grinding through
+    hundreds of failed requests.
+    """
+    await limiter.acquire(max_wait=max_wait)
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
             f"{STRAVA_API_BASE}/activities/{activity_id}",
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        if response.status_code == 429:  # rate limited
-            return None
+        if response.status_code == 429:
+            limiter.record_429()
+            raise StravaRateLimited()
+        if response.status_code == 404:
+            return None  # deleted or not visible to us
         response.raise_for_status()
         return response.json()
 
@@ -176,6 +246,32 @@ def classify_strava_workout_type(strava_type: int | None) -> str | None:
     return mapping.get(strava_type)
 
 
+def parse_local_datetime(value) -> datetime | None:
+    """Parse Strava's `start_date_local` into a NAIVE local datetime.
+
+    Strava suffixes this field with "Z" even though it is local wall-clock
+    time, not UTC. Parsing the "Z" as a UTC offset yields a tz-aware value
+    that Postgres stores shifted by the athlete's offset — runs landing on
+    the wrong calendar day, which breaks plan-to-activity matching.
+
+    A run belongs to the day the athlete ran it. Drop the fake offset.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1]
+    # Also drop any explicit offset for the same reason.
+    if "+" in text[10:]:
+        text = text[: 10 + text[10:].index("+")]
+    try:
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    except (ValueError, TypeError):
+        return None
+
+
 def parse_strava_activity(raw: dict) -> dict | None:
     """Parse a raw Strava activity into our format. Only keeps runs."""
     if raw.get("type") not in ("Run", "TrailRun", "VirtualRun"):
@@ -194,7 +290,7 @@ def parse_strava_activity(raw: dict) -> dict | None:
         "external_id": str(raw["id"]),
         "source": "strava",
         "name": raw.get("name", ""),
-        "date": raw.get("start_date_local"),
+        "date": parse_local_datetime(raw.get("start_date_local")),
         "distance_meters": distance,
         "duration_seconds": moving_time,
         "elapsed_seconds": raw.get("elapsed_time"),
@@ -233,11 +329,6 @@ async def fetch_and_save_single_activity(user: User, activity_id: str, db: Sessi
         activity = existing
     else:
         activity = Activity(user_id=user.id, **parsed)
-        if isinstance(activity.date, str):
-            try:
-                activity.date = datetime.fromisoformat(activity.date.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                pass
         db.add(activity)
 
     # Save description and splits from detail
@@ -302,7 +393,8 @@ async def sync_all_to_db(user: User, db: Session) -> dict:
 
     for i, parsed in enumerate(runs):
         existing = db.query(Activity).filter(
-            Activity.external_id == parsed["external_id"]
+            Activity.external_id == parsed["external_id"],
+            Activity.user_id == user.id,
         ).first()
 
         if existing:
@@ -312,18 +404,7 @@ async def sync_all_to_db(user: User, db: Session) -> dict:
                     setattr(existing, key, val)
             updated_count += 1
         else:
-            activity = Activity(
-                user_id=user.id,
-                **parsed,
-            )
-            # Parse date string
-            if isinstance(activity.date, str):
-                try:
-                    activity.date = datetime.fromisoformat(
-                        activity.date.replace("Z", "+00:00")
-                    )
-                except (ValueError, TypeError):
-                    pass
+            activity = Activity(user_id=user.id, **parsed)
             db.add(activity)
             new_count += 1
 
@@ -342,24 +423,29 @@ async def sync_all_to_db(user: User, db: Session) -> dict:
         .all()
     )
 
+    rate_limited = False
+    remaining = 0
     for i, act in enumerate(activities_needing_detail):
         try:
             detail = await fetch_activity_detail(token, act.external_id)
-            if detail:
-                splits_json = parse_splits_from_detail(detail)
-                if splits_json:
-                    act.splits = splits_json
-                if detail.get("description"):
-                    act.description = detail["description"]
-                    act.has_workout_description = is_workout_description(detail["description"])
-                detail_count += 1
+        except StravaRateLimited:
+            rate_limited = True
+            remaining = len(activities_needing_detail) - i
+            break
         except Exception:
-            pass
+            continue
 
-        # Rate limit: ~1 req/sec to stay under 100/15min
-        if (i + 1) % 10 == 0:
+        if detail:
+            splits_json = parse_splits_from_detail(detail)
+            if splits_json:
+                act.splits = splits_json
+            if detail.get("description"):
+                act.description = detail["description"]
+                act.has_workout_description = is_workout_description(detail["description"])
+            detail_count += 1
+
+        if (i + 1) % 25 == 0:
             db.commit()
-            await asyncio.sleep(2.0)
 
     db.commit()
 
@@ -371,6 +457,8 @@ async def sync_all_to_db(user: User, db: Session) -> dict:
         "new": new_count,
         "updated": updated_count,
         "details_fetched": detail_count,
+        "rate_limited": rate_limited,
+        "details_remaining": remaining,
     }
 
 
@@ -397,25 +485,31 @@ async def fetch_all_descriptions(user: User, db: Session) -> dict:
     found_desc = 0
     errors = 0
 
+    rate_limited = False
+    remaining = 0
     for i, act in enumerate(missing):
         if not act.external_id:
             continue
         try:
             detail = await fetch_activity_detail(token, act.external_id)
-            if detail:
-                desc = detail.get("description") or ""
-                act.description = desc
-                if desc:
-                    act.has_workout_description = is_workout_description(desc)
-                    found_desc += 1
-                fetched += 1
+        except StravaRateLimited:
+            rate_limited = True
+            remaining = len(missing) - i
+            break
         except Exception:
             errors += 1
+            continue
 
-        # Rate limit: ~10 req then 2s pause to stay under 100/15min
-        if (i + 1) % 10 == 0:
+        if detail:
+            desc = detail.get("description") or ""
+            act.description = desc
+            if desc:
+                act.has_workout_description = is_workout_description(desc)
+                found_desc += 1
+            fetched += 1
+
+        if (i + 1) % 25 == 0:
             db.commit()
-            await asyncio.sleep(2.0)
 
     db.commit()
 
@@ -424,4 +518,10 @@ async def fetch_all_descriptions(user: User, db: Session) -> dict:
         "details_fetched": fetched,
         "descriptions_found": found_desc,
         "errors": errors,
+        "rate_limited": rate_limited,
+        "remaining": remaining,
+        "note": (
+            "Rate limit reached. Re-run this endpoint in 15 minutes to continue "
+            f"({remaining} activities left)." if rate_limited else "Complete."
+        ),
     }
