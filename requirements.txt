@@ -1,0 +1,4 @@
+# Root-level requirements so Nixpacks detects a Python app when building from
+# the repo root. Building from the root (rather than Root Directory=backend)
+# is what keeps docs/ in the image — see railway.toml for why that matters.
+-r backend/requirements.txt

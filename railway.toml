@@ -1,0 +1,21 @@
+# Railway service config — lives at the REPO ROOT, not in backend/.
+#
+# Deploying with Root Directory = backend would leave docs/ out of the build
+# context entirely, and docs/ is not incidental: services/coach.py loads
+# training-principles.md, the goal-specific science doc and the athlete
+# profile into the LLM system prompt on every call. Without them the coach
+# still answers, it just answers generically — a silent quality regression
+# with no error to catch it.
+#
+# So: build from the repo root (which brings docs/ along) and start the app
+# from backend/. The root requirements.txt just points at backend's.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

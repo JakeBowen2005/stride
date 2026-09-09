@@ -23,10 +23,20 @@
 ## 1. Backend on Railway
 
 ### Create the service
-1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub** →
+1. [railway.app](https://railway.app) -> **New Project** -> **Deploy from GitHub** ->
    select `JakeBowen2005/stride`
-2. Settings → **Root Directory**: `backend`
-3. Settings → **Healthcheck Path**: `/health` (already in `railway.toml`)
+2. **Leave Root Directory blank.** Deploy from the repo root.
+
+> **Why not Root Directory = `backend`?**
+> `services/coach.py` loads `training-principles.md`, the goal-specific science
+> doc and the athlete profile into the LLM system prompt on every call. Those
+> live in `docs/`, which is a sibling of `backend/` — setting the root directory
+> to `backend` leaves them out of the image entirely. The coach would keep
+> answering, just generically, with nothing but a log line to tell you. So the
+> build runs from the root (`requirements.txt` there points at backend's) and
+> `railway.toml` starts the app with `cd backend && uvicorn ...`.
+
+3. Healthcheck path is already `/health` via the root `railway.toml`.
 
 ### Add Postgres
 **Do this rather than mounting a volume for SQLite.** SQLite on a container
@@ -55,14 +65,13 @@ for additive column migrations).
 | `SECRET_KEY` | any random 32+ chars | |
 | `DATABASE_URL` | *(injected by Railway)* | |
 
-`STRAVA_DOCS_DIR` is not needed — `coach.py` searches for the docs directory,
+`STRIDE_DOCS_DIR` is not needed — `coach.py` searches for the docs directory,
 and also honours `STRIDE_DOCS_DIR` if you ever relocate it.
 
-> **Root directory caveat.** Setting Root Directory to `backend` means `docs/`
-> is not in the build context, and the coach LLM loses all of its training
-> science. `_resolve_docs_dir()` handles this by checking several locations,
-> but if the coach starts giving generic advice, check the boot logs for
-> `[coach] WARNING: training doc not found`.
+> **Verifying the docs made it.** After the first deploy, check the logs for
+> `[coach] WARNING: training doc not found`. Silence means the science docs
+> loaded. If you see it, the build context is wrong — check Root Directory is
+> blank.
 
 ### Point Strava at it
 1. strava.com/settings/api → **Authorization Callback Domain**: your Railway
