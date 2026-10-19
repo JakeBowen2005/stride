@@ -11,6 +11,8 @@ Key design:
 - The ladder progresses volume first, then pace, then rest reduction
 """
 
+import re
+
 from app.core.pacing import format_pace, pace_range
 
 
@@ -299,6 +301,33 @@ def get_ladder(category: str, distance: str = "5k") -> list[dict]:
     return []
 
 
+REP_MILES = {"200m": 0.124274, "400m": 0.248548, "600m": 0.372823, "800m": 0.497097,
+             "1K": 0.621371, "1k": 0.621371, "1200m": 0.745645, "1mi": 1.0, "1.5mi": 1.5}
+_REP_RE = re.compile(r"(\d+x)(200m|400m|600m|800m|1K|1k|1200m|1\.5mi|1mi) at (\d+:\d{2})(?:-(\d+:\d{2}))?/mi")
+
+
+def _sec(p: str) -> int:
+    m, s = p.split(":")
+    return int(m) * 60 + int(s)
+
+
+def with_rep_times(structure: str) -> str:
+    """Write reps the way runners talk: "6x800m in 2:55-3:00 (5:50-6:00/mi)".
+
+    Per-mile paces stay in parentheses (that's what the watch shows), but the
+    rep split is what you actually look at on the track.
+    """
+    def repl(m: re.Match) -> str:
+        reps, dist, fast, slow = m.group(1), m.group(2), m.group(3), m.group(4)
+        miles = REP_MILES[dist]
+        t1 = format_pace(round(_sec(fast) * miles))
+        rng = f"{fast}-{slow}" if slow else fast
+        times = f"{t1}-{format_pace(round(_sec(slow) * miles))}" if slow else t1
+        return f"{reps}{dist} in {times} ({rng}/mi)"
+
+    return _REP_RE.sub(repl, structure)
+
+
 def get_workout_at_level(
     category: str,
     level: int,
@@ -333,13 +362,13 @@ def get_workout_at_level(
     rpf = rp - 5  # slightly faster end
     rp_range = f"{format_pace(rpf)}-{format_pace(rp)}"
 
-    structure = template["structure_template"].format(
+    structure = with_rep_times(template["structure_template"].format(
         tp=tp,
         tp_fast=tp_fast,
         ip_range=ip_range,
         sp=sp,
         rp_range=rp_range,
-    )
+    ))
 
     return {
         "name": template["name"],

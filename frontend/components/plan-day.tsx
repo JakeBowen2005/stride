@@ -5,8 +5,6 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
-  workoutTypeLabel,
-  isHardWorkout,
   formatDistance,
   formatDate,
   secondsToTime,
@@ -23,15 +21,33 @@ interface PlanDayProps {
 }
 
 function ComparisonBadge({ diffMiles }: { diffMiles: number }) {
-  const pct = Math.abs(diffMiles);
-  if (pct <= 0.3) {
-    return <Badge variant="secondary" className="text-[10px] bg-green-500/15 text-green-600">On target</Badge>;
+  const diff = Math.abs(diffMiles);
+  if (diff <= 0.3) {
+    return <Badge variant="secondary" className="text-xs">On distance</Badge>;
   }
-  return <Badge variant="secondary" className="text-[10px] bg-yellow-500/15 text-yellow-600">Off target</Badge>;
+  return (
+    <Badge variant="secondary" className="text-xs">
+      Ran {diff.toFixed(1)} mi {diffMiles > 0 ? "long" : "short"}
+    </Badge>
+  );
+}
+
+const PACE_LABELS: Record<string, string> = { above: "Faster than target", on_target: "On target", below: "Slower than target", skipped: "Skipped" };
+
+/** Specific session label instead of a generic "Quality" badge. */
+export function sessionLabel(type: string, title: string): string | null {
+  if (type === "race") return "Race";
+  if (type === "long_run") return "Long run";
+  if (type !== "workout") return null;
+  const t = title.toLowerCase();
+  if (/hill|climb/.test(t)) return "Hills";
+  if (/\d+x(200|300|400|600|800|1k|1200|1mi|1 mile)|\d+x1mi/.test(t) || /sharpener/.test(t)) return "Intervals";
+  if (/tempo|threshold|hard|sandwich|mp|pace run/.test(t)) return "Threshold";
+  return "Workout";
 }
 
 /**
- * Extract a workout title from a Strava activity description.
+ * Extract a workout title from an activity description (user notes or Garmin lap summary).
  * Looks for patterns like "6x800", "3x10min", "4x200", "2x1mile" etc.
  * Returns null if no workout pattern found (plain easy run).
  */
@@ -49,7 +65,7 @@ function extractWorkoutTitle(description: string | null): string | null {
 
 /**
  * Determine whether the actual run was a workout or an easy/recovery run.
- * Uses the Strava description to check for workout patterns.
+ * Uses the activity description to check for workout patterns.
  */
 function actualIsWorkout(description: string | null): boolean {
   if (!description) return false;
@@ -65,11 +81,15 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
   // For completed days, derive the display title from what was actually done
   const actualWorkoutTitle = hasActual ? extractWorkoutTitle(workout.actual?.description ?? null) : null;
   const actualWasWorkout = hasActual && actualIsWorkout(workout.actual?.description ?? null);
-  // Show actual title if completed: workout title from description, Strava name, or fallback
-  const displayTitle = hasActual
-    ? (actualWorkoutTitle || workout.actual?.name || workout.title)
-    : workout.title;
-  const displayIsHard = hasActual ? actualWasWorkout : isHardWorkout(workout.type);
+  // Keep the planned session as the title (it's what the athlete recognizes); what was
+  // actually run shows underneath — Garmin's auto-names ("Fullerton Running") say little.
+  const displayTitle = workout.title;
+  const actualLine = hasActual
+    ? [actualWasWorkout ? actualWorkoutTitle : null, workout.actual?.name, workout.actual?.avg_pace ? `${workout.actual.avg_pace}/mi` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const label = sessionLabel(workout.type, workout.title);
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
   const showFeedbackForm = hasActual && !hasFeedback && workout.type !== "rest";
@@ -99,12 +119,13 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium">{displayTitle}</span>
-              {displayIsHard && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0">
-                  Quality
+              {label && (
+                <Badge variant="default" className="px-1.5 py-0 text-xs">
+                  {label}
                 </Badge>
               )}
             </div>
+            {actualLine && <div className="text-xs text-muted-foreground">{actualLine}</div>}
             {workout.intervals && !hasActual && (
               <div className="font-mono text-xs text-muted-foreground">
                 {workout.intervals}
@@ -125,10 +146,10 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
             <span className="text-xs font-medium text-green-600">Done</span>
           )}
           {isToday && !hasActual && (
-            <Badge variant="secondary" className="text-[10px]">Today</Badge>
+            <Badge variant="secondary" className="text-xs">Today</Badge>
           )}
           {isPast && !hasActual && !workout.skipped && !isToday && workout.type !== "rest" && isPrescribed && (
-            <span className="text-xs text-destructive">Missed</span>
+            <span className="text-xs text-muted-foreground">Not logged</span>
           )}
           {workout.skipped && (
             <span className="text-xs text-muted-foreground">Skipped</span>
@@ -176,7 +197,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
                   )}
                 </div>
 
-                {/* Strava description */}
+                {/* Activity notes / Garmin lap summary */}
                 {workout.actual.description && (
                   <p className="text-xs text-muted-foreground italic whitespace-pre-line">
                     {workout.actual.description}
@@ -278,7 +299,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
                 )}
                 {localFeedback.pace_assessment && (
                   <span className="rounded bg-secondary px-2 py-0.5">
-                    Pace: {localFeedback.pace_assessment.replace("_", " ")}
+                    Pace: {PACE_LABELS[localFeedback.pace_assessment] ?? localFeedback.pace_assessment}
                   </span>
                 )}
                 {localFeedback.swapped && (

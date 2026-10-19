@@ -1,14 +1,14 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
 import { formatDateShort, localDateStr } from "@/lib/format";
-import type { PlanWeek as PlanWeekType, Workout } from "@/lib/types";
+import type { PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface ApiPlanDay {
   date: string;
@@ -51,6 +51,7 @@ interface ApiWeek {
   week_number: number;
   target_mileage: number;
   actual_mileage?: number;
+  phase?: WeekPhaseInfo | null;
   days: ApiPlanDay[];
 }
 
@@ -60,6 +61,8 @@ interface ApiPlan {
   end_date: string;
   block_number: number;
   is_deload: boolean;
+  is_stale?: boolean;
+  phase?: WeekPhaseInfo | null;
   weeks: ApiWeek[];
   pacing_guide: Record<string, string>;
   notes: string[];
@@ -84,6 +87,7 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
     week_number: apiWeek.week_number,
     total_miles: apiWeek.target_mileage,
     actual_miles: apiWeek.actual_mileage,
+    phase: apiWeek.phase ?? null,
     workouts: apiWeek.days.map((d, i) => ({
       id: apiWeek.week_number * 100 + i,
       date: d.date,
@@ -104,16 +108,30 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
   };
 }
 
+/** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026. */
+function pacingRows(g: Record<string, string>): [string, string, string][] {
+  const rows: [string, string, string | undefined][] = [
+    ["Easy", "conversational", g.easy],
+    ["Steady", "long-run finishes", g.steady],
+    ["Tempo", "continuous", g.tempo ?? g.current_tempo],
+    ["Threshold reps", "e.g. 2x10min", g.threshold_reps ?? g.current_threshold],
+    ["Intervals", "800m-mile reps", g.intervals ?? g.current_interval],
+    ["Goal race", "target", g.goal_race_pace],
+  ];
+  return rows.filter((r): r is [string, string, string] => !!r[2]);
+}
+
 export default function PlanPage() {
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noPlan, setNoPlan] = useState(false);
+  const [showPast, setShowPast] = useState(false);
 
   const fetchPlan = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/plans/1/current`);
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/current`));
       if (res.status === 404) {
         setNoPlan(true);
         return;
@@ -136,7 +154,7 @@ export default function PlanPage() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/api/plans/1/generate`, {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -157,7 +175,8 @@ export default function PlanPage() {
   }, [fetchPlan]);
 
   useEffect(() => {
-    fetchPlan();
+    const id = setTimeout(fetchPlan, 0);
+    return () => clearTimeout(id);
   }, [fetchPlan]);
 
   if (loading) {
@@ -207,6 +226,38 @@ export default function PlanPage() {
   const currentWeekIndex = weeks.findIndex((w) =>
     w.workouts.some((wo) => wo.date >= today)
   );
+  // Weeks fully in the past are tucked away so the plan opens on this week
+  const pastWeeks = currentWeekIndex > 0 ? weeks.slice(0, currentWeekIndex) : [];
+  const visibleWeeks = currentWeekIndex > 0 ? weeks.slice(currentWeekIndex) : weeks;
+
+  if (plan.is_stale) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <Card>
+          <CardContent className="space-y-3 py-8 text-center">
+            <p className="font-medium">Your last training block ended {formatDateShort(plan.end_date)}.</p>
+            <p className="mx-auto max-w-sm text-sm text-muted-foreground">
+              Generate a fresh 2-week block. It&apos;s built from your latest Garmin runs, current fitness and{" "}
+              {plan.goal.race_date ? "where you are relative to race day" : "your goal"}.
+            </p>
+            <Button onClick={generatePlan} disabled={generating}>
+              {generating ? "Building your plan…" : "Generate this week's plan"}
+            </Button>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <button
+              className="block w-full text-xs text-muted-foreground underline underline-offset-2"
+              onClick={() => setShowPast((v) => !v)}
+            >
+              {showPast ? "Hide" : "Show"} last block
+            </button>
+          </CardContent>
+        </Card>
+        {showPast &&
+          weeks.map((week) => <PlanWeek key={week.week_number} week={week} isCurrent={false} />)}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -221,6 +272,20 @@ export default function PlanPage() {
             {formatDateShort(plan.start_date)} &ndash;{" "}
             {formatDateShort(plan.end_date)}
           </span>
+          {plan.phase && plan.phase.phase !== "general" && (
+            <>
+              <span>&middot;</span>
+              <Badge variant={plan.phase.phase === "race_week" ? "default" : "secondary"} className="text-xs">
+                {plan.phase.label}
+              </Badge>
+            </>
+          )}
+          {plan.goal.race_date && (
+            <>
+              <span>&middot;</span>
+              <span>Race {formatDateShort(plan.goal.race_date)}</span>
+            </>
+          )}
           {plan.is_deload && (
             <>
               <span>&middot;</span>
@@ -232,42 +297,41 @@ export default function PlanPage() {
         </div>
       </div>
 
-      {/* Pacing Guide */}
+      {/* Pacing Guide — the same numbers the workouts below use */}
       <Card>
         <CardContent className="pt-4">
-          <h3 className="text-sm font-medium mb-2">Pacing Guide</h3>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Easy</span>
-              <span className="font-mono">{plan.pacing_guide.easy}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tempo</span>
-              <span className="font-mono">{plan.pacing_guide.current_tempo}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Threshold</span>
-              <span className="font-mono">{plan.pacing_guide.current_threshold}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Intervals</span>
-              <span className="font-mono">{plan.pacing_guide.current_interval}/mi</span>
-            </div>
-            {plan.pacing_guide.goal_race_pace && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Goal Race</span>
-                <span className="font-mono">{plan.pacing_guide.goal_race_pace}/mi</span>
+          <h3 className="mb-2 text-sm font-medium">Pacing Guide</h3>
+          <div className="space-y-1 text-sm">
+            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+              <div key={label} className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">
+                  {label} <span className="text-xs">· {hint}</span>
+                </span>
+                <span className="shrink-0 font-mono">{value}/mi</span>
               </div>
-            )}
+            ))}
           </div>
         </CardContent>
       </Card>
 
-      {weeks.map((week, i) => (
+      {pastWeeks.length > 0 && (
+        <button
+          className="text-xs text-muted-foreground underline underline-offset-2"
+          onClick={() => setShowPast((v) => !v)}
+        >
+          {showPast ? "Hide" : "Show"} {pastWeeks.length} completed week{pastWeeks.length > 1 ? "s" : ""}
+        </button>
+      )}
+      {showPast &&
+        pastWeeks.map((week) => (
+          <PlanWeek key={week.week_number} week={week} isCurrent={false} onPlanChanged={() => fetchPlan()} />
+        ))}
+
+      {visibleWeeks.map((week, i) => (
         <PlanWeek
           key={week.week_number}
           week={week}
-          isCurrent={i === (currentWeekIndex >= 0 ? currentWeekIndex : 0)}
+          isCurrent={i === 0 && currentWeekIndex >= 0}
           onPlanChanged={() => {
             setLoading(true);
             fetchPlan();

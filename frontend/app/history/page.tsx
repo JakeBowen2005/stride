@@ -1,5 +1,6 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RunList } from "@/components/run-list";
@@ -7,7 +8,6 @@ import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type FilterType = "all" | "workouts" | "long_runs" | "easy";
 
@@ -22,8 +22,8 @@ export default function HistoryPage() {
     async function load() {
       try {
         const [actRes, mileageRes] = await Promise.all([
-          fetch(`${API}/api/analysis/1/activities?type=${filter}&limit=200`),
-          fetch(`${API}/api/analysis/1/weekly-mileage?weeks=16`),
+          fetch(apiUrl(`/analysis/${USER_ID}/activities?type=${filter}&limit=200`)),
+          fetch(apiUrl(`/analysis/${USER_ID}/weekly-mileage?weeks=16`)),
         ]);
 
         if (actRes.ok) {

@@ -1,9 +1,9 @@
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -29,7 +29,7 @@ class PlanRequest(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    feel_rating: int  # 1-10
+    feel_rating: int = Field(ge=1, le=10)  # 1 = awful, 10 = felt amazing
     feel_notes: str | None = None
     pace_assessment: str | None = None  # above, on_target, below, skipped
     swapped: bool = False
@@ -113,6 +113,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         first_prescribe_date=params.get("first_prescribe_date"),
         block_number=block_number,
         progression_state=progression_state,
+        race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
+        terrain=goal.terrain,
     )
 
     goal_snapshot = {
@@ -121,6 +123,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "target_time": goal.target_time_seconds,
         "race_date": goal.race_date,
         "description": goal.description,
+        "terrain": goal.terrain,
     }
     athlete_snapshot = {
         "name": user.name,
@@ -142,6 +145,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         notes=json.dumps(plan_data["notes"]),
         goal_snapshot=json.dumps(goal_snapshot),
         athlete_snapshot=json.dumps(athlete_snapshot),
+        phases=json.dumps(plan_data.get("phases", [])),
+        prescribed_from=(params.get("first_prescribe_date") or params["start_date"]).isoformat(),
     )
     db.add(db_plan)
     db.flush()  # get the plan ID
@@ -188,24 +193,24 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
     today = date.today().isoformat()
 
+    # One query for every activity in the plan window, grouped by local date
+    by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
+
     # Match past days to actual activities (store primary activity_id for backwards compat)
     for pw in planned_workouts:
-        if pw.date > today or pw.type == "rest":
+        if pw.date > today or pw.type == "rest" or pw.activity_id:
             continue
-        if pw.activity_id:
-            continue  # already matched
-
-        activities = _get_activities_for_date(pw.date, db_plan.user_id, db)
+        activities = by_date.get(pw.date)
         if activities:
-            # Store the primary (longest) activity for the FK
-            primary = max(activities, key=lambda a: a.distance_meters)
-            pw.activity_id = primary.id
-            db.add(pw)
-
+            pw.activity_id = max(activities, key=lambda a: a.distance_meters).id
     db.commit()
 
     # Build response
-    plan_created_date = db_plan.created_at.date().isoformat() if db_plan.created_at else db_plan.start_date
+    # Days before generation were history, not prescriptions. Older plans fall back to
+    # created_at (stored in UTC, so it can be a day ahead in the evening — hence the new column).
+    plan_created_date = db_plan.prescribed_from or (
+        db_plan.created_at.date().isoformat() if db_plan.created_at else db_plan.start_date
+    )
 
     weeks_map: dict[int, dict] = {}
     for pw in planned_workouts:
@@ -222,7 +227,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         comparison = None
         # Get ALL activities for this date (not just the matched one)
         if pw.activity_id:
-            activities = _get_activities_for_date(pw.date, db_plan.user_id, db)
+            activities = by_date.get(pw.date)
             if activities:
                 actual = _build_actual_aggregated(activities)
                 if is_prescribed:
@@ -253,9 +258,11 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         }
         weeks_map[pw.week_number]["days"].append(day_data)
 
+    phases = json.loads(db_plan.phases) if db_plan.phases else []
     weeks = []
     for wk_num in sorted(weeks_map.keys()):
         wk = weeks_map[wk_num]
+        wk["phase"] = phases[wk_num - 1] if 0 < wk_num <= len(phases) else None
         wk["target_mileage"] = round(sum(d["distance_miles"] for d in wk["days"]), 1)
         # Calculate actual mileage from matched activities
         actual_mileage = 0
@@ -271,6 +278,9 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         "end_date": db_plan.end_date,
         "block_number": db_plan.block_number,
         "is_deload": db_plan.is_deload,
+        # A plan whose last day is behind us shouldn't be shown as "current"
+        "is_stale": db_plan.end_date < today,
+        "phase": _current_phase(weeks, today),
         "weeks": weeks,
         "pacing_guide": json.loads(db_plan.pacing_guide) if db_plan.pacing_guide else {},
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
@@ -292,11 +302,14 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
         "target_time": goal.target_time_seconds,
         "race_date": goal.race_date,
         "description": goal.description,
+        "terrain": goal.terrain,
+        "elevation_gain_ft": goal.elevation_gain_ft,
+        "target_weekly_mileage": goal.target_weekly_mileage,
     }
 
 
 @router.post("/{user_id}/feedback/{feedback_date}")
-async def submit_feedback(
+def submit_feedback(
     user_id: int, feedback_date: str, req: FeedbackRequest, db: Session = Depends(get_db)
 ):
     """Submit post-run feedback for a specific day and get coach response."""
@@ -311,6 +324,10 @@ async def submit_feedback(
     ).first()
     if not pw:
         raise HTTPException(status_code=404, detail="No planned workout for this date")
+
+    # Re-submitting edits the rating/notes but must not re-run plan side effects
+    # (ladder progression, fatigue downgrade, rescheduling) — a double tap would apply them twice.
+    is_edit = pw.feel_rating is not None
 
     # Save feedback to PlannedWorkout
     pw.feel_rating = req.feel_rating
@@ -327,14 +344,17 @@ async def submit_feedback(
         primary.feel_rating = req.feel_rating
         primary.feel_notes = req.feel_notes
 
-    # Get coach response
+    # Persist the athlete's input before anything that can fail (LLM call)
+    db.commit()
+
+    # Get coach response (never raises — falls back to a template)
     from app.services.coach import get_coach_feedback
-    coach_response = await get_coach_feedback(user_id, pw, activities, req, db)
+    coach_response = get_coach_feedback(user_id, pw, activities, req, db)
     pw.coach_response = coach_response
 
     # Evaluate workout and update progression state (only for hard workout days)
     evaluation_decision = None
-    if pw.type == "workout" and not req.swapped:
+    if pw.type == "workout" and not req.swapped and not is_edit:
         # Determine which category this workout belongs to
         workout_category = _detect_workout_category(pw.title)
         if workout_category:
@@ -375,7 +395,7 @@ async def submit_feedback(
 
     # If a hard workout was swapped, reschedule based on user intent
     rescheduled_date = None
-    if req.swapped and pw.type == "workout":
+    if req.swapped and pw.type == "workout" and not is_edit:
         hard_swap_types = {"tempo", "intervals", "threshold"}
         # Use explicit desired_reschedule_type if provided, fall back to parsing swap_reason
         reschedule_type = req.desired_reschedule_type
@@ -414,7 +434,7 @@ async def submit_feedback(
                 rescheduled_date = next_easy.date
 
     # If feel rating is low (fatigued), reduce intensity of next hard day
-    if req.feel_rating <= 4 and not req.swapped:
+    if req.feel_rating <= 4 and not req.swapped and not is_edit:
         next_hard = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == db_plan.id,
             PlannedWorkout.date > feedback_date,
@@ -444,9 +464,29 @@ async def submit_feedback(
         "swapped": pw.swapped,
         "coach_response": coach_response,
         "rescheduled_to": rescheduled_date,
-        "plan_adjusted": True,
+        "plan_adjusted": not is_edit,
         "progression_decision": evaluation_decision,
     }
+
+
+def _current_phase(weeks: list[dict], today: str) -> dict | None:
+    """Phase of the week containing today (or the first week if the plan starts later)."""
+    for wk in weeks:
+        dates = [d["date"] for d in wk["days"]]
+        if dates and dates[0] <= today <= dates[-1]:
+            return wk.get("phase")
+    return weeks[0].get("phase") if weeks else None
+
+
+def _activities_by_date(user_id: int, start: str, end: str, db: Session) -> dict[str, list[Activity]]:
+    """All activities between two ISO dates (inclusive), keyed by local calendar date.
+    Range filter on the raw column so the (user_id, date) index is usable."""
+    lo = datetime.fromisoformat(start)
+    hi = datetime.fromisoformat(end) + timedelta(days=1)
+    grouped: dict[str, list[Activity]] = {}
+    for a in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= lo, Activity.date < hi):
+        grouped.setdefault(a.date.date().isoformat(), []).append(a)
+    return grouped
 
 
 def _get_activities_for_date(date_str: str, user_id: int, db: Session) -> list[Activity]:

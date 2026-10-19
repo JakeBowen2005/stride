@@ -1,0 +1,163 @@
+"""End-to-end API tests against a temp SQLite DB (see conftest.py)."""
+
+import json
+from datetime import date, datetime, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.database import Base, SessionLocal, engine
+from app.main import app
+from app.models.activity import Activity
+from app.models.garmin import GarminConnection
+from app.models.plan import Plan, PlannedWorkout
+from app.models.progression import WorkoutProgression
+from app.models.user import Goal, User
+from app.services import garmin
+
+client = TestClient(app)
+MI = 1609.34
+
+
+@pytest.fixture(autouse=True)
+def fresh_db():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday"))
+    db.add(Goal(user_id=1, goal_type="race", race_distance="5k", target_time_seconds=1020, active=True))
+    db.commit()
+    db.close()
+    yield
+
+
+def _seed_runs(days: int = 60):
+    db = SessionLocal()
+    for i in range(days):
+        d = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0) - timedelta(days=i + 1)
+        if d.weekday() == 4:
+            continue
+        db.add(Activity(user_id=1, source="garmin", external_id=f"g{i}", name="Run", date=d,
+                        distance_meters=6 * MI, duration_seconds=6 * 540, average_pace_per_km=540 / 1.60934))
+    db.commit()
+    db.close()
+
+
+def test_generate_plan_prescribes_today():
+    _seed_runs()
+    r = client.post("/api/plans/1/generate")
+    assert r.status_code == 200, r.text
+    db = SessionLocal()
+    plan = db.query(Plan).filter(Plan.is_active == True).one()  # noqa: E712
+    assert plan.prescribed_from == date.today().isoformat()
+    db.close()
+    current = client.get("/api/plans/1/current").json()
+    today = next(d for w in current["weeks"] for d in w["days"] if d["date"] == date.today().isoformat())
+    assert today["prescribed"] is True
+    assert current["is_stale"] is False
+
+
+def _workout_day_with_run() -> str:
+    """Active plan whose day today is a 6x800m workout, plus a matching run."""
+    db = SessionLocal()
+    today = date.today().isoformat()
+    plan = Plan(user_id=1, start_date=today, end_date=(date.today() + timedelta(days=13)).isoformat(),
+                is_active=True, prescribed_from=today)
+    db.add(plan)
+    db.flush()
+    db.add(PlannedWorkout(plan_id=plan.id, date=today, day_name="monday", week_number=1, type="workout",
+                          title="6x800m", description="6x800m at 5:50-6:00/mi", distance_miles=6.5))
+    db.add(PlannedWorkout(plan_id=plan.id, date=(date.today() + timedelta(days=2)).isoformat(), day_name="wed",
+                          week_number=1, type="workout", title="2x10min Hard", distance_miles=5.5))
+    db.add(PlannedWorkout(plan_id=plan.id, date=(date.today() + timedelta(days=4)).isoformat(), day_name="fri",
+                          week_number=1, type="workout", title="4x1mi", distance_miles=8))
+    db.add(Activity(user_id=1, source="garmin", external_id="w1", name="Track", date=datetime.now(),
+                    distance_meters=6.5 * MI, duration_seconds=6.5 * 420,
+                    description="Garmin laps: 6x800 (2:55, 2:56, 2:54, 2:55, 2:56, 2:55)", has_workout_description=True))
+    db.add(WorkoutProgression(user_id=1, category="intervals", current_level=5, sessions_at_level=0, format_rotation=0))
+    db.commit()
+    db.close()
+    return today
+
+
+def test_feedback_resubmit_does_not_repeat_side_effects():
+    today = _workout_day_with_run()
+    body = {"feel_rating": 3, "pace_assessment": "on_target"}
+
+    first = client.post(f"/api/plans/1/feedback/{today}", json=body)
+    assert first.status_code == 200, first.text
+    db = SessionLocal()
+    level_after_first = db.query(WorkoutProgression).filter_by(category="intervals").one().current_level
+    easy_after_first = db.query(PlannedWorkout).filter(PlannedWorkout.type == "easy").count()
+    db.close()
+    assert easy_after_first == 1  # feel 3 downgraded exactly the next hard day
+
+    second = client.post(f"/api/plans/1/feedback/{today}", json={**body, "feel_notes": "edited"})
+    assert second.status_code == 200
+    assert second.json()["plan_adjusted"] is False
+    db = SessionLocal()
+    assert db.query(WorkoutProgression).filter_by(category="intervals").one().current_level == level_after_first
+    assert db.query(PlannedWorkout).filter(PlannedWorkout.type == "easy").count() == 1  # not a second downgrade
+    assert db.query(PlannedWorkout).filter_by(date=today).one().feel_notes == "edited"
+    db.close()
+
+
+def test_feedback_rating_is_validated():
+    today = _workout_day_with_run()
+    assert client.post(f"/api/plans/1/feedback/{today}", json={"feel_rating": 11}).status_code == 422
+
+
+class FakeGarmin:
+    def __init__(self, ids):
+        self.ids = ids
+        self.split_calls = []
+
+    def get_full_name(self):
+        return "Test Runner"
+
+    def get_activities(self, start, limit):
+        page = self.ids[start:start + limit]
+        return [{"activityId": i, "activityName": "Run", "activityType": {"typeKey": "running"},
+                 "startTimeLocal": (datetime(2026, 9, 1) - timedelta(days=n + start)).strftime("%Y-%m-%d %H:%M:%S"),
+                 "distance": 8000, "duration": 2700, "movingDuration": 2700} for n, i in enumerate(page)]
+
+    def get_activity_splits(self, aid):
+        self.split_calls.append(aid)
+        return {"lapDTOs": []}
+
+    def get_activity(self, aid):
+        return {}
+
+
+def test_interrupted_full_import_resumes(monkeypatch):
+    monkeypatch.setattr(garmin, "FULL_SYNC_DELAY", 0)
+    fake = FakeGarmin(list(range(1, 151)))  # 150 runs, newest first
+    monkeypatch.setattr(garmin, "get_client", lambda: fake)
+    db = SessionLocal()
+    # Simulate an import that died after storing the 40 newest runs
+    for n, i in enumerate(range(1, 41)):
+        db.add(Activity(user_id=1, source="garmin", external_id=str(i), name="Run",
+                        date=datetime(2026, 9, 1) - timedelta(days=n), distance_meters=8000, duration_seconds=2700))
+    db.add(GarminConnection(user_id=1, connected=True, full_sync_done=False))
+    db.commit()
+
+    result = garmin.sync_garmin(1, db)
+    assert result["new"] == 110  # backfilled the rest instead of stopping at the first known run
+    assert "1" not in fake.split_calls  # didn't redo already-imported runs
+    assert db.query(GarminConnection).filter_by(user_id=1).one().full_sync_done is True
+    db.close()
+
+
+def test_garmin_status_get_does_not_write():
+    r = client.get("/api/garmin/status/1")
+    assert r.status_code == 200 and r.json()["connected"] is False
+    db = SessionLocal()
+    assert db.query(GarminConnection).count() == 0
+    db.close()
+
+
+def test_wellness_endpoint_shape():
+    r = client.get("/api/wellness/1?days=7")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["today"] is None and body["history"] == [] and body["signals"] == []

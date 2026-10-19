@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useGarminStatus } from "@/components/garmin-sync";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,8 +55,9 @@ export default function OnboardingPage() {
   const [raceDate, setRaceDate] = useState("");
   const [targetMileage, setTargetMileage] = useState([50]);
 
-  // Step 6: Strava
-  const [stravaConnected, setStravaConnected] = useState(false);
+  // Step 6: Garmin
+  const garmin = useGarminStatus();
+  const garminConnected = !!garmin?.tokens_present;
 
   function next() {
     if (step < TOTAL_STEPS - 1) setStep(step + 1);
@@ -366,30 +368,30 @@ export default function OnboardingPage() {
       <OnboardingLayout
         step={step}
         totalSteps={TOTAL_STEPS}
-        title="Connect Strava"
-        subtitle="We'll pull your run history to understand your fitness level."
+        title="Connect Garmin"
+        subtitle="We'll pull your run history from Garmin Connect to understand your fitness level."
         onNext={next}
         onBack={back}
       >
         <div className="flex flex-col items-center gap-4 py-8">
-          {stravaConnected ? (
+          {garminConnected ? (
             <div className="text-center">
               <div className="text-lg font-semibold text-foreground">
-                Connected
+                Connected{garmin?.display_name ? ` as ${garmin.display_name}` : ""}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                We&apos;ll import your running history when you finish setup.
+                Your Garmin runs sync automatically — new activities show up a few minutes after upload.
               </p>
             </div>
           ) : (
             <>
-              <Button
-                size="lg"
-                className="bg-[#FC4C02] hover:bg-[#e04502] text-white"
-                onClick={() => setStravaConnected(true)}
-              >
-                Connect with Strava
-              </Button>
+              <div className="w-full max-w-sm space-y-2 rounded-md bg-secondary/40 p-4 text-sm">
+                <p className="font-medium">On your computer, run:</p>
+                <pre className="overflow-x-auto rounded bg-background p-2 text-xs">
+                  cd backend{"\n"}venv/bin/python garmin_login.py
+                </pre>
+                <p className="text-muted-foreground">Sign in with your Garmin account there, then reload this page.</p>
+              </div>
               <button
                 className="text-sm text-muted-foreground underline underline-offset-2"
                 onClick={next}
@@ -432,7 +434,7 @@ export default function OnboardingPage() {
                 : goalType?.replace("_", " ") || "Not set"
           }
         />
-        <ReviewRow label="Strava" value={stravaConnected ? "Connected" : "Not connected"} />
+        <ReviewRow label="Garmin" value={garminConnected ? "Connected" : "Not connected"} />
       </div>
     </OnboardingLayout>
   );

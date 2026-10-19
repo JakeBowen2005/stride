@@ -1,0 +1,26 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { AUTH_COOKIE, authToken } from "@/lib/auth";
+
+// Password gate for the whole app (pages AND the /api proxy to the backend), because
+// start.sh serves on the LAN and the data is personal health data. Disabled when
+// STRIDE_PASSWORD is unset (e.g. local dev on localhost only).
+export function proxy(request: NextRequest) {
+  const password = process.env.STRIDE_PASSWORD;
+  if (!password) return NextResponse.next();
+
+  if (request.cookies.get(AUTH_COOKIE)?.value === authToken(password)) {
+    return NextResponse.next();
+  }
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ detail: "Not signed in" }, { status: 401 });
+  }
+  const login = new URL("/login", request.url);
+  login.searchParams.set("next", request.nextUrl.pathname);
+  return NextResponse.redirect(login);
+}
+
+export const config = {
+  // Everything except the login flow, Next internals and install assets (the home-screen
+  // icon and manifest must load before sign-in).
+  matcher: ["/((?!login|auth|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
+};

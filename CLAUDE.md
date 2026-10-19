@@ -4,7 +4,7 @@
 
 ## Vision
 
-Stride is an AI-powered training platform built exclusively for runners. It generates personalized, science-based training plans that adapt in real-time based on athlete performance data from Garmin and Strava. Unlike Garmin Coach, TrainingPeaks, or Runna, Stride focuses solely on running with deep specificity — real workouts that real competitive runners use, not generic cookie-cutter plans.
+Stride is an AI-powered training platform built exclusively for runners. It generates personalized, science-based training plans that adapt in real-time based on athlete performance data from Garmin. Unlike Garmin Coach, TrainingPeaks, or Runna, Stride focuses solely on running with deep specificity — real workouts that real competitive runners use, not generic cookie-cutter plans.
 
 The core loop: **Onboard → Sync Data → Set Goal → Generate 2-Week Rolling Plan → Run → Analyze → Adjust → Repeat**
 
@@ -55,10 +55,17 @@ Every workout includes a prescribed warmup and cooldown (distance or time-based 
 - Long run can move to Sunday for marathon-focused athletes
 - User sets preferred rest days; app can suggest additional rest if fatigue detected
 
-### Periodization
-- Competitive athletes with race goals: Base → Build → Peak → Taper (traditional)
-- General fitness / beginners: Fluid progression, no rigid phases
-- Taper: ~2 weeks for marathon, ~1 week for 5K (auto-calculated from race date)
+### Periodization (implemented: `backend/app/core/periodization.py`)
+- Competitive athletes with race goals: Base → Build → Peak → Taper → Race week → Post-race recovery,
+  counted back from `Goal.race_date` per week; each plan week carries its phase
+- General fitness / beginners / no race date: Fluid progression ("general"), no rigid phases
+- Taper: ~2 weeks for marathon, ~1 week for 5K, 3 weeks for 100mi (auto-calculated from race date);
+  volume drops, intensity stays. Race week = sharpener ≥3 days out + shakeout + race day
+- Ultras (50k/50mi/100k/100mi): time-based long runs with fueling targets, back-to-back weekends
+  every other build/peak week, hills instead of track intervals on trail/mountain goals
+  (`backend/app/core/special_weeks.py`). Readiness gates in `check_readiness` (fail safe:
+  suggest a stepping-stone race; the athlete can override)
+- Safety net: `enforce_no_back_to_back_hard` downgrades any workout that lands next to another hard day
 
 ### Mileage Building
 - Beginners: 10% weekly increase rule, strictly enforced
@@ -80,8 +87,8 @@ Users select from:
 3. **General Fitness** — Start running consistently, no specific target
 4. **Return from Injury/Break** — Conservative rebuild plan
 
-Distances supported (Phase 1): 5K, 10K, Half Marathon, Marathon
-Distances supported (Phase 2+): 800m, Mile, 50K, 50mi, 100mi
+Distances supported: 5K, 10K, Half Marathon, Marathon, 50K, 50mi, 100K, 100mi
+Distances supported (Phase 2+): 800m, Mile
 
 ## User Onboarding
 
@@ -93,24 +100,23 @@ Distances supported (Phase 2+): 800m, Mile, 50K, 50mi, 100mi
 6. Preferred units (miles or kilometers)
 7. Preferred workout format (time-based or distance-based)
 8. Sleep quality input (simple scale)
-9. Connect Strava and/or Garmin account (or manual entry option)
+9. Connect Garmin account (or manual entry option)
 10. Select goal from goal types above
 
 ## Data Integration
 
-### Strava API
-- OAuth2 authentication
-- Pull all running activities (ignore other sport types)
-- Historical data: pull everything available
-- Webhook subscription for automatic sync (preferred)
-- Data fields: distance, duration, pace, splits, heart rate, cadence, elevation gain
-
-### Garmin Connect API
-- OAuth1.0a authentication
-- **Garmin takes priority** if both connected
-- Pull all running activities
-- Historical data: all available
-- Data fields: same as Strava + ground contact time, vertical oscillation, training effect (if available)
+### Garmin Connect (primary and only sync source; Strava code was removed Oct 2026)
+- Official Garmin Activity API is enterprise-only and paused for new applicants, so Stride uses
+  the `garminconnect` Python library (logs in as the user). One-time login: `backend/garmin_login.py`,
+  which saves tokens to `backend/.garmin/` (never commit; the password is never stored)
+- No webhooks for personal use, so the backend polls every `GARMIN_POLL_MINUTES` (default 10) and the
+  frontend triggers a sync when the app is opened/foregrounded
+- Pull all running activity types (running, trail, treadmill, track, ultra); ignore everything else
+- Laps are stored as splits; `services/lap_analyzer.py` turns laps into workout text
+  ("6x800 (3:02, ...)") so the pace calibrator and workout evaluator work without hand-written notes
+- Legacy Strava-imported rows (`source="strava"`) are matched by start time + distance and upgraded in place
+- Data fields: distance, duration, pace, laps, HR, cadence, elevation, training effect, VO2max,
+  ground contact time, vertical oscillation, training load
 
 ### Manual Entry
 - For users without a watch
@@ -251,27 +257,24 @@ stride/
 The smallest version that delivers value:
 
 1. **Onboarding flow** — Collect user info, running history, PRs, goal selection
-2. **Strava OAuth** — Connect and pull historical running data
+2. **Garmin sync** — Connect and pull historical running data, auto-sync new runs
 3. **Athlete assessment** — Analyze imported data to determine baseline fitness
 4. **2-week plan generation** — AI generates first training block based on goal + baseline
 5. **Daily workout view** — See today's workout with description, paces, warmup/cooldown, and purpose
-6. **Post-run sync + analysis** — Auto-sync from Strava, prompt for feel, LLM analyzes
+6. **Post-run sync + analysis** — Auto-sync from Garmin, prompt for feel, LLM analyzes
 7. **Plan adjustment** — Based on performance, adjust remaining days or generate next 2-week block
 8. **Basic dashboard** — Weekly mileage (hero number), workout pace vs target graph, mileage over time graph
 9. **Light mode UI** — Clean, simple, running-focused
 
 ### What's NOT in Phase 1
-- Garmin integration (Phase 2 — Strava is easier to start with)
 - Race predictor
 - Weather adjustments
 - Mobile app
 - User accounts / cloud storage (local SQLite + local auth)
-- Ultra distance support
 - Push workouts to watch
 - Coach mode / multi-athlete
 
 ## Phase 2 Ideas
-- Garmin Connect integration
 - Weather-adjusted pace recommendations
 - Race time predictor (VDOT-based)
 - Cloud database + user accounts (email/password auth)
@@ -324,4 +327,9 @@ uvicorn app.main:app --reload --port 8000
 # Frontend
 cd frontend && npm install
 npm run dev  # runs on port 3000
+
+# Everything at once (prod build, LAN-accessible for phone) — prints phone URL
+./start.sh        # or ./start.sh dev
+# One-time Garmin login
+cd backend && venv/bin/python garmin_login.py
 ```

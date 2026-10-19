@@ -24,6 +24,12 @@ out/
 .DS_Store
 Thumbs.db
 
-# Database
+# Database (incl. SQLite WAL/shared-memory side files — they hold live data)
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 *.sqlite3
+
+# Garmin session tokens (created by backend/garmin_login.py)
+.garmin/

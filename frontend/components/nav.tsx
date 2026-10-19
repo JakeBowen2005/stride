@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CalendarDays, History, Settings, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "/", label: "Today" },
-  { href: "/plan", label: "Plan" },
-  { href: "/history", label: "History" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", label: "Today", icon: Sun },
+  { href: "/plan", label: "Plan", icon: CalendarDays },
+  { href: "/history", label: "History", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Nav() {
@@ -51,8 +52,8 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background sm:hidden">
-      <div className="flex h-14 items-center justify-around">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
+      <div className="flex h-14 items-stretch">
         {links.map((link) => {
           const active =
             link.href === "/"
@@ -62,11 +63,13 @@ export function MobileNav() {
             <Link
               key={link.href}
               href={link.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex flex-col items-center gap-0.5 text-xs font-medium transition-colors",
+                "flex flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors",
                 active ? "text-foreground" : "text-muted-foreground"
               )}
             >
+              <link.icon className="size-5" aria-hidden="true" />
               {link.label}
             </Link>
           );

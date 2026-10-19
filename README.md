@@ -1,15 +1,18 @@
 # Stride — AI-Powered Running Coach
 
-A personal training platform built exclusively for runners. Generates science-based 2-week rolling training plans that adapt based on real performance data from Strava.
+A personal training platform built exclusively for runners. Generates science-based 2-week rolling training plans that adapt based on real performance data from Garmin Connect.
 
 Built by Jake Bowen (CS junior at CSUF, 2:58 marathoner, targeting sub-17 5K).
 
 ## What It Does
 
-- **Syncs all Strava data** — pulls every run, description, splits, heart rate, cadence
-- **Calibrates paces from real workouts** — parses Strava descriptions to extract actual interval times, tempo paces, threshold paces (not theoretical calculations)
+- **Syncs all Garmin data automatically** — every run, laps, heart rate, cadence, training effect, VO2max; new watch uploads appear within ~10 minutes (or instantly when you open the app)
+- **Reads workouts from your laps** — Garmin laps are turned into workout summaries ("6x800 (3:02, 3:04…)"), so paces calibrate from what you actually ran, with no typing needed
+- **Keeps your Strava history** — the 467 runs imported from Strava earlier are matched to their Garmin copies, not duplicated
 - **Generates 2-week rolling plans** — grounded in current fitness, not goal time. Mileage ramps conservatively using headroom-based progression
-- **Classifies every run** — workout, long run, easy, recovery based on Strava workout type and description analysis
+- **Periodizes toward race day** — set a race date and each week is placed in base → build → peak → taper → race week → recovery, with a real taper and race-week sharpener
+- **Ultra support (50K–100 mi)** — time-on-feet long runs with fueling targets, back-to-back weekends, hill work for trail/mountain races, and readiness checks that suggest a stepping-stone race when a goal is too big too soon
+- **Classifies every run** — workout, long run, easy, recovery based on Garmin event type, training effect, lap analysis, and notes
 - **Detects PRs** — scans all activities for best times at 10 standard distances (0.5mi to marathon)
 - **Post-run analysis** — tracks feel ratings, shows workout breakdown with average/range calculations
 - **Dashboard** — last week's mileage, current goal, next workout, last 7 days of runs
@@ -35,7 +38,7 @@ Key principles:
 ### Backend
 - **FastAPI** — async Python API
 - **SQLAlchemy** — ORM with SQLite (PostgreSQL for production)
-- **Strava OAuth2** — full activity sync with token refresh
+- **Garmin Connect** — `garminconnect` client, background auto-sync loop
 - **Pace Calibrator** — regex-based parser for workout descriptions
 - **Plan Engine** — headroom-based mileage ramp, physiological pace progression
 
@@ -60,11 +63,12 @@ stride/
 │   │   │   ├── user.py          # User + Goal models
 │   │   │   └── activity.py      # Activity + PersonalRecord models
 │   │   ├── api/
-│   │   │   ├── auth.py          # Strava OAuth flow
+│   │   │   ├── garmin.py        # Garmin status / sync / full re-import
 │   │   │   ├── analysis.py      # Analysis, PRs, activities, classification endpoints
 │   │   │   └── plans.py         # Plan generation + goal endpoints
 │   │   ├── services/
-│   │   │   ├── strava.py        # Strava API integration (sync, descriptions)
+│   │   │   ├── garmin.py        # Garmin Connect sync (incremental + full, Strava-history merge)
+│   │   │   ├── lap_analyzer.py  # Garmin laps → workout summaries
 │   │   │   ├── analyzer.py      # Athlete analysis, PR detection, classification
 │   │   │   └── pace_calibrator.py  # Parse workout descriptions for real paces
 │   │   └── core/
@@ -72,7 +76,8 @@ stride/
 │   │       ├── pacing.py        # VDOT pacing, pace calculations
 │   │       └── workouts.py      # Workout library (threshold, intervals, long runs)
 │   ├── requirements.txt
-│   └── .env                     # Strava API keys (not committed)
+│   ├── garmin_login.py          # one-time Garmin login (saves tokens to .garmin/)
+│   └── .env                     # ANTHROPIC_API_KEY etc. (not committed)
 ├── frontend/
 │   ├── app/
 │   │   ├── page.tsx             # Dashboard (today page)
@@ -102,6 +107,7 @@ stride/
     ├── half-marathon-training-science.md
     ├── marathon-training-science.md
     ├── marathon-training-notes.md   # Marathon-specific notes
+    ├── ultra-training-science.md    # 50K / 50mi / 100K / 100mi training + how pros train
     ├── frontend-plan.md             # Frontend design document
     ├── todo-may27.md                # May 27 feedback & fixes
     ├── changes-may27.md             # May 27 changelog
@@ -116,8 +122,7 @@ stride/
 - `GET /api/analysis/{user_id}/activities` — paginated activities with filter (?type=workouts|long_runs|easy)
 - `GET /api/analysis/{user_id}/weekly-mileage` — weekly mileage data
 - `GET /api/analysis/{user_id}/prs` — personal records
-- `POST /api/analysis/{user_id}/full-sync` — sync all Strava data
-- `POST /api/analysis/{user_id}/fetch-descriptions` — pull descriptions for activities missing them
+- `POST /api/analysis/{user_id}/full-sync` — re-sync all Garmin data + classify + PRs + analysis
 - `POST /api/analysis/{user_id}/classify` — classify all activities by type
 - `POST /api/analysis/{user_id}/detect-prs` — run PR detection
 
@@ -125,33 +130,33 @@ stride/
 - `POST /api/plans/{user_id}/generate` — generate 2-week training plan
 - `GET /api/plans/{user_id}/goal` — get active goal
 
-### Auth
-- `GET /api/auth/strava` — Strava OAuth redirect
-- `GET /api/auth/strava/callback` — OAuth callback
+### Garmin
+- `GET /api/garmin/status/{user_id}` — connection + last sync info
+- `POST /api/garmin/sync/{user_id}` — pull new runs (first ever sync pulls full history)
+- `POST /api/garmin/full-sync/{user_id}` — re-import all Garmin history in the background
 
-## Setup
+## Setup (run it on your computer + phone)
 
-### Backend
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# 1. One-time: connect Garmin (type your Garmin login + MFA code in the terminal)
+cd backend && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/python garmin_login.py
 
-# Create .env with Strava API credentials
-echo "STRAVA_CLIENT_ID=your_id" >> .env
-echo "STRAVA_CLIENT_SECRET=your_secret" >> .env
-echo "STRAVA_REDIRECT_URI=http://localhost:8000/api/auth/strava/callback" >> .env
-
-uvicorn app.main:app --reload --port 8000
+# 2. Start everything (backend + frontend), prints the phone URL
+cd .. && ./start.sh
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev  # runs on port 3000 (or 3001 if 3000 is busy)
-```
+- **Computer:** http://localhost:3000
+- **Phone (same Wi-Fi):** open the `http://<mac-ip>:3000` URL that `start.sh` prints → Share → **Add to Home Screen**. It opens full-screen like an app.
+- **Phone away from home:** install [Tailscale](https://tailscale.com) on the Mac and phone (free) and use the Tailscale URL that `start.sh` prints.
+- **AI coach:** add `ANTHROPIC_API_KEY=...` to `backend/.env` (without it, the coach uses template responses).
+
+### How Garmin sync works
+Garmin's official API is enterprise-only (and closed to new applicants), so Stride uses the
+[`garminconnect`](https://github.com/cyberjunky/python-garminconnect) library, which talks to Garmin Connect as you.
+`garmin_login.py` saves session tokens to `backend/.garmin/` (git-ignored). Your password is never stored.
+The backend polls Garmin every `GARMIN_POLL_MINUTES` (default 10). The first sync imports your full history.
+If Garmin ever expires the session, re-run `garmin_login.py`.
 
 ## Current Athlete Data (Jake)
 
@@ -165,14 +170,8 @@ npm run dev  # runs on port 3000 (or 3001 if 3000 is busy)
 
 ## Status
 
-MVP functional. Key features working:
-- Strava OAuth + full data sync
-- Pace calibration from real workout descriptions
-- 2-week plan generation with calibrated paces
-- Dashboard, plan, history, settings pages all wired to real API
-- Workout classification and PR detection
-
-Next up (May 28):
-- Pull full Strava history (all activities ever, not just recent)
-- Fetch remaining descriptions (200 activities in Apr-Oct 2025 window)
-- Build efficient onboarding flow for new Strava connections
+MVP functional, now on Garmin:
+- Garmin Connect sync (auto every 10 min + on app open), full history import, Strava-history merge
+- Lap-based workout detection feeding pace calibration and the progression ladders
+- 2-week plan generation with calibrated paces, feedback loop, Claude Haiku coach
+- Installable on phone (Add to Home Screen) via `./start.sh`

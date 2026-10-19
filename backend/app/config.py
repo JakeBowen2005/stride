@@ -1,18 +1,23 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    strava_client_id: str
-    strava_client_secret: str
     database_url: str = "sqlite:///./stride.db"
-    secret_key: str = "stride-dev-secret-key-change-in-production"
-    strava_redirect_uri: str = "http://localhost:8000/api/strava/callback"
-    strava_webhook_verify_token: str = "stride-webhook-verify"
-    strava_webhook_url: str = "http://localhost:8000/api/strava/webhook"
     anthropic_api_key: str = ""
+    coach_model: str = "claude-haiku-5-5"
+    athlete_profile_doc: str = "athlete-profile-jake.md"  # hand-written profile for default_user_id
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"
 
-    model_config = {"env_file": ".env"}
+    # Garmin Connect — tokens are created once by `python garmin_login.py`
+    garmin_tokenstore: str = str(BACKEND_DIR / ".garmin")
+    garmin_poll_minutes: int = 10  # auto-sync interval; 0 disables
+    default_user_id: int = 1
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

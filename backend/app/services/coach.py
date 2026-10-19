@@ -5,7 +5,8 @@ as system prompt context so the LLM response is grounded in real training
 principles — not generic advice.
 """
 
-import os
+import logging
+from functools import lru_cache
 from pathlib import Path
 
 import anthropic
@@ -18,6 +19,13 @@ from app.models.plan import Plan, PlannedWorkout
 from app.models.user import Goal, User
 
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs"
+logger = logging.getLogger("stride.coach")
+
+
+@lru_cache(maxsize=1)
+def _client() -> anthropic.Anthropic:
+    """One shared client (connection pooling) for the process."""
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 # Map goal distances to science doc filenames
 SCIENCE_DOCS = {
@@ -25,6 +33,10 @@ SCIENCE_DOCS = {
     "10k": "10k-training-science.md",
     "half": "half-marathon-training-science.md",
     "marathon": "marathon-training-science.md",
+    "50k": "ultra-training-science.md",
+    "50mi": "ultra-training-science.md",
+    "100k": "ultra-training-science.md",
+    "100mi": "ultra-training-science.md",
 }
 
 
@@ -69,7 +81,10 @@ def _build_recent_training(user_id: int, db: Session, days: int = 14) -> str:
         hr = f", {int(a.average_heartrate)}bpm" if a.average_heartrate else ""
         feel = f", feel {a.feel_rating}/10" if a.feel_rating else ""
         wtype = f" [{a.workout_type}]" if a.workout_type else ""
-        lines.append(f"  {day_name}: {miles}mi at {pace}{hr}{feel}{wtype} — {a.name}")
+        te = ""
+        if a.aerobic_training_effect:
+            te = f", Garmin TE {a.aerobic_training_effect:.1f} aerobic/{(a.anaerobic_training_effect or 0):.1f} anaerobic"
+        lines.append(f"  {day_name}: {miles}mi at {pace}{hr}{feel}{te}{wtype} — {a.name}")
 
     header = f"Last {days} days: {round(total_miles, 1)}mi total, {len(activities)} runs"
     return header + "\n" + "\n".join(lines)
@@ -97,6 +112,11 @@ def _build_today_context(
         if total_m > 0 and total_dur > 0:
             pace = _format_pace_sec(total_dur / (total_m / 1609.34)) + "/mi"
         lines.append(f"Actual: {actual_miles}mi at {pace}")
+        primary = max(activities, key=lambda a: a.distance_meters or 0)
+        if primary.average_heartrate:
+            lines.append(f"  Avg HR {int(primary.average_heartrate)}bpm, max {int(primary.max_heartrate or 0)}bpm")
+        if primary.description:
+            lines.append(f"  Workout detail: {primary.description[:500]}")
         if len(activities) > 1:
             lines.append(f"  ({len(activities)} separate activities)")
             for a in sorted(activities, key=lambda x: x.date):
@@ -104,6 +124,8 @@ def _build_today_context(
                 lines.append(f"    - {a.name}: {am}mi")
     else:
         lines.append("Actual: no activity recorded")
+
+    lines.extend(_wellness_lines(pw))
 
     # Feedback
     lines.append(f"Feel: {feedback.feel_rating}/10")
@@ -117,6 +139,35 @@ def _build_today_context(
             lines.append(f"Reason: \"{feedback.swap_reason}\"")
 
     return "\n".join(lines)
+
+
+def _wellness_lines(pw: PlannedWorkout) -> list[str]:
+    """Garmin overnight data for the day of the run, if synced."""
+    from sqlalchemy.orm import object_session
+
+    from app.models.wellness import DailyWellness
+
+    db = object_session(pw)
+    if db is None or not pw.date:
+        return []
+    w = db.query(DailyWellness).filter(
+        DailyWellness.user_id == pw.plan.user_id, DailyWellness.date == pw.date
+    ).first()
+    if not w:
+        return []
+    parts = []
+    if w.sleep_seconds:
+        parts.append(f"sleep {w.sleep_seconds / 3600:.1f}h" + (f" (score {w.sleep_score})" if w.sleep_score else ""))
+    if w.hrv_last_night:
+        rng = f", normal {w.hrv_baseline_low:.0f}-{w.hrv_baseline_high:.0f}" if w.hrv_baseline_low and w.hrv_baseline_high else ""
+        parts.append(f"HRV {w.hrv_last_night:.0f}ms{rng}")
+    if w.resting_hr:
+        parts.append(f"resting HR {w.resting_hr:.0f}" + (f" (7d avg {w.resting_hr_7d_avg:.0f})" if w.resting_hr_7d_avg else ""))
+    if w.readiness_score is not None:
+        parts.append(f"Garmin readiness {w.readiness_score} ({(w.readiness_level or '').lower()})")
+    if w.acwr:
+        parts.append(f"acute:chronic load {w.acwr:.2f}")
+    return [f"Recovery (Garmin): {', '.join(parts)}"] if parts else []
 
 
 def _build_system_prompt(user_id: int, goal: Goal | None, db: Session) -> str:
@@ -145,15 +196,35 @@ def _build_system_prompt(user_id: int, goal: Goal | None, db: Session) -> str:
             if science:
                 sections.append(f"=== {goal.race_distance.upper()} TRAINING SCIENCE ===\n" + science)
 
-    # Athlete profile
-    profile = _load_doc("athlete-profile-jake.md")
+    # Athlete profile: the hand-written founder profile only belongs to that user;
+    # everyone else gets a profile built from their own data.
+    profile = _load_doc(settings.athlete_profile_doc) if user_id == settings.default_user_id else ""
+    if not profile:
+        profile = _profile_from_db(user_id, db)
     if profile:
         sections.append("=== ATHLETE PROFILE ===\n" + profile)
 
     return "\n\n".join(sections)
 
 
-async def get_coach_feedback(
+def _profile_from_db(user_id: int, db: Session) -> str:
+    from app.models.activity import PersonalRecord
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return ""
+    lines = [f"Name: {user.name or 'Athlete'}"]
+    if user.age:
+        lines.append(f"Age: {user.age}")
+    if user.years_running:
+        lines.append(f"Years running: {user.years_running:g}")
+    prs = db.query(PersonalRecord).filter(PersonalRecord.user_id == user_id).all()
+    if prs:
+        lines.append("PRs: " + ", ".join(f"{p.distance_label} {int(p.time_seconds // 60)}:{int(p.time_seconds % 60):02d}" for p in prs))
+    return "\n".join(lines)
+
+
+def get_coach_feedback(
     user_id: int,
     pw: PlannedWorkout,
     activities: list[Activity],
@@ -180,16 +251,23 @@ async def get_coach_feedback(
     user_message = f"RECENT TRAINING:\n{recent}\n\nTODAY'S RUN:\n{today}\n\nGive me quick coach feedback on today's run."
 
     try:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=300,
-            system=system_prompt,
+        response = _client().messages.create(
+            model=settings.coach_model,
+            max_tokens=2048,
+            output_config={"effort": "low"},  # short coaching notes don't need deep reasoning
+            # The science docs are large and identical across calls — cache them
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
-        return response.content[0].text
-    except Exception as e:
-        print(f"Coach LLM error: {e}")
+        u = response.usage
+        logger.info(
+            "coach call user=%s in=%s cached=%s out=%s",
+            user_id, u.input_tokens, getattr(u, "cache_read_input_tokens", 0), u.output_tokens,
+        )
+        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        return text or _template_feedback(feedback, pw, activities)
+    except Exception:  # never lose the athlete's feedback over an LLM failure
+        logger.exception("Coach LLM call failed; using template feedback")
         return _template_feedback(feedback, pw, activities)
 
 
