@@ -306,6 +306,10 @@ def evaluate_workout(
         differences = [p - t for p, t in zip(rep_paces, targets) if t is not None]
         normalized = differences if len(differences) == len(rep_paces) else rep_paces
         fade = calculate_fade(normalized)
+        if prescription and prescription['format'] == 'continuous':
+            # Completion aggregates continuous auto-laps, but that must not erase
+            # a fast start / large fade inside the effort.
+            fade = calculate_fade(execution.get('work_lap_paces_sec_per_mile', rep_paces))
         reps_done = len(rep_paces)
         primary_splits = []
         if differences:

@@ -354,7 +354,7 @@ def _build_current_paces(
 
     if workout_paces:
         return {
-            "race_pace": _round_pace(workout_paces.get("race_pace", interval)),
+            "race_pace": _round_pace(workout_paces.get("race_pace", workout_paces.get("interval_pace", interval))),
             "interval_pace": _round_pace(workout_paces.get("interval_pace", interval)),
             "interval_pace_fast": _round_pace(workout_paces.get("interval_pace", interval) - 10),
             "tempo_pace": _round_pace(workout_paces.get("tempo_pace", tempo)),

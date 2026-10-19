@@ -119,6 +119,7 @@ def execution_from_activities(activities, prescribed):
         return result
     work, source, confidence, activity_id = candidates[0]
     result["matched_activity_ids"] = [activity_id]
+    result['work_lap_paces_sec_per_mile'] = [lap['duration_s'] * MI / lap['distance_m'] for lap in work]
     if prescribed['format'] == 'continuous' and len(prescribed['segments']) == 1:
         work = [{'distance_m': sum(lap['distance_m'] for lap in work), 'duration_s': sum(lap['duration_s'] for lap in work)}]
     result['evidence_source'], result['confidence'] = source, confidence

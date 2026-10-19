@@ -217,3 +217,20 @@ def test_phase_and_budget_reduced_sessions_do_not_advance_full_program_level():
     assert 'adapted session' in r.json()['evaluation']['reason']
     with SessionLocal() as db:
         assert db.query(WorkoutProgression).one().current_level == 3
+
+
+def test_continuous_completion_aggregation_preserves_large_work_lap_fade():
+    p = get_workout_at_level('threshold', 2, PACES)['prescription']
+    # Total work is exactly 20 minutes at target average, but the second half fades badly.
+    meters = 1200 / 415 * 1609.34 / 2
+    act = activity([{'distance_m': 1609.34, 'duration_s': 540, 'intensity': 'WARMUP'},
+                    {'distance_m': meters, 'duration_s': 530, 'intensity': 'ACTIVE'},
+                    {'distance_m': meters, 'duration_s': 670, 'intensity': 'ACTIVE'},
+                    {'distance_m': 1609.34, 'duration_s': 540, 'intensity': 'COOLDOWN'}])
+    ex, ev = evaluate(p, act)
+    assert ex['completion'] == 1 and ev.decision == 'regress' and ev.fade_sec > 90
+
+
+def test_current_race_repetitions_cannot_fall_back_faster_than_measured_intervals():
+    paces = _build_current_paces(540, {'interval_pace': 400})
+    assert paces['race_pace'] == 400
