@@ -35,5 +35,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: node --test tests/*.test.mjs
       - run: npm run lint
       - run: npm run build

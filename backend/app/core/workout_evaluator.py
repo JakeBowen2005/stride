@@ -266,6 +266,8 @@ def evaluate_workout(
     prescribed_pace_sec: float | None,
     prescribed_name: str | None,
     feel_rating: int | None,
+    prescription: dict | None = None,
+    execution: dict | None = None,
 ) -> WorkoutEvaluation:
     """Evaluate a completed workout against its prescription.
 
@@ -280,7 +282,7 @@ def evaluate_workout(
     4. One lever: advance changes the ladder level only; recalibrate changes pace only.
     """
     feel = feel_rating  # None = not rated; never assumed
-    reps_prescribed = extract_rep_count(prescribed_name)[0] if prescribed_name else 0
+    reps_prescribed = sum(s["reps"] for s in prescription["segments"]) if prescription else extract_rep_count(prescribed_name)[0] if prescribed_name else 0
 
     def result(decision: str, reason: str, *, pace_diff=None, fade=None, reps=0, pace=None, new_pace=None,
                evidence="none", completion=None) -> WorkoutEvaluation:
@@ -294,34 +296,50 @@ def evaluate_workout(
         ev.policy_version = EVAL_POLICY_VERSION
         return ev
 
-    # ── Gather work evidence ──
-    splits_by_dist = extract_splits_from_description(actual_description or "")
-    primary_splits, primary_dist_key = [], ""
-    for dist_key, splits in splits_by_dist.items():
-        if len(splits) > len(primary_splits):
-            primary_splits, primary_dist_key = splits, dist_key
-
-    rep_paces: list[float] = []
-    fade = None
-    if primary_splits:
-        dist_miles = INTERVAL_MILES.get(primary_dist_key, 0.5)
-        rep_paces = [t / dist_miles for t in primary_splits]
-        fade = calculate_fade(primary_splits)  # same-distance reps: raw seconds compare fairly
+    numeric = execution and execution.get("evidence_source") in ("garmin_labeled_laps", "garmin_inferred_work_laps")
+    if numeric:
+        if execution.get("confidence") not in ("high", "medium"):
+            return result("insufficient", "Work laps are ambiguous or include extra work. Holding until the session can be matched confidently.", evidence="ambiguous_laps")
+        rep_paces = execution["rep_paces_sec_per_mile"]
+        targets = execution["target_paces_sec_per_mile"]
+        # Normalize each rep against its own target (combo sessions have multiple paces).
+        differences = [p - t for p, t in zip(rep_paces, targets) if t is not None]
+        normalized = differences if len(differences) == len(rep_paces) else rep_paces
+        fade = calculate_fade(normalized)
+        reps_done = len(rep_paces)
+        primary_splits = []
+        if differences:
+            prescribed_pace_sec = sum(targets) / len(targets)
     else:
-        n, paces = _extract_paced_reps(actual_description or "")
-        if paces:
-            rep_paces = paces
-            fade = calculate_fade(paces)  # already normalized to sec/mi
-            if not reps_prescribed:
-                reps_prescribed = n
-    reps_done = len(primary_splits) if primary_splits else (len(rep_paces) if rep_paces else 0)
+        # ── Gather work evidence ──
+        splits_by_dist = extract_splits_from_description(actual_description or "")
+        primary_splits, primary_dist_key = [], ""
+        for dist_key, splits in splits_by_dist.items():
+            if len(splits) > len(primary_splits):
+                primary_splits, primary_dist_key = splits, dist_key
 
+        rep_paces: list[float] = []
+        fade = None
+        if primary_splits:
+            dist_miles = INTERVAL_MILES.get(primary_dist_key, 0.5)
+            rep_paces = [t / dist_miles for t in primary_splits]
+            fade = calculate_fade(primary_splits)  # same-distance reps: raw seconds compare fairly
+        else:
+            n, paces = _extract_paced_reps(actual_description or "")
+            if paces:
+                rep_paces = paces
+                fade = calculate_fade(paces)  # already normalized to sec/mi
+                if not reps_prescribed:
+                    reps_prescribed = n
+        reps_done = len(primary_splits) if primary_splits else (len(rep_paces) if rep_paces else 0)
     actual_type = identify_workout_type(actual_description)
-    if prescribed_type == "workout" and actual_type == "easy" and not rep_paces:
+    if prescribed_type == "workout" and actual_type == "easy" and not rep_paces and not numeric:
         return result("hold", "Ran easy instead of the workout. Holding your level — no fitness judgement from an easy day.",
                       evidence="different_session")
 
     if not rep_paces:
+        if numeric and execution.get("completion") == 0:
+            return result("hold", "Recorded work does not match the prescribed rep distance or duration. Holding your level.", evidence="mismatched_laps", completion=0)
         if actual_avg_pace_sec:
             return result(
                 "insufficient",
@@ -334,10 +352,13 @@ def evaluate_workout(
     pace = sum(rep_paces) / len(rep_paces)
     pace_diff = (pace - prescribed_pace_sec) if prescribed_pace_sec else None
     # Time-based sessions: a single parsed pace per rep; count what was recorded
-    completion = (reps_done / reps_prescribed) if reps_prescribed else None
-    common = dict(pace_diff=pace_diff, fade=fade, reps=reps_done, pace=pace, evidence="splits", completion=completion)
+    completion = execution.get("completion") if numeric else (reps_done / reps_prescribed) if reps_prescribed else None
+    common = dict(pace_diff=pace_diff, fade=fade, reps=reps_done, pace=pace, evidence=execution["evidence_source"] if numeric else "splits", completion=completion)
     feel_txt = f", feel {feel}/10" if feel is not None else ""
     diff_txt = f"{abs(pace_diff):.0f}s/mi {'faster' if pace_diff < 0 else 'slower'} than target" if pace_diff is not None else "pace target unknown"
+
+    if prescription and not numeric:
+        return result("insufficient", "Legacy text is available, but this structured session needs matching work-lap distance/duration evidence before progression.", **common)
 
     # ── Completion gate ──
     if completion is not None and completion < FULL_COMPLETION:
@@ -355,6 +376,8 @@ def evaluate_workout(
 
     # ── Recalibrate (pace lever only): fade checked before speed ──
     if pace_diff < -RECAL_MARGIN and (fade or 0) < FADE_OK and feel is not None and feel >= 7:
+        if prescription and (len(prescription['segments']) != 1 or prescription['segments'][0].get('category') == 'strides'):
+            return result("hold", "Completed the support-speed or mixed session well. Holding pace: this session does not isolate one training-pace category.", **common)
         return result("recalibrate", f"All reps {diff_txt} with controlled fade{feel_txt}. Updating training paces (level unchanged).",
                       new_pace=prescribed_pace_sec - 5, **common)
 

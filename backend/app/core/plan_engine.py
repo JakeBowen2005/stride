@@ -1,9 +1,9 @@
 """2-week rolling plan generator.
 
 Key principles:
-- Progression in BOTH mileage and intensity across blocks
+- Mileage progression within a demonstrated-load budget
 - Mileage ramp rate accounts for headroom (current vs peak)
-- Threshold pace PROGRESSES toward goal (starts conservative, builds)
+- Category paces change from execution evidence, not mileage or goal time
 - Workout variety via date-seeded rotation
 - Long runs have specific mile breakdowns (not just "steady finish")
 - Marathon-first design: everything builds toward race day
@@ -266,6 +266,7 @@ def generate_plan(
         "is_deload": is_deload,
         "weeks": weeks,
         "pacing_guide": _pacing_guide(easy_range, effective_paces(current_paces, progression_state)),
+        "training_paces": effective_paces(current_paces, progression_state),
         "notes": list(load.reasons),
         "phases": [w["phase"] for w in weeks],
         "load": load.to_dict(),
@@ -310,7 +311,7 @@ def _pacing_guide(easy_range: str, paces: dict) -> dict:
         "easy": easy_range,
         "steady": format_pace(paces["steady_pace"]),
         "tempo": format_pace(tempo),  # continuous tempo
-        "threshold_reps": format_pace(tempo - 10),  # broken threshold reps
+        "threshold_reps": format_pace(paces.get("broken_threshold_pace", tempo - 10)),  # broken threshold reps
         "intervals": f"{format_pace(paces['interval_pace_fast'])}-{format_pace(paces['interval_pace'])}",
     }
 
@@ -321,26 +322,17 @@ def _build_current_paces(
     goal_pace_data: dict | None = None,
     current_mileage: float = 0,
 ) -> dict:
-    """Build training paces with progression toward goal.
+    """Conservative easy-pace defaults, overridden only by category evidence.
 
-    Threshold starts conservative (easy * 0.77 = ~7:00 from 9:06 easy).
-    As mileage builds (30-60 mpw), threshold blends toward goal target
-    (goal MP - 25sec/mi). This mirrors real training progression.
+    Goal pace is retained separately for explicitly eligible race-specific work.
+    Volume alone never moves threshold/interval training to a goal-time estimate.
     """
     # Base paces from easy pace
     base_threshold = easy_pace * 0.77
 
-    # Progress threshold toward goal as fitness builds
+    # Mileage and an aspirational goal are not evidence of pace fitness.
     threshold = base_threshold
     ultra = bool(goal_pace_data and goal_pace_data.get("is_ultra"))
-    if goal_pace_data and current_mileage >= 30 and not ultra:
-        goal_mp = goal_pace_data.get("race_pace")
-        if goal_mp:
-            # Target threshold = 25 sec/mi faster than goal MP
-            goal_threshold = goal_mp - 25
-            # Blend: 0% at 30mpw, 100% at 60mpw
-            progress = min((current_mileage - 30) / 30, 1.0)
-            threshold = base_threshold * (1 - progress) + goal_threshold * progress
 
     # Workouts are written from tempo_pace: continuous tempo at tempo_pace, broken
     # threshold reps ~10s/mi faster (workout_ladders tp_fast). `threshold` is only the
@@ -348,13 +340,7 @@ def _build_current_paces(
     tempo = threshold * 0.96
     steady = threshold + 25           # ~25sec slower than threshold, near MP range
 
-    # Interval pace progresses toward goal as mileage builds
-    base_interval = easy_pace * 0.67
-    interval = base_interval
-    if goal_pace_data and current_mileage >= 30 and not ultra:
-        goal_interval = goal_pace_data.get("interval_pace", base_interval)
-        progress = min((current_mileage - 30) / 30, 1.0)
-        interval = base_interval * (1 - progress) + goal_interval * progress
+    interval = easy_pace * 0.67
 
     # Round all paces to nearest 5 seconds
     threshold = _round_pace(threshold)
@@ -373,6 +359,7 @@ def _build_current_paces(
             "interval_pace_fast": _round_pace(workout_paces.get("interval_pace", interval) - 10),
             "tempo_pace": _round_pace(workout_paces.get("tempo_pace", tempo)),
             "threshold_pace": _round_pace(workout_paces.get("threshold_pace", threshold)),
+            "broken_threshold_pace": _round_pace(workout_paces.get("threshold_pace", tempo - 10)),
             "steady_pace": _round_pace(workout_paces.get("steady_pace", steady)),
             "easy_pace_low": _round_pace(easy_pace * 0.95),
             "easy_pace_high": _round_pace(easy_pace * 1.05),
@@ -387,6 +374,7 @@ def _build_current_paces(
         "interval_pace_fast": interval_fast,
         "tempo_pace": tempo,
         "threshold_pace": threshold,
+        "broken_threshold_pace": tempo - 10,
         "steady_pace": steady,
         "easy_pace_low": _round_pace(easy_pace * 0.95),
         "easy_pace_high": _round_pace(easy_pace * 1.05),
@@ -709,6 +697,7 @@ def _build_week(
                 "description": workout1["structure"],
                 "purpose": workout1["purpose"],
                 "distance_miles": wo1_miles,
+                "prescription": workout1.get("prescription"),
                 "warmup": workout1.get("warmup", "1.5mi easy"),
                 "cooldown": workout1.get("cooldown", "1.5mi easy"),
             })
@@ -721,6 +710,7 @@ def _build_week(
                 "description": workout2["structure"],
                 "purpose": workout2["purpose"],
                 "distance_miles": wo2_miles,
+                "prescription": workout2.get("prescription"),
                 "warmup": workout2.get("warmup", "1.5mi easy"),
                 "cooldown": workout2.get("cooldown", "1.5mi easy"),
             })
@@ -815,7 +805,7 @@ def effective_paces(current_paces: dict, progression_state: dict | None) -> dict
             paces["interval_pace_fast"] = pace - 10
         elif category == "threshold":
             paces["tempo_pace"] = pace
-            paces["threshold_pace"] = pace
+            paces["broken_threshold_pace"] = pace - 10
     return paces
 
 

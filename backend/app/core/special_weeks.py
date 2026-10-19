@@ -198,7 +198,7 @@ def back_to_back_day(day_date: date, main: dict, paces: dict, terrain: str | Non
                 miles)
 
 
-def hill_session(phase: str) -> dict:
+def _hill_session_template(phase: str) -> dict:
     """Hill work in place of track intervals for trail/mountain ultras."""
     if phase == "base":
         return {"name": "Short Hill Repeats: 8x60sec",
@@ -214,6 +214,20 @@ def hill_session(phase: str) -> dict:
             "structure": "6x3min uphill at 10K-half effort, jog down recovery.",
             "purpose": "VO2max work disguised as climbing. Raises the ceiling for sustained ascents.",
             "warmup": "2mi easy", "cooldown": "1.5mi easy", "total_miles": 7.0}
+
+
+def hill_session(phase: str) -> dict:
+    from app.core.workout_data import prescription, render, segment
+    workout = _hill_session_template(phase)
+    reps, seconds = (8, 60) if phase == 'base' else (4, 360) if phase == 'peak' else (6, 180)
+    segments = [segment(reps, seconds=seconds)]
+    if phase == 'peak':
+        segments.append(segment(seconds=600, category='downhill'))
+    data = prescription('hills', 'time_intervals', segments, phase=phase,
+                        note='Uphill by effort with a jog down recovery; use the effort and terrain guidance below. ' + workout['structure'])
+    workout['prescription'] = data
+    workout['structure'] = render(data)
+    return workout
 
 
 # ── Safety net ──────────────────────────────────────────────────

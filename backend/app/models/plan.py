@@ -20,6 +20,7 @@ class Plan(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # JSON-serialized fields
+    training_paces: Mapped[str | None] = mapped_column(Text, nullable=True)
     pacing_guide: Mapped[str | None] = mapped_column(Text)  # JSON
     notes: Mapped[str | None] = mapped_column(Text)  # JSON array
     goal_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
@@ -57,6 +58,10 @@ class PlannedWorkout(Base):
     distance_miles: Mapped[float] = mapped_column(Float, default=0)
     warmup: Mapped[str | None] = mapped_column(String(200))
     cooldown: Mapped[str | None] = mapped_column(String(200))
+
+    prescription: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    b2b: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     session_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     moved_to: Mapped[str | None] = mapped_column(String(20), nullable=True)

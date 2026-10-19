@@ -39,6 +39,7 @@ def _easy(day: dict, desc: str, miles: float, title: str = "Easy Run") -> None:
         "distance_miles": miles, "warmup": None, "cooldown": None,
     })
     day.pop("b2b", None)
+    day.pop("prescription", None)
 
 
 def fit_week_to_budget(
