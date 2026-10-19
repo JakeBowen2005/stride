@@ -6,11 +6,15 @@ instead of theoretical calculations from goal time.
 """
 
 import re
+import statistics
+import math
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity
+from app.models.plan import PlannedWorkout, Plan
+from app.core.workout_data import loads
 
 
 # Distance in miles for common intervals
@@ -26,146 +30,89 @@ INTERVAL_DISTANCES = {
 
 
 def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
-    """Parse recent workout descriptions and return calibrated training paces.
+    """Independent per-category calibration, weighted by workout recency.
 
-    Returns dict with keys matching what plan_engine._build_current_paces() expects:
-        interval_pace, tempo_pace, threshold_pace, race_pace, steady_pace, strides_pace
-    All values in seconds per mile.
+    Two distinct workouts in 84 days, including one in 28 days, are required.
+    Each workout contributes one median so many reps cannot swamp other days.
+    Numeric matched work is preferred; old logged splits remain a fallback.
     """
-    cutoff = datetime.now() - timedelta(weeks=weeks_back)
-
-    activities = (
-        db.query(Activity)
-        .filter(
-            Activity.user_id == user_id,
-            Activity.has_workout_description == True,
-            Activity.date >= cutoff,
-        )
-        .order_by(Activity.date.desc())
-        .all()
-    )
-
-    all_800_paces = []
-    all_400_paces = []
-    all_200_paces = []
-    all_1k_paces = []
-    all_mile_paces = []
-    all_tempo_paces = []
-    all_threshold_paces = []
-
-    for act in activities:
-        if not act.description:
+    window = min(max(weeks_back * 7, 1), 84)
+    cutoff = datetime.now() - timedelta(days=window)
+    samples = {key: [] for key in ("interval_pace", "tempo_pace", "threshold_pace", "strides_pace")}
+    seen = set()
+    rows = db.query(PlannedWorkout).join(Plan).filter(Plan.user_id == user_id, PlannedWorkout.execution.isnot(None), PlannedWorkout.date >= cutoff.date().isoformat()).order_by(PlannedWorkout.id.desc()).all()
+    for row in rows:
+        execution, prescribed = loads(row.execution), loads(row.prescription)
+        if not execution or not prescribed:
             continue
+        ids = execution.get("matched_activity_ids", [])
+        if not ids or seen.intersection(ids):
+            continue
+        # An incomplete/uncertain structured execution must not bypass its gates
+        # through the same activity's generated prose or an older plan match.
+        seen.update(ids)
+        if execution.get("confidence") not in ("high", "medium") or (execution.get("completion") or 0) < 1:
+            continue
+        age = (datetime.now().date() - datetime.fromisoformat(row.date).date()).days
+        by_category = {}
+        index = 0
+        for spec in prescribed['segments']:
+            category = spec.get('category') or prescribed['category']
+            # Continuous threshold is the program's tempo field; broken reps
+            # store threshold independently. No synthetic cross-category paces.
+            key = 'tempo_pace' if category == 'threshold' and prescribed['format'] == 'continuous' else {'threshold': 'threshold_pace', 'intervals': 'interval_pace', 'strides': 'strides_pace'}.get(category)
+            paces = execution.get('rep_paces_sec_per_mile', [])[index:index + spec['reps']]
+            index += spec['reps']
+            if key and paces:
+                by_category.setdefault(key, []).extend(paces)
+        for key, paces in by_category.items():
+            samples[key].append((age, statistics.median(paces), ids))
 
+    activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff).order_by(Activity.date.desc()).all()
+    for act in activities:
+        if act.id in seen or not act.description:
+            continue
+        age = (datetime.now().date() - act.date.date()).days
         desc = act.description.lower()
+        # Explicit words win: a threshold workout cannot also become tempo or VO2.
+        if 'threshold' in desc:
+            parsed = {'threshold_pace': _extract_threshold_paces(desc)}
+        elif 'tempo' in desc:
+            parsed = {'tempo_pace': _extract_tempo_paces(desc)}
+        else:
+            interval = [t / INTERVAL_DISTANCES[dist] for dist in ('800', '1k') for t in _extract_splits(desc, dist)]
+            interval += _extract_mile_splits(desc)
+            parsed = {'interval_pace': interval, 'strides_pace': [t / INTERVAL_DISTANCES['200'] for t in _extract_splits(desc, '200')]}
+        for key, paces in parsed.items():
+            valid = [v for v in paces if math.isfinite(v) and 180 <= v <= 900]
+            if valid:
+                samples[key].append((age, statistics.median(valid), [act.id]))
 
-        # Extract 800m splits
-        splits_800 = _extract_splits(desc, "800")
-        for time_sec in splits_800:
-            pace_per_mile = time_sec / INTERVAL_DISTANCES["800"]
-            all_800_paces.append(pace_per_mile)
-
-        # Extract 400m splits
-        splits_400 = _extract_splits(desc, "400")
-        for time_sec in splits_400:
-            pace_per_mile = time_sec / INTERVAL_DISTANCES["400"]
-            all_400_paces.append(pace_per_mile)
-
-        # Extract 200m splits
-        splits_200 = _extract_splits(desc, "200")
-        for time_sec in splits_200:
-            pace_per_mile = time_sec / INTERVAL_DISTANCES["200"]
-            all_200_paces.append(pace_per_mile)
-
-        # Extract 1K splits
-        splits_1k = _extract_splits(desc, "1k")
-        for time_sec in splits_1k:
-            pace_per_mile = time_sec / INTERVAL_DISTANCES["1k"]
-            all_1k_paces.append(pace_per_mile)
-
-        # Extract mile repeat splits
-        splits_mile = _extract_mile_splits(desc)
-        for time_sec in splits_mile:
-            all_mile_paces.append(time_sec)  # already per mile
-
-        # Extract tempo/threshold paces
-        tempo_paces = _extract_tempo_paces(desc)
-        threshold_paces = _extract_threshold_paces(desc)
-        all_tempo_paces.extend(tempo_paces)
-        all_threshold_paces.extend(threshold_paces)
-
-    result = {"source": "calibrated", "data_points": {}}
-
-    # Interval pace: prefer 800m data (most common), fall back to 1K, 400m
-    interval_paces = all_800_paces or all_1k_paces or all_400_paces
-    if interval_paces:
-        # Use median of recent intervals
-        interval_paces.sort()
-        median_idx = len(interval_paces) // 2
-        result["interval_pace"] = interval_paces[median_idx]
-        result["data_points"]["interval"] = len(interval_paces)
-
-    # Tempo pace
-    if all_tempo_paces:
-        all_tempo_paces.sort()
-        median_idx = len(all_tempo_paces) // 2
-        result["tempo_pace"] = all_tempo_paces[median_idx]
-        result["data_points"]["tempo"] = len(all_tempo_paces)
-
-    # Threshold pace
-    if all_threshold_paces:
-        all_threshold_paces.sort()
-        median_idx = len(all_threshold_paces) // 2
-        result["threshold_pace"] = all_threshold_paces[median_idx]
-        result["data_points"]["threshold"] = len(all_threshold_paces)
-    elif all_tempo_paces:
-        # Threshold is slightly slower than tempo
-        result["threshold_pace"] = result.get("tempo_pace", 420) * 1.04
-        result["data_points"]["threshold"] = 0
-
-    # Mile repeat pace
-    if all_mile_paces:
-        all_mile_paces.sort()
-        median_idx = len(all_mile_paces) // 2
-        result["mile_repeat_pace"] = all_mile_paces[median_idx]
-        result["data_points"]["mile_repeats"] = len(all_mile_paces)
-
-    # Strides pace from 200m data
-    if all_200_paces:
-        all_200_paces.sort()
-        result["strides_pace"] = all_200_paces[len(all_200_paces) // 2]
-        result["data_points"]["strides"] = len(all_200_paces)
-
-    # Race pace: estimate from interval pace (slightly slower)
-    if "interval_pace" in result:
-        result["race_pace"] = result["interval_pace"] * 1.05
-
-    # Steady pace: between tempo and easy
-    if "tempo_pace" in result:
-        result["steady_pace"] = result["tempo_pace"] * 1.08
-
-    # Build the detailed breakdown for the frontend
-    result["breakdown"] = {
-        "800m_splits": [
-            {"time": _format_interval_time(p * INTERVAL_DISTANCES["800"]), "pace_per_mile": _format_pace(p)}
-            for p in sorted(all_800_paces)
-        ] if all_800_paces else [],
-        "1k_splits": [
-            {"time": _format_interval_time(p * INTERVAL_DISTANCES["1k"]), "pace_per_mile": _format_pace(p)}
-            for p in sorted(all_1k_paces)
-        ] if all_1k_paces else [],
-        "200m_splits": [
-            {"time": str(round(p * INTERVAL_DISTANCES["200"])), "pace_per_mile": _format_pace(p)}
-            for p in sorted(all_200_paces)
-        ] if all_200_paces else [],
-        "mile_splits": [
-            {"time": _format_pace(p), "pace_per_mile": _format_pace(p)}
-            for p in sorted(all_mile_paces)
-        ] if all_mile_paces else [],
-        "tempo_paces": [_format_pace(p) for p in sorted(all_tempo_paces)] if all_tempo_paces else [],
-        "threshold_paces": [_format_pace(p) for p in sorted(all_threshold_paces)] if all_threshold_paces else [],
-    }
-
+    result = {'source': 'calibrated', 'policy_version': 'calibration-v2', 'data_points': {}, 'evidence': {}, 'breakdown': {}}
+    for key, values in samples.items():
+        values = [v for v in values if 0 <= v[0] <= window]
+        # Multiple activities on one day are one training exposure.
+        days = {}
+        for age, pace, ids in values:
+            day = days.setdefault(age, {'paces': [], 'ids': []})
+            day['paces'].append(pace)
+            day['ids'].extend(ids)
+        values = [(age, statistics.median(day['paces']), day['ids']) for age, day in days.items()]
+        result['data_points'][key] = len(values)
+        eligible = len(values) >= 2 and any(age <= 28 for age, _, _ in values)
+        result['evidence'][key] = {'workout_count': len(values), 'eligible': eligible,
+                                   'matched_activity_ids': sorted({i for _, _, ids in values for i in ids}),
+                                   'reason': 'Two distinct workout days, one within 28 days, required in the 84-day window.'}
+        if not eligible:
+            continue
+        weighted = sorted((pace, max(.1, 1 - age / 84)) for age, pace, _ in values)
+        halfway = sum(weight for _, weight in weighted) / 2
+        cumulative = 0
+        for pace, weight in weighted:
+            cumulative += weight
+            if cumulative >= halfway:
+                result[key] = pace
+                break
     return result
 
 

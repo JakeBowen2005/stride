@@ -1,17 +1,18 @@
+import hashlib
 import json
 import re
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.workout_data import day_prescription, execution_from_activities, loads, render
 from app.core.plan_engine import calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
     evaluate_workout,
-    extract_splits_from_description,
-    determine_starting_level,
 )
 from app.database import get_db
 from app.models.activity import Activity
@@ -25,7 +26,8 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 
 class PlanRequest(BaseModel):
-    start_date: str | None = None  # ISO date, defaults to smart calculation
+    start_date: date | None = None  # ISO date, defaults to smart calculation
+    lighter: bool = False
 
 
 class FeedbackRequest(BaseModel):
@@ -40,7 +42,8 @@ class FeedbackRequest(BaseModel):
 
 @router.post("/{user_id}/generate")
 def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = Depends(get_db)):
-    """Generate a training plan, persist it, and return it."""
+    """Generate an inactive preview; approval is the only activation path."""
+    _begin_schedule_write(db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -60,7 +63,10 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     easy_pace_seconds = _parse_pace(easy_pace_str) if easy_pace_str else 540
 
     calibrated = calibrate_paces(user_id, db)
-    current_workout_paces = calibrated if "interval_pace" in calibrated else None
+    # Keep any category's evidence (threshold-only history is still evidence)
+    current_workout_paces = calibrated if any(
+        k in calibrated for k in ("interval_pace", "tempo_pace", "threshold_pace")
+    ) else None
 
     rest_days = []
     if user.rest_days:
@@ -68,20 +74,49 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     if not rest_days:
         rest_days = ["sunday"]
 
-    # Deactivate any existing active plan
-    db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update(
-        {"is_active": False}
-    )
-
     # Calculate smart plan params (or use explicit start_date)
     if req and req.start_date:
-        start = date.fromisoformat(req.start_date)
+        start = req.start_date
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
     else:
         params = calculate_plan_params()
 
+    fpd = params.get("first_prescribe_date") or params["start_date"]
+    baseline = current_fitness["weekly_mileage_4w_avg"]
+
+    # Real training already done in this block's first week, and real hard runs just
+    # before it — so a midweek plan prescribes only what's left and can't stack a
+    # workout on yesterday's long run.
+    window_start = (min(params["start_date"], fpd) - timedelta(days=3)).isoformat()
+    recent = _activities_by_date(user_id, window_start, (fpd - timedelta(days=1)).isoformat(), db)
+    completed_by_date = {
+        d: sum(a.distance_meters for a in acts) / 1609.34
+        for d, acts in recent.items() if d >= params["start_date"].isoformat()
+    }
+    prior_hard_dates = {
+        d for d, acts in recent.items()
+        if (fpd - timedelta(days=3)).isoformat() <= d < fpd.isoformat()
+        and any(_is_hard_activity(a, baseline) for a in acts)
+    }
+
+    # Deloads come from what was actually run, not from how many times a plan was generated
+    from app.core.load_policy import deload_due
+    from app.services.analyzer import compute_weekly_mileage
+
+    this_monday = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+    full_weeks = [w["actual"] for w in compute_weekly_mileage(user_id, db, weeks=10) if w["week_start"] < this_monday]
+    is_deload_due, deload_reason = deload_due(full_weeks[-8:], analysis["overview"]["experience_level"])
+
+    # Assess the previous block (what was prescribed and actually run) — drives
+    # build / hold / reduce / recovery for the next block's volume.
+    # Only a block that ended recently says anything about the coming one — a plan
+    # that ran out months ago is history, not evidence (the baseline already reflects it).
+    prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
+    recent_cutoff = (params["start_date"] - timedelta(days=ASSESSMENT_MAX_GAP_DAYS)).isoformat()
+    assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
+
     # Determine block number — reuse on overlapping regeneration, increment on new block
-    last_plan = db.query(Plan).filter(Plan.user_id == user_id).order_by(Plan.id.desc()).first()
+    last_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.preview_state.is_(None)).order_by(Plan.id.desc()).first()
     if last_plan:
         new_start = params["start_date"]
         old_end = date.fromisoformat(last_plan.end_date)
@@ -93,7 +128,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         block_number = 1
 
     # Load or initialize workout progression state
-    progression_state = _load_progression_state(user_id, db, goal.race_distance or "5k")
+    progression_state = _load_progression_state(user_id, db, goal.race_distance or goal.goal_type)
 
     plan_data = generate_plan(
         goal_type=goal.goal_type,
@@ -115,7 +150,18 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         progression_state=progression_state,
         race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
         terrain=goal.terrain,
+        target_weekly_mileage=goal.target_weekly_mileage,
+        assessment="recovery" if req and req.lighter else assessment.decision if assessment else None,
+        completed_by_date=completed_by_date,
+        prior_hard_dates=prior_hard_dates,
+        reported_mileage=user.current_weekly_mileage,
+        allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
+        deload_is_due=is_deload_due and not (assessment and assessment.decision in ("reduce", "recovery")),
     )
+    if is_deload_due:
+        plan_data["notes"].insert(0, deload_reason)
+    if assessment:
+        plan_data["notes"] = assessment.reasons + plan_data["notes"]
 
     goal_snapshot = {
         "type": goal.goal_type,
@@ -124,6 +170,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "race_date": goal.race_date,
         "description": goal.description,
         "terrain": goal.terrain,
+        "target_weekly_mileage": goal.target_weekly_mileage,
     }
     athlete_snapshot = {
         "name": user.name,
@@ -133,26 +180,33 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "injury_risk": analysis["injury_risk"]["assessment"],
     }
 
-    # Persist to DB
+    # Persist atomically: the previous plan is only deactivated in the same commit
+    # that saves its replacement, so a failure above leaves the old plan usable.
+    preview = True
+    db.query(Plan).filter_by(user_id=user_id, preview_state="draft").update({"preview_state": "superseded"})
     db_plan = Plan(
         user_id=user_id,
         start_date=plan_data["start_date"],
         end_date=plan_data["end_date"],
         block_number=plan_data["block_number"],
         is_deload=plan_data["is_deload"],
-        is_active=True,
+        is_active=not preview,
         pacing_guide=json.dumps(plan_data["pacing_guide"]),
+        training_paces=json.dumps(plan_data["training_paces"]),
         notes=json.dumps(plan_data["notes"]),
         goal_snapshot=json.dumps(goal_snapshot),
         athlete_snapshot=json.dumps(athlete_snapshot),
         phases=json.dumps(plan_data.get("phases", [])),
         prescribed_from=(params.get("first_prescribe_date") or params["start_date"]).isoformat(),
+        load=json.dumps(plan_data.get("load")),
+        assessment=json.dumps(assessment.to_dict()) if assessment else None,
     )
     db.add(db_plan)
     db.flush()  # get the plan ID
 
     for week in plan_data["weeks"]:
         for day in week["days"]:
+            day["prescription"] = day_prescription(day)
             pw = PlannedWorkout(
                 plan_id=db_plan.id,
                 date=day["date"],
@@ -165,17 +219,94 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
                 distance_miles=day["distance_miles"],
                 warmup=day.get("warmup"),
                 cooldown=day.get("cooldown"),
+                prescription=json.dumps(day["prescription"]),
+                b2b=day.get("b2b", False),
             )
             db.add(pw)
 
-    db.commit()
+    plan_data["goal"] = goal_snapshot
+    plan_data["athlete"] = athlete_snapshot
+    plan_data["assessment"] = assessment.to_dict() if assessment else None
+    if preview:
+        plan_data["id"] = db_plan.id
+        plan_data["preview"] = True
+        db_plan.preview_data = json.dumps(plan_data)
+        db_plan.preview_state = "draft"
+        db_plan.preview_context = _preview_fingerprint(user_id, db)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(db_plan)
 
     # Return the full plan response
     plan_data["id"] = db_plan.id
+    plan_data["assessment"] = assessment.to_dict() if assessment else None
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     return plan_data
+
+
+def _preview_fingerprint(user_id: int, db: Session) -> str:
+    """Reject approval after training, goal, preferences or active schedule changes."""
+    user = db.get(User, user_id)
+    goals = db.query(Goal).filter_by(user_id=user_id, active=True).all()
+    active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    data = {
+        "today": date.today().isoformat(),
+        "user": {c.name: getattr(user, c.name) for c in User.__table__.columns},
+        "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
+        "active": active.id if active else None,
+        "schedule": [_snapshot(w) + str(w.feel_rating) + str(w.evaluation) for w in active.planned_workouts] if active else [],
+        "activities": [(a.id, a.date, a.distance_meters, a.duration_seconds, a.description, a.splits, a.feel_rating)
+                       for a in db.query(Activity).filter_by(user_id=user_id).order_by(Activity.id)],
+        "progression": [(p.id, p.current_level, p.current_pace_sec, p.updated_at)
+                        for p in db.query(WorkoutProgression).filter_by(user_id=user_id).order_by(WorkoutProgression.id)],
+    }
+    return hashlib.sha256(json.dumps(data, default=str, sort_keys=True).encode()).hexdigest()
+
+
+@router.post("/{user_id}/preview")
+def preview_plan(user_id: int, req: PlanRequest | None = None, db: Session = Depends(get_db)):
+    return generate_training_plan(user_id, req or PlanRequest(), db)
+
+
+@router.get("/{user_id}/draft")
+def pending_draft(user_id: int, db: Session = Depends(get_db)):
+    draft = db.query(Plan).filter_by(user_id=user_id, preview_state="draft").order_by(Plan.id.desc()).first()
+    return json.loads(draft.preview_data) if draft else None
+
+
+@router.post("/{user_id}/drafts/{plan_id}/approve")
+def approve_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
+    # Serialize approvals before reading their context; two approvals cannot both win.
+    _begin_schedule_write(db)
+    try:
+        draft = db.query(Plan).filter_by(id=plan_id, user_id=user_id).first()
+        if not draft or draft.preview_state != "draft":
+            raise HTTPException(409, "This preview is no longer awaiting approval")
+        if draft.preview_context != _preview_fingerprint(user_id, db):
+            raise HTTPException(409, "Your training or settings changed. Generate a fresh preview before approving.")
+        data = json.loads(draft.preview_data)
+        if data.get("violations"):
+            raise HTTPException(409, "This preview has unresolved schedule constraints")
+        _validate_schedule(draft, db)
+        db.query(Plan).filter_by(user_id=user_id, is_active=True).update({"is_active": False})
+        draft.is_active = True
+        draft.preview_state = None
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"id": draft.id, "approved": True}
+
+
+@router.post("/{user_id}/drafts/{plan_id}/discard")
+def discard_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
+    changed = db.query(Plan).filter_by(id=plan_id, user_id=user_id, preview_state="draft").update({"preview_state": "discarded"})
+    db.commit()
+    return {"discarded": bool(changed)}
 
 
 @router.get("/{user_id}/current")
@@ -198,11 +329,12 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
     # Match past days to actual activities (store primary activity_id for backwards compat)
     for pw in planned_workouts:
-        if pw.date > today or pw.type == "rest" or pw.activity_id:
+        if pw.date > today or pw.activity_id:
             continue
         activities = by_date.get(pw.date)
         if activities:
             pw.activity_id = max(activities, key=lambda a: a.distance_meters).id
+            pw.session_status = "completed"
     db.commit()
 
     # Build response
@@ -238,12 +370,19 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             "day": pw.day_name,
             "type": pw.type,
             "title": pw.title,
-            "description": pw.description if is_prescribed else None,
+            "description": (render(loads(pw.prescription)) if loads(pw.prescription) else pw.description) if is_prescribed else None,
+            "prescription": loads(pw.prescription) if is_prescribed else None,
+            "execution": loads(pw.execution),
             "purpose": pw.purpose if is_prescribed else None,
             "distance_miles": pw.distance_miles,
             "warmup": pw.warmup if is_prescribed else None,
             "cooldown": pw.cooldown if is_prescribed else None,
             "prescribed": is_prescribed,
+            "adjustment_note": pw.adjustment_note,
+            "session_status": "completed" if actual else (pw.session_status or "not_logged"),
+            "moved_to": pw.moved_to,
+            "moved_from": pw.moved_from,
+            "original_prescription": json.loads(pw.original_prescription) if pw.original_prescription else None,
             "actual": actual,
             "comparison": comparison,
             "feedback": {
@@ -254,6 +393,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
                 "swap_reason": pw.swap_reason,
                 "actual_workout_type": pw.actual_workout_type,
                 "coach_response": pw.coach_response,
+                "evaluation": json.loads(pw.evaluation) if pw.evaluation else None,
             } if pw.feel_rating or pw.swapped else None,
         }
         weeks_map[pw.week_number]["days"].append(day_data)
@@ -263,6 +403,8 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
     for wk_num in sorted(weeks_map.keys()):
         wk = weeks_map[wk_num]
         wk["phase"] = phases[wk_num - 1] if 0 < wk_num <= len(phases) else None
+        budgets = (json.loads(db_plan.load) or {}).get("weekly_budgets", []) if db_plan.load else []
+        wk["budget_miles"] = budgets[wk_num - 1] if 0 < wk_num <= len(budgets) else None
         wk["target_mileage"] = round(sum(d["distance_miles"] for d in wk["days"]), 1)
         # Calculate actual mileage from matched activities
         actual_mileage = 0
@@ -281,6 +423,8 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         # A plan whose last day is behind us shouldn't be shown as "current"
         "is_stale": db_plan.end_date < today,
         "phase": _current_phase(weeks, today),
+        "load": json.loads(db_plan.load) if db_plan.load else None,
+        "assessment": json.loads(db_plan.assessment) if db_plan.assessment else None,
         "weeks": weeks,
         "pacing_guide": json.loads(db_plan.pacing_guide) if db_plan.pacing_guide else {},
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
@@ -308,6 +452,120 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
     }
 
 
+class SessionAction(BaseModel):
+    action: Literal["skip", "replace", "move"]
+    target_date: date | None = None
+    replacement: Literal["easy", "rest", "threshold", "intervals"] | None = None
+    distance_miles: float | None = Field(default=None, gt=0, le=30, allow_inf_nan=False)
+    reason: str = Field(default="Changed by athlete", max_length=500)
+
+
+def _validate_schedule(plan: Plan, db: Session):
+    """Validate mutations against real runs, rest preferences and stored budgets."""
+    from app.core.plan_validator import validate_plan
+
+    user = db.get(User, plan.user_id)
+    names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    rest = [names.index(d.strip()) for d in (user.rest_days or "").split(",") if d.strip() in names]
+    rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
+    acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=1)).isoformat(), plan.end_date, db)
+    budgets = (json.loads(plan.load) if plan.load else {}).get("weekly_budgets", [])
+    weeks = {}
+    if not budgets:
+        # Old blocks have no saved load policy. Their original weekly total is the
+        # ceiling; changing a session cannot create an unlimited legacy budget.
+        for row in rows:
+            original = json.loads(row.original_prescription) if row.original_prescription else {}
+            while len(budgets) < row.week_number:
+                budgets.append(0)
+            budgets[row.week_number - 1] += original.get("distance_miles", row.distance_miles)
+    for row in rows:
+        w = weeks.setdefault(row.week_number, {"week_number": row.week_number, "days": []})
+        if row.week_number <= len(budgets):
+            w["budget_miles"] = budgets[row.week_number - 1]
+        actuals = acts.get(row.date, [])
+        # Completed work cannot be altered to make a proposed change fit.
+        w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, 0) for a in actuals) else row.type,
+                           "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
+                           "b2b": bool(row.b2b),
+                           "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
+    prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, 0) for a in runs)}
+    errors = validate_plan(list(weeks.values()), rest, prior)
+    if errors:
+        raise HTTPException(409, detail="; ".join(e["message"] for e in errors))
+
+
+@router.post("/{user_id}/sessions/{session_date}")
+def change_session(user_id: int, session_date: date, req: SessionAction, db: Session = Depends(get_db)):
+    _begin_schedule_write(db)
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if not plan:
+        raise HTTPException(404, "No active plan")
+    source = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=session_date.isoformat()).first()
+    if not source:
+        raise HTTPException(404, "Session not found")
+    if source.date < (plan.prescribed_from or plan.start_date) or source.type == "race":
+        raise HTTPException(409, "History and race days cannot be changed here")
+    if source.activity_id or _get_activities_for_date(source.date, user_id, db):
+        raise HTTPException(409, "This day already has a recorded activity")
+    if source.session_status in {"skipped", "moved"}:
+        raise HTTPException(409, "This session has already been skipped or moved")
+    if req.action != "skip" and source.date < date.today().isoformat():
+        raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
+    try:
+        if req.action == "move":
+            target = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=req.target_date.isoformat() if req.target_date else "").first()
+            if not target or target.date <= source.date or target.date < date.today().isoformat():
+                raise HTTPException(422, "Choose a later day in this block")
+            if target.type not in {"easy", "rest"} or target.activity_id or _get_activities_for_date(target.date, user_id, db):
+                raise HTTPException(409, "Choose an unrun easy or rest day")
+            if target.session_status in {"skipped", "moved", "replaced"}:
+                raise HTTPException(409, "The destination has already been changed")
+            _mark_changed(target, f"Moved from {source.date}: {req.reason}")
+            for key in ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown", "prescription", "b2b"):
+                setattr(target, key, getattr(source, key))
+            target.b2b = False
+            target.session_status = "moved"
+            target.moved_from = source.date
+            source.moved_to = target.date
+        elif req.action == "replace":
+            if not req.replacement:
+                raise HTTPException(422, "Choose a replacement")
+            _mark_changed(source, req.reason)
+            if req.replacement in {"threshold", "intervals"}:
+                workout = _generate_swap_workout(user_id, req.replacement, plan, db, source.date)
+                source.type, source.title = "workout", workout["name"]
+                source.description, source.purpose = workout["structure"], workout["purpose"]
+                source.distance_miles = workout["total_miles"]
+                source.warmup, source.cooldown = workout.get("warmup"), workout.get("cooldown")
+                source.prescription = json.dumps(workout.get("prescription"))
+            else:
+                source.type = req.replacement
+                source.title = "Rest Day" if source.type == "rest" else "Easy Run"
+                source.description = "Rest and recover." if source.type == "rest" else "Conversational effort, truly easy."
+                source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, 6)
+                source.warmup = source.cooldown = None
+                source.prescription = json.dumps(day_prescription({"type": source.type, "distance_miles": source.distance_miles, "description": source.description}))
+                source.b2b = False
+            source.b2b = False
+            source.session_status = "replaced"
+        if req.action in {"skip", "move"}:
+            _mark_changed(source, f"{req.action.title()}: {req.reason}")
+            source.type, source.title, source.description = "rest", "Session moved" if req.action == "move" else "Session skipped", req.reason
+            source.distance_miles = 0
+            source.warmup = source.cooldown = None
+            source.session_status = "moved" if req.action == "move" else "skipped"
+            source.prescription = json.dumps(day_prescription({"type": "rest", "distance_miles": 0, "description": source.description}))
+            source.b2b = False
+        db.flush()
+        _validate_schedule(plan, db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"date": source.date, "session_status": source.session_status, "moved_to": source.moved_to}
+
+
 @router.post("/{user_id}/feedback/{feedback_date}")
 def submit_feedback(
     user_id: int, feedback_date: str, req: FeedbackRequest, db: Session = Depends(get_db)
@@ -325,9 +583,14 @@ def submit_feedback(
     if not pw:
         raise HTTPException(status_code=404, detail="No planned workout for this date")
 
-    # Re-submitting edits the rating/notes but must not re-run plan side effects
-    # (ladder progression, fatigue downgrade, rescheduling) — a double tap would apply them twice.
-    is_edit = pw.feel_rating is not None
+    activities = _get_activities_for_date(feedback_date, user_id, db)
+
+    # Claim the side effects atomically. Only the first successful submission for a
+    # day applies progression / rescheduling / fatigue changes; edits, retries and
+    # concurrent duplicates update the rating and notes only.
+    claimed = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == pw.id, PlannedWorkout.side_effects_applied_at.is_(None)
+    ).update({"side_effects_applied_at": datetime.now()}, synchronize_session=False) == 1
 
     # Save feedback to PlannedWorkout
     pw.feel_rating = req.feel_rating
@@ -337,113 +600,173 @@ def submit_feedback(
     pw.swap_reason = req.swap_reason
     pw.actual_workout_type = req.actual_workout_type
 
-    # Also save feel_rating + notes to the matched Activity
-    activities = _get_activities_for_date(feedback_date, user_id, db)
-    if activities:
-        primary = max(activities, key=lambda a: a.distance_meters)
-        primary.feel_rating = req.feel_rating
-        primary.feel_notes = req.feel_notes
+    evidence_act = _work_evidence_activity(activities)
+    if evidence_act:
+        evidence_act.feel_rating = req.feel_rating
+        evidence_act.feel_notes = req.feel_notes
 
-    # Persist the athlete's input before anything that can fail (LLM call)
+    # Persist the athlete's input (and the claim) before anything that can fail
+    db.commit()
+    db.refresh(pw)
+
+    evaluation = json.loads(pw.evaluation) if pw.evaluation else None
+    changes: list[dict] = []
+    if claimed:
+        try:
+            evaluation, changes = _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req, db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            db.query(PlannedWorkout).filter(PlannedWorkout.id == pw.id).update(
+                {"side_effects_applied_at": None}, synchronize_session=False
+            )
+            db.commit()
+            raise
+
+    # Coach explains the final, persisted decision (never raises; template fallback)
+    from app.services.coach import get_coach_feedback
+    decision_summary = _decision_summary(evaluation, changes)
+    coach_response = get_coach_feedback(user_id, pw, activities, req, db, decision_summary=decision_summary)
+    pw.coach_response = coach_response
     db.commit()
 
-    # Get coach response (never raises — falls back to a template)
-    from app.services.coach import get_coach_feedback
-    coach_response = get_coach_feedback(user_id, pw, activities, req, db)
-    pw.coach_response = coach_response
+    return {
+        "date": feedback_date,
+        "feel_rating": pw.feel_rating,
+        "pace_assessment": pw.pace_assessment,
+        "swapped": pw.swapped,
+        "coach_response": coach_response,
+        "rescheduled_to": next((c["date"] for c in changes if c["change"] == "rescheduled"), None),
+        "plan_adjusted": bool(changes),
+        "changes": changes,
+        "progression_decision": evaluation["decision"] if evaluation else None,
+        "evaluation": evaluation,
+        "side_effects_applied": claimed,
+    }
 
-    # Evaluate workout and update progression state (only for hard workout days)
-    evaluation_decision = None
-    if pw.type == "workout" and not req.swapped and not is_edit:
-        # Determine which category this workout belongs to
-        workout_category = _detect_workout_category(pw.title)
-        if workout_category:
-            # Get the prescribed pace for comparison
-            prescribed_pace = _extract_prescribed_pace(pw.description)
 
-            # Get actual description from Strava
-            actual_desc = None
-            actual_avg_pace = None
-            actual_dist = None
-            if activities:
-                primary = max(activities, key=lambda a: a.distance_meters)
-                actual_desc = primary.description
-                if primary.average_pace_per_km:
-                    actual_avg_pace = primary.average_pace_per_km * 1.60934  # km to mile
-                actual_dist = primary.distance_meters / 1609.34
+def _work_evidence_activity(activities: list[Activity]) -> Activity | None:
+    """The activity holding the workout's reps. Split recordings (warmup / workout /
+    cooldown as separate activities) mean the longest one may be the warmup."""
+    if not activities:
+        return None
+    from app.core.workout_evaluator import _extract_paced_reps, extract_splits_from_description
 
-            eval_result = evaluate_workout(
-                actual_description=actual_desc,
-                actual_avg_pace_sec=actual_avg_pace,
-                actual_distance_miles=actual_dist,
+    def has_work(a: Activity) -> bool:
+        d = a.description or ""
+        return bool(extract_splits_from_description(d)) or bool(_extract_paced_reps(d)[1])
+
+    with_work = [a for a in activities if has_work(a)]
+    return max(with_work or activities, key=lambda a: a.distance_meters or 0)
+
+
+def _snapshot(pw: PlannedWorkout) -> str:
+    return json.dumps({k: getattr(pw, k) for k in ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown", "prescription", "b2b", "session_status", "moved_to", "moved_from")})
+
+
+def _mark_changed(pw: PlannedWorkout, reason: str):
+    if not pw.original_prescription:
+        pw.original_prescription = _snapshot(pw)
+    pw.adjustment_note = reason
+
+
+def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req, db) -> tuple[dict | None, list[dict]]:
+    """Deterministic consequences of feedback. Caller owns the transaction."""
+    changes: list[dict] = []
+    evaluation = None
+    feedback_date = pw.date
+
+    # 1. Evaluate the workout and move ONE progression lever
+    if pw.type == "workout" and not req.swapped:
+        prescribed = loads(pw.prescription)
+        category = prescribed["category"] if prescribed and prescribed["category"] in {"threshold", "intervals"} else _detect_workout_category(pw.title)
+        if category:
+            execution = execution_from_activities(activities, prescribed) if prescribed else None
+            if execution:
+                pw.execution = json.dumps(execution)
+            only_one = len(activities) == 1
+            ev = evaluate_workout(
+                actual_description=evidence_act.description if evidence_act else None,
+                # A whole-run average only means something when the run was one activity,
+                # and even then it is weak evidence (never enough to advance)
+                actual_avg_pace_sec=(evidence_act.average_pace_per_km * 1.60934)
+                if (evidence_act and only_one and evidence_act.average_pace_per_km) else None,
+                actual_distance_miles=sum(a.distance_meters for a in activities) / 1609.34 if activities else None,
                 prescribed_type=pw.type,
-                prescribed_pace_sec=prescribed_pace,
+                prescribed_pace_sec=_extract_prescribed_pace(pw.description),
                 prescribed_name=pw.title,
                 feel_rating=req.feel_rating,
+                prescription=prescribed, execution=execution,
             )
-            evaluation_decision = eval_result.decision
-
-            _update_progression_from_evaluation(
-                user_id=user_id,
-                category=workout_category,
-                evaluation_decision=eval_result.decision,
-                workout_name=pw.title,
-                workout_date=feedback_date,
-                new_pace_sec=eval_result.new_pace_sec,
-                db=db,
-            )
-
-    # If a hard workout was swapped, reschedule based on user intent
-    rescheduled_date = None
-    if req.swapped and pw.type == "workout" and not is_edit:
-        hard_swap_types = {"tempo", "intervals", "threshold"}
-        # Use explicit desired_reschedule_type if provided, fall back to parsing swap_reason
-        reschedule_type = req.desired_reschedule_type
-        if not reschedule_type and req.swap_reason:
-            reason_lower = req.swap_reason.lower()
-            for ht in hard_swap_types:
-                if ht in reason_lower:
-                    reschedule_type = ht
-                    break
-        wants_hard = reschedule_type in hard_swap_types
-
-        if wants_hard:
-            # User wants a specific hard workout — find a safe slot and generate from ladder
-            safe_day = _find_safe_easy_day(db_plan.id, feedback_date, db)
-            if safe_day:
-                workout = _generate_swap_workout(user_id, reschedule_type, db_plan, db)
-                safe_day.type = "workout"
-                safe_day.title = workout["name"]
-                safe_day.description = workout["structure"]
-                safe_day.purpose = workout["purpose"]
-                safe_day.distance_miles = workout.get("total_miles", pw.distance_miles)
-                safe_day.warmup = workout.get("warmup")
-                safe_day.cooldown = workout.get("cooldown")
-                rescheduled_date = safe_day.date
+            state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
+            if prescribed and ev.decision == "advance" and (
+                prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
+                or (state and prescribed.get('level', 1) < state.current_level)
+            ):
+                ev.decision = "hold"
+                ev.reason = "Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated."
+            evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
+            pw.evaluation = json.dumps(evaluation)
+            if not prescribed:
+                pw.execution = json.dumps({"schema_version": 1, "category": category, "format": "legacy",
+                    "evidence_source": ev.evidence, "confidence": "medium" if ev.evidence == "splits" else "low",
+                    "matched_activity_ids": [a.id for a in activities], "segments": [], "completion": ev.completion,
+                    "rep_paces_sec_per_mile": [], "actual_pace_sec_per_mile": ev.actual_pace_sec})
+            if prescribed and ev.new_pace_sec and prescribed.get("base_pace_sec_per_mile"):
+                # Evaluator compares work pace, progression stores template base.
+                # Broken threshold is base-10, so retain that offset on updates.
+                targets = [s["pace_range_sec_per_mile"] for s in prescribed['segments'] if s.get('pace_range_sec_per_mile')]
+                if len(targets) == 1 and not prescribed['segments'][0].get('category') == 'strides':
+                    target = sum(targets[0].values()) / 2
+                    mapped_pace = prescribed['base_pace_sec_per_mile'] + ev.new_pace_sec - target
+                else:
+                    mapped_pace = None
             else:
-                # No safe slot — fall back to copying original
-                next_easy = _find_next_easy_day(db_plan.id, feedback_date, db)
-                if next_easy:
-                    _copy_workout_to_day(pw, next_easy)
-                    rescheduled_date = next_easy.date
-        else:
-            # User chose easy/recovery/rest — copy original workout forward
-            next_easy = _find_next_easy_day(db_plan.id, feedback_date, db)
-            if next_easy:
-                _copy_workout_to_day(pw, next_easy)
-                rescheduled_date = next_easy.date
+                mapped_pace = ev.new_pace_sec
+            _update_progression_from_evaluation(
+                user_id=user_id, category=category, evaluation_decision=ev.decision,
+                workout_name=pw.title, workout_date=feedback_date, new_pace_sec=mapped_pace, db=db,
+                program=_plan_program(db_plan),
+            )
 
-    # If feel rating is low (fatigued), reduce intensity of next hard day
-    if req.feel_rating <= 4 and not req.swapped and not is_edit:
+    # 2. Swapped a hard workout: only an explicit choice reschedules
+    if req.swapped and pw.type == "workout":
+        choice = req.desired_reschedule_type
+        if choice in {"tempo", "intervals", "threshold"}:
+            slot, why_not = _find_safe_slot(db_plan, feedback_date, db)
+            workout = _generate_swap_workout(user_id, choice, db_plan, db, slot.date) if slot else None
+            if slot and not _fits_week_budget(db_plan, slot, workout.get("total_miles", pw.distance_miles), db):
+                slot, why_not = None, (
+                    "The extra workout doesn't fit that week's mileage budget without overloading it, "
+                    "so it was dropped rather than added on top."
+                )
+            if slot:
+                _mark_changed(slot, f"Rescheduled {choice} workout after {feedback_date} was swapped.")
+                slot.prescription = json.dumps(workout.get("prescription"))
+                slot.type = "workout"
+                slot.title = workout["name"]
+                slot.description = workout["structure"]
+                slot.purpose = workout["purpose"]
+                slot.distance_miles = workout.get("total_miles", pw.distance_miles)
+                slot.warmup = workout.get("warmup")
+                slot.cooldown = workout.get("cooldown")
+                changes.append({"date": slot.date, "change": "rescheduled", "reason": slot.adjustment_note})
+            else:
+                changes.append({"date": None, "change": "not_rescheduled", "reason": why_not})
+
+    # 3. Feel ≤ 4: the next unrun hard workout becomes easy
+    if req.feel_rating <= 4 and not req.swapped:
+        today = date.today().isoformat()
         next_hard = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == db_plan.id,
             PlannedWorkout.date > feedback_date,
+            PlannedWorkout.date >= today,  # never rewrite the past
             PlannedWorkout.type == "workout",
-            PlannedWorkout.activity_id == None,
+            PlannedWorkout.activity_id == None,  # noqa: E711
         ).order_by(PlannedWorkout.date).first()
-
         if next_hard:
-            # Downgrade next hard workout to easy — fatigue recovery
+            reason = f"Adjusted to easy: you rated {feedback_date} {req.feel_rating}/10, so the next workout became recovery."
+            _mark_changed(next_hard, reason)
             next_hard.type = "easy"
             next_hard.title = "Easy Run (adjusted — recovery)"
             next_hard.description = (
@@ -454,19 +777,105 @@ def submit_feedback(
             next_hard.distance_miles = min(next_hard.distance_miles, 4.0)
             next_hard.warmup = None
             next_hard.cooldown = None
+            next_hard.prescription = json.dumps(day_prescription({"type": "easy", "distance_miles": next_hard.distance_miles, "description": next_hard.description}))
+            next_hard.b2b = False
+            changes.append({"date": next_hard.date, "change": "downgraded", "reason": reason})
 
-    db.commit()
+    if changes:
+        db.flush()
+    return evaluation, changes
 
-    return {
-        "date": feedback_date,
-        "feel_rating": pw.feel_rating,
-        "pace_assessment": pw.pace_assessment,
-        "swapped": pw.swapped,
-        "coach_response": coach_response,
-        "rescheduled_to": rescheduled_date,
-        "plan_adjusted": not is_edit,
-        "progression_decision": evaluation_decision,
-    }
+
+def _decision_summary(evaluation: dict | None, changes: list[dict]) -> str | None:
+    parts = []
+    if evaluation:
+        parts.append(f"Progression decision: {evaluation['decision']} — {evaluation['reason']}")
+    for c in changes:
+        parts.append(f"Schedule change ({c['change']}{' on ' + c['date'] if c['date'] else ''}): {c['reason']}")
+    return "\n".join(parts) or None
+
+
+def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db: Session) -> bool:
+    """Would putting new_miles on slot keep its week within budget? Unrun easy days in
+    that week may shrink (down to 3 mi) to make room; the week's total never grows."""
+    from app.core.plan_validator import BUDGET_OVER_TOLERANCE, MIN_EASY
+
+    budgets = (json.loads(db_plan.load) or {}).get("weekly_budgets", []) if db_plan.load else []
+    if not (0 < slot.week_number <= len(budgets)):
+        return True  # legacy plan without budgets: neighbours were still checked
+    budget = budgets[slot.week_number - 1]
+    week = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == db_plan.id, PlannedWorkout.week_number == slot.week_number
+    ).all()
+    total = sum(d.distance_miles for d in week) - slot.distance_miles + new_miles
+    over = total - (budget + BUDGET_OVER_TOLERANCE)
+    if over <= 0:
+        return True
+    today = date.today().isoformat()
+    flexible = [d for d in week if d is not slot and d.type == "easy" and d.date > today and not d.activity_id]
+    room = sum(max(0.0, d.distance_miles - MIN_EASY) for d in flexible)
+    if room < over:
+        return False
+    for d in flexible:  # take the excess from the longest easy days first
+        if over <= 0:
+            break
+        cut = min(over, max(0.0, d.distance_miles - MIN_EASY))
+        if cut > 0:
+            _mark_changed(d, "Shortened to make room for a rescheduled workout within the weekly budget.")
+            d.distance_miles = round((d.distance_miles - cut) * 2) / 2
+            d.prescription = json.dumps(day_prescription({"type": d.type, "distance_miles": d.distance_miles, "description": d.description}))
+            over -= cut
+    return True
+
+
+def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[PlannedWorkout | None, str | None]:
+    """A future easy day with no run yet, on a non-rest day, with no hard day (planned
+    workout, long run or race — or a real hard run) on either side. Never falls back
+    to an unsafe day; returns the reason instead."""
+    today = date.today().isoformat()
+    floor = max(after_date, today)
+    days = db.query(PlannedWorkout).filter(PlannedWorkout.plan_id == db_plan.id).order_by(PlannedWorkout.date).all()
+    by_date = {d.date: d for d in days}
+    acts = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
+    for c in days:
+        if c.date <= floor or c.type != "easy" or c.activity_id or acts.get(c.date):
+            continue
+        d = date.fromisoformat(c.date)
+        neighbours = [(d - timedelta(days=1)).isoformat(), (d + timedelta(days=1)).isoformat()]
+        if any(by_date.get(n) is not None and by_date[n].type in HARD_ACTIVITY_TYPES | {"race"} for n in neighbours):
+            continue
+        if any(a.workout_type in HARD_ACTIVITY_TYPES for n in neighbours for a in acts.get(n, [])):
+            continue
+        return c, None
+    return None, ("No safe day left in this block for the extra workout: every remaining easy day sits next to a "
+                  "hard day. It was dropped rather than stacked; your next block will include it.")
+
+
+HARD_ACTIVITY_TYPES = {"workout", "race", "long_run"}
+ASSESSMENT_MAX_GAP_DAYS = 7  # assess the previous block only if it ended within a week of the new one
+
+
+def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
+    """A real run that counts as a hard day for spacing: a classified workout/race/long
+    run, or a run that's long relative to the athlete's week (≥8 mi and ≥25% of it)."""
+    miles = (a.distance_meters or 0) / 1609.34
+    return (a.workout_type in HARD_ACTIVITY_TYPES) or (miles >= 8 and miles >= 0.25 * baseline_mpw)
+
+
+def _assess_previous_block(prev_plan: Plan, db: Session):
+    from app.core.block_assessment import DayRecord, assess_block
+
+    today = date.today().isoformat()
+    start = prev_plan.prescribed_from or prev_plan.start_date
+    by_date = _activities_by_date(prev_plan.user_id, prev_plan.start_date, prev_plan.end_date, db)
+    records = []
+    for pw in prev_plan.planned_workouts:
+        if not (start <= pw.date < today):
+            continue
+        actual = sum(a.distance_meters for a in by_date.get(pw.date, [])) / 1609.34
+        records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
+                                 actual_miles=actual, feel=pw.feel_rating))
+    return assess_block(records)
 
 
 def _current_phase(weeks: list[dict], today: str) -> dict | None:
@@ -653,46 +1062,31 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
             "threshold": {"current_level": 1, "current_pace_sec": 410, ...},
         }
     """
+    from app.core.workout_ladders import program_key
+    key = program_key(goal_distance)
     result = {}
-
     for category in ("intervals", "threshold"):
-        prog = db.query(WorkoutProgression).filter(
-            WorkoutProgression.user_id == user_id,
-            WorkoutProgression.category == category,
-        ).first()
+        prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=key).first()
+        if not prog:
+            legacy = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=None).first()
+            if legacy and goal_distance == "5k":
+                # The old program was explicitly the 5K ladder.
+                prog = legacy
+                prog.program_key = key
+            else:
+                prior = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category).order_by(WorkoutProgression.updated_at.desc()).first()
+                cutoff = date.today() - timedelta(days=84)
+                pace = prior.current_pace_sec if prior and prior.last_workout_date and prior.last_workout_date >= cutoff else None
+                prog = WorkoutProgression(user_id=user_id, category=category, program_key=key,
+                                          current_level=1, current_pace_sec=pace, sessions_at_level=0, format_rotation=0)
+                db.add(prog)
+        db.flush()
+        result[category] = {"current_level": prog.current_level, "current_pace_sec": prog.current_pace_sec,
+                            "format_rotation": prog.format_rotation, "last_execution": prog.last_execution,
+                            "sessions_at_level": prog.sessions_at_level, "program_key": key}
 
-        if prog:
-            result[category] = {
-                "current_level": prog.current_level,
-                "current_pace_sec": prog.current_pace_sec,
-                "format_rotation": prog.format_rotation,
-                "last_execution": prog.last_execution,
-                "sessions_at_level": prog.sessions_at_level,
-            }
-        else:
-            # Initialize from recent Strava workout history
-            recent_descriptions = _get_recent_workout_descriptions(user_id, db)
-            starting_level = determine_starting_level(category, recent_descriptions, None)
-
-            prog = WorkoutProgression(
-                user_id=user_id,
-                category=category,
-                current_level=starting_level,
-                sessions_at_level=0,
-                format_rotation=0,
-            )
-            db.add(prog)
-            db.flush()
-
-            result[category] = {
-                "current_level": starting_level,
-                "current_pace_sec": None,
-                "format_rotation": 0,
-                "last_execution": None,
-                "sessions_at_level": 0,
-            }
-
-    db.commit()
+    # No commit here: the caller's transaction (plan generation) owns it
+    db.flush()
     return result
 
 
@@ -718,12 +1112,10 @@ def _update_progression_from_evaluation(
     workout_date: str,
     new_pace_sec: float | None,
     db: Session,
+    program: str | None = None,
 ):
     """Update the WorkoutProgression record based on an evaluation decision."""
-    prog = db.query(WorkoutProgression).filter(
-        WorkoutProgression.user_id == user_id,
-        WorkoutProgression.category == category,
-    ).first()
+    prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=program).first()
 
     if not prog:
         return
@@ -732,66 +1124,25 @@ def _update_progression_from_evaluation(
     prog.last_workout_name = workout_name
     prog.last_execution = evaluation_decision
 
+    # One lever per decision: advance moves the level, recalibrate moves the pace.
     if evaluation_decision == "advance":
         prog.current_level = min(prog.current_level + 1, 12)
         prog.sessions_at_level = 0
         prog.format_rotation = (prog.format_rotation + 1) % 3
-        if new_pace_sec:
-            prog.current_pace_sec = new_pace_sec
     elif evaluation_decision == "recalibrate":
-        prog.current_level = min(prog.current_level + 1, 12)
-        prog.sessions_at_level = 0
         if new_pace_sec:
             prog.current_pace_sec = new_pace_sec
     elif evaluation_decision == "regress":
         prog.current_level = max(prog.current_level - 1, 1)
         prog.sessions_at_level = 0
-    else:  # hold
+    elif evaluation_decision == "hold":
         prog.sessions_at_level += 1
+    # "insufficient": no evidence either way — level and session count unchanged
 
     db.add(prog)
 
 
-def _find_next_easy_day(plan_id: int, after_date: str, db: Session) -> PlannedWorkout | None:
-    """Find the next unmatched easy day after a given date."""
-    return db.query(PlannedWorkout).filter(
-        PlannedWorkout.plan_id == plan_id,
-        PlannedWorkout.date > after_date,
-        PlannedWorkout.type == "easy",
-        PlannedWorkout.activity_id == None,
-    ).order_by(PlannedWorkout.date).first()
-
-
-def _find_safe_easy_day(plan_id: int, after_date: str, db: Session) -> PlannedWorkout | None:
-    """Find next easy day where neither the day before nor after is a hard workout."""
-    candidates = db.query(PlannedWorkout).filter(
-        PlannedWorkout.plan_id == plan_id,
-        PlannedWorkout.date > after_date,
-        PlannedWorkout.type == "easy",
-        PlannedWorkout.activity_id == None,
-    ).order_by(PlannedWorkout.date).all()
-
-    for c in candidates:
-        d = date.fromisoformat(c.date)
-        prev = (d - timedelta(days=1)).isoformat()
-        nxt = (d + timedelta(days=1)).isoformat()
-
-        prev_day = db.query(PlannedWorkout).filter(
-            PlannedWorkout.plan_id == plan_id, PlannedWorkout.date == prev
-        ).first()
-        next_day = db.query(PlannedWorkout).filter(
-            PlannedWorkout.plan_id == plan_id, PlannedWorkout.date == nxt
-        ).first()
-
-        prev_hard = prev_day and prev_day.type == "workout"
-        next_hard = next_day and next_day.type == "workout"
-
-        if not prev_hard and not next_hard:
-            return c
-    return None
-
-
-def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: Session) -> dict:
+def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: Session, session_date: str | None = None) -> dict:
     """Generate a workout from the ladder based on user's desired type."""
     from app.core.workout_ladders import get_workout_at_level
     from app.services.pace_calibrator import calibrate_paces as _calibrate
@@ -799,27 +1150,34 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
     category_map = {"tempo": "threshold", "threshold": "threshold", "intervals": "intervals"}
     category = category_map.get(desired_type, "threshold")
 
-    prog = db.query(WorkoutProgression).filter(
-        WorkoutProgression.user_id == user_id,
-        WorkoutProgression.category == category,
-    ).first()
-    level = prog.current_level if prog else 1
-
-    calibrated = _calibrate(user_id, db)
-    paces = calibrated if "interval_pace" in calibrated else {}
-
     goal_snapshot = json.loads(db_plan.goal_snapshot) if db_plan.goal_snapshot else {}
-    goal_distance = goal_snapshot.get("distance", "5k")
+    goal_distance = goal_snapshot.get("distance") or goal_snapshot.get("type") or "general"
+    prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
+    level = prog.current_level if prog else 1
+    paces = json.loads(db_plan.training_paces) if db_plan.training_paces else {}
+    if not paces:
+        from app.core.plan_engine import _build_current_paces
+        guide = json.loads(db_plan.pacing_guide or "{}")
+        easy = _parse_pace(guide.get("easy", "9:00").split("-")[0]) or 540
+        paces = _build_current_paces(easy, _calibrate(user_id, db))
+    if prog and prog.current_pace_sec:
+        from app.core.plan_engine import effective_paces
+        paces = effective_paces(paces, {category: {"current_pace_sec": prog.current_pace_sec}})
+    phases = json.loads(db_plan.phases or "[]")
+    week_index = max(0, (date.fromisoformat(session_date or db_plan.start_date) - date.fromisoformat(db_plan.start_date)).days // 7)
+    phase = phases[week_index].get("phase", "general") if week_index < len(phases) else "general"
 
-    return get_workout_at_level(category, level, paces, goal_distance)
+    return get_workout_at_level(category, level, paces, goal_distance, phase)
 
 
-def _copy_workout_to_day(source: PlannedWorkout, target: PlannedWorkout):
-    """Copy workout prescription from one PlannedWorkout to another."""
-    target.type = source.type
-    target.title = source.title
-    target.description = source.description
-    target.purpose = source.purpose
-    target.distance_miles = source.distance_miles
-    target.warmup = source.warmup
-    target.cooldown = source.cooldown
+def _plan_program(plan: Plan) -> str | None:
+    from app.core.workout_ladders import program_key
+    goal = json.loads(plan.goal_snapshot or "{}")
+    return program_key(goal.get("distance") or goal.get("type")) if goal else None
+
+
+def _begin_schedule_write(db: Session):
+    """Serialize read/validate/write decisions for this single-athlete SQLite app."""
+    from sqlalchemy import text
+    if db.bind.dialect.name == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))

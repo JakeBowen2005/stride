@@ -16,6 +16,7 @@ export default function HistoryPage() {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [weeklyMileage, setWeeklyMileage] = useState<WeeklyMileage[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function HistoryPage() {
           fetch(apiUrl(`/analysis/${USER_ID}/weekly-mileage?weeks=16`)),
         ]);
 
+        if (!actRes.ok || !mileageRes.ok) throw new Error("Could not load history. Reload to retry.");
         if (actRes.ok) {
           const data = await actRes.json();
           setActivities(
@@ -41,6 +43,7 @@ export default function HistoryPage() {
           setWeeklyMileage(data.map((d: Record<string, unknown>) => ({ ...d, planned: 0 })));
         }
       } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not load data");
         console.error("Failed to load history:", e);
       } finally {
         setLoading(false);
@@ -48,6 +51,8 @@ export default function HistoryPage() {
     }
     load();
   }, [filter]);
+
+  if (error) return <p role="alert" className="text-destructive">{error}</p>;
 
   if (loading) {
     return (

@@ -66,6 +66,10 @@ export function GarminSync({
           } else if ((data.new || 0) + (data.merged || 0) > 0) {
             setMessage(`${data.new + data.merged} new run${data.new + data.merged === 1 ? "" : "s"} from Garmin`);
             onNewActivities?.();
+          } else if (data.wellness?.status === "ok") {
+            // No new run, but sleep/HRV/readiness refreshed — reload what's on screen
+            onNewActivities?.();
+            if (manual) setMessage("Up to date");
           } else if (manual) {
             setMessage("Up to date");
           }

@@ -1,7 +1,6 @@
 import json
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 

@@ -30,6 +30,7 @@ interface PlanResponse {
 }
 
 export default function TodayPage() {
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState<Activity[]>([]);
   const [weeklyMileage, setWeeklyMileage] = useState<WeeklyMileage[]>([]);
@@ -38,29 +39,37 @@ export default function TodayPage() {
   const [wellness, setWellness] = useState<WellnessResponse | null>(null);
   const [prs, setPrs] = useState<Record<string, number>>({});
   const [selectedRun, setSelectedRun] = useState<Activity | null>(null);
+  const [firstName, setFirstName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [acts, mileage, goalData, planData, wellnessData, prList] = await Promise.all([
+    try {
+    setError(null);
+    const [acts, mileage, goalData, planData, wellnessData, prList, user] = await Promise.all([
       getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
       getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
       getJson<GoalData>(`/plans/${USER_ID}/goal`),
-      getJson<PlanResponse>(`/plans/${USER_ID}/current`),
+      getJson<PlanResponse>(`/plans/${USER_ID}/current`, { allowNotFound: true }),
       getJson<WellnessResponse>(`/wellness/${USER_ID}?days=28`),
       getJson<{ distance: string; time_seconds: number }[]>(`/analysis/${USER_ID}/prs`),
+      getJson<{ name: string | null }>(`/users/${USER_ID}`),
     ]);
+    setFirstName(user?.name?.split(" ")[0] ?? null);
     setRecentRuns((acts ?? []).map((a) => ({ ...a, splits: a.splits || [] })));
     setWeeklyMileage((mileage ?? []).map((d) => ({ ...d, planned: 0 })));
     setGoal(goalData);
     setPlan(planData);
     setWellness(wellnessData);
     setPrs(Object.fromEntries((prList ?? []).map((p) => [p.distance, p.time_seconds])));
-    setLoading(false);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not load your dashboard"); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
     const id = setTimeout(load, 0);
     return () => clearTimeout(id);
   }, [load]);
+
+  if (error) return <div role="alert" className="space-y-3"><p>{error}</p><button className="underline" onClick={load}>Retry</button></div>;
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
@@ -73,7 +82,7 @@ export default function TodayPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{greeting}, Jake</h1>
+          <h1 className="text-xl font-semibold">{firstName ? `${greeting}, ${firstName}` : greeting}</h1>
           <p className="text-sm text-muted-foreground">
             {now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
             {goal?.description && ` · ${goal.description}`}
@@ -92,6 +101,9 @@ export default function TodayPage() {
       ) : (
         <>
           <TodayCard
+            // Remount when the day or its saved feedback changes, so local state follows the data
+            key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
+            onFeedbackSaved={load}
             today={todayPlan}
             wellness={wellness?.today ?? null}
             statusLabel={wellness?.training_status_label ?? null}
@@ -108,7 +120,12 @@ export default function TodayPage() {
             </Card>
           )}
 
-          <MetricTiles today={wellness?.today ?? null} history={wellness?.history ?? []} />
+          {wellness?.freshness === "stale" && wellness.as_of && (
+            <p className="text-xs text-muted-foreground">
+              Today&apos;s Garmin data hasn&apos;t synced yet. Showing {wellness.as_of}; readiness is hidden until it does.
+            </p>
+          )}
+          <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
 
           <div>
             <h3 className="mb-2 text-sm font-medium">Recent Runs</h3>
@@ -140,7 +157,7 @@ export default function TodayPage() {
             )}
           </div>
 
-          <RacePredictions wellness={wellness?.today ?? null} prs={prs} goal={goal} />
+          <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
 
           <WeeklyMileageChartWrapper data={weeklyMileage} />
         </>

@@ -10,12 +10,11 @@ from functools import lru_cache
 from pathlib import Path
 
 import anthropic
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.activity import Activity
-from app.models.plan import Plan, PlannedWorkout
+from app.models.plan import PlannedWorkout
 from app.models.user import Goal, User
 
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs"
@@ -230,6 +229,7 @@ def get_coach_feedback(
     activities: list[Activity],
     feedback,
     db: Session,
+    decision_summary: str | None = None,
 ) -> str:
     """Get science-backed coach feedback for a completed run.
 
@@ -244,11 +244,19 @@ def get_coach_feedback(
 
     # If no API key, use template fallback
     if not settings.anthropic_api_key:
-        return _template_feedback(feedback, pw, activities)
+        base = _template_feedback(feedback, pw, activities)
+        return f"{base}\n\n{decision_summary}" if decision_summary else base
 
     system_prompt = _build_system_prompt(user_id, goal, db)
 
-    user_message = f"RECENT TRAINING:\n{recent}\n\nTODAY'S RUN:\n{today}\n\nGive me quick coach feedback on today's run."
+    decided = (
+        f"\n\nSTRIDE'S DECISION (already applied; explain it, don't contradict it):\n{decision_summary}"
+        if decision_summary else ""
+    )
+    user_message = (
+        f"RECENT TRAINING:\n{recent}\n\nTODAY'S RUN:\n{today}{decided}\n\n"
+        "Give me quick coach feedback on today's run."
+    )
 
     try:
         response = _client().messages.create(
@@ -268,7 +276,8 @@ def get_coach_feedback(
         return text or _template_feedback(feedback, pw, activities)
     except Exception:  # never lose the athlete's feedback over an LLM failure
         logger.exception("Coach LLM call failed; using template feedback")
-        return _template_feedback(feedback, pw, activities)
+        base = _template_feedback(feedback, pw, activities)
+        return f"{base}\n\n{decision_summary}" if decision_summary else base
 
 
 def _template_feedback(feedback, pw: PlannedWorkout, activities: list[Activity]) -> str:

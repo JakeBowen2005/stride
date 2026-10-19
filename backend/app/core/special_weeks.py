@@ -16,8 +16,9 @@ from app.core.periodization import (
     is_ultra,
 )
 
+from app.core.plan_validator import HARD_TYPES  # noqa: F401  (re-exported for callers/tests)
+
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-HARD_TYPES = {"workout", "long_run", "race"}
 
 RACE_LABELS = {
     "5k": "5K", "10k": "10K", "half": "Half Marathon", "marathon": "Marathon",
@@ -197,7 +198,7 @@ def back_to_back_day(day_date: date, main: dict, paces: dict, terrain: str | Non
                 miles)
 
 
-def hill_session(phase: str) -> dict:
+def _hill_session_template(phase: str) -> dict:
     """Hill work in place of track intervals for trail/mountain ultras."""
     if phase == "base":
         return {"name": "Short Hill Repeats: 8x60sec",
@@ -215,26 +216,21 @@ def hill_session(phase: str) -> dict:
             "warmup": "2mi easy", "cooldown": "1.5mi easy", "total_miles": 7.0}
 
 
-# ── Safety net ──────────────────────────────────────────────────
+def hill_session(phase: str) -> dict:
+    from app.core.workout_data import prescription, render, segment
+    workout = _hill_session_template(phase)
+    reps, seconds = (8, 60) if phase == 'base' else (4, 360) if phase == 'peak' else (6, 180)
+    segments = [segment(reps, seconds=seconds)]
+    if phase == 'peak':
+        segments.append(segment(seconds=600, category='downhill'))
+    data = prescription('hills', 'time_intervals', segments, phase=phase,
+                        note='Uphill by effort with a jog down recovery; use the effort and terrain guidance below. ' + workout['structure'])
+    workout['prescription'] = data
+    workout['structure'] = render(data)
+    return workout
 
-def enforce_no_back_to_back_hard(days: list[dict], easy_desc: str) -> list[dict]:
-    """Never two hard days in a row (CLAUDE.md). A back-to-back long-run pair is the
-    one allowed exception. On conflict the workout is downgraded to easy — fail safe."""
-    for i in range(1, len(days)):
-        a, b = days[i - 1], days[i]
-        if a["type"] not in HARD_TYPES or b["type"] not in HARD_TYPES:
-            continue
-        if a["type"] == "long_run" and b["type"] == "long_run":
-            continue  # B2B weekend
-        victim = b if b["type"] == "workout" else a if a["type"] == "workout" else None
-        if victim is None:
-            continue
-        victim.update({
-            "type": "easy",
-            "title": "Easy Run (moved off a hard-day stack)",
-            "description": easy_desc,
-            "purpose": "Keeps easy days between hard efforts so each hard day can be done well.",
-            "distance_miles": min(victim["distance_miles"], 6.0),
-            "warmup": None, "cooldown": None,
-        })
-    return days
+
+# ── Safety net ──────────────────────────────────────────────────
+# The hard-day rule lives in plan_validator so generation and every later schedule
+# mutation share one implementation.
+from app.core.plan_validator import enforce_no_back_to_back_hard  # noqa: E402,F401

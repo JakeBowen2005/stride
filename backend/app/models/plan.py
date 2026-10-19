@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -20,12 +20,19 @@ class Plan(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # JSON-serialized fields
+    training_paces: Mapped[str | None] = mapped_column(Text, nullable=True)
     pacing_guide: Mapped[str | None] = mapped_column(Text)  # JSON
     notes: Mapped[str | None] = mapped_column(Text)  # JSON array
     goal_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     athlete_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     phases: Mapped[str | None] = mapped_column(Text)  # JSON list, one periodization phase per week
     prescribed_from: Mapped[str | None] = mapped_column(String(20))  # local ISO date the plan starts prescribing
+    load: Mapped[str | None] = mapped_column(Text)  # JSON LoadPlan: baseline, destination, budgets, reasons
+    assessment: Mapped[str | None] = mapped_column(Text)  # JSON BlockAssessment of the previous block
+
+    preview_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_context: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preview_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(
@@ -52,6 +59,14 @@ class PlannedWorkout(Base):
     warmup: Mapped[str | None] = mapped_column(String(200))
     cooldown: Mapped[str | None] = mapped_column(String(200))
 
+    prescription: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    b2b: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    session_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    moved_to: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    moved_from: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Matched actual activity
     activity_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("activities.id"), nullable=True
@@ -65,6 +80,14 @@ class PlannedWorkout(Base):
     swap_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_workout_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # what they did if swapped
     coach_response: Mapped[str | None] = mapped_column(Text, nullable=True)  # LLM feedback
+
+    # Deterministic decisions (persisted so UI, coach and reloads agree)
+    evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON WorkoutEvaluation
+    adjustment_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # why this day was changed
+    original_prescription: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON, before any change
+    # Durable dedup: set once when feedback side effects (progression, rescheduling,
+    # fatigue downgrade) are applied, so retries/concurrent submits apply them once
+    side_effects_applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     plan: Mapped["Plan"] = relationship("Plan", back_populates="planned_workouts")

@@ -14,9 +14,10 @@ export type WorkoutType =
   | "strides"
   | "race";
 
-export type GoalType = "race" | "mileage" | "general_fitness" | "return_from_injury";
+// Same values the backend stores (users.GoalData / RACE_DISTANCES)
+export type GoalType = "race" | "mileage" | "general" | "comeback";
 
-export type RaceDistance = "5k" | "10k" | "half_marathon" | "marathon";
+export type RaceDistance = "5k" | "10k" | "half" | "marathon" | "50k" | "50mi" | "100k" | "100mi";
 
 export type TrainingPhase = "general" | "base" | "build" | "peak" | "taper" | "race_week" | "recovery";
 
@@ -85,6 +86,8 @@ export interface DayFeedback {
   swap_reason: string | null;
   actual_workout_type: string | null;
   coach_response: string | null;
+  evaluation?: { decision: string; reason: string; evidence: string } | null;
+  changes?: { date: string | null; change: string; reason: string }[];
 }
 
 export interface RunComparison {
@@ -106,10 +109,13 @@ export interface Workout {
   intervals?: string;
   completed: boolean;
   skipped: boolean;
+  session_status?: "completed" | "not_logged" | "skipped" | "replaced" | "moved";
+  moved_to?: string | null;
   prescribed?: boolean;
   actual?: ActualRun | null;
   comparison?: RunComparison | null;
   feedback?: DayFeedback | null;
+  adjustment_note?: string | null;
 }
 
 export interface PlanWeek {

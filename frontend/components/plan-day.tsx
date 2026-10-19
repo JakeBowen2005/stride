@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
   formatDistance,
@@ -18,6 +19,7 @@ interface PlanDayProps {
   expanded: boolean;
   onToggle: () => void;
   onPlanChanged?: () => void;
+  readOnly?: boolean;
 }
 
 function ComparisonBadge({ diffMiles }: { diffMiles: number }) {
@@ -72,7 +74,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, readOnly }: PlanDayProps) {
   const today = localDateStr();
   const isPast = workout.date < today;
   const hasActual = !!workout.actual;
@@ -92,7 +94,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
   const label = sessionLabel(workout.type, workout.title);
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
-  const showFeedbackForm = hasActual && !hasFeedback && workout.type !== "rest";
+  const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
 
   return (
     <div
@@ -126,6 +128,9 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
               )}
             </div>
             {actualLine && <div className="text-xs text-muted-foreground">{actualLine}</div>}
+            {workout.adjustment_note && (
+              <div className="text-xs text-muted-foreground">Adjusted: {workout.adjustment_note}</div>
+            )}
             {workout.intervals && !hasActual && (
               <div className="font-mono text-xs text-muted-foreground">
                 {workout.intervals}
@@ -151,8 +156,14 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
           {isPast && !hasActual && !workout.skipped && !isToday && workout.type !== "rest" && isPrescribed && (
             <span className="text-xs text-muted-foreground">Not logged</span>
           )}
-          {workout.skipped && (
+          {workout.skipped && !hasActual && (
             <span className="text-xs text-muted-foreground">Skipped</span>
+          )}
+          {!hasActual && workout.session_status === "moved" && (
+            <span className="text-xs text-muted-foreground">{workout.moved_to ? `Moved to ${workout.moved_to}` : "Moved here"}</span>
+          )}
+          {!hasActual && workout.session_status === "replaced" && (
+            <span className="text-xs text-muted-foreground">Replaced</span>
           )}
         </div>
       </div>
@@ -318,6 +329,17 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
                   Swap reason: {localFeedback.swap_reason}
                 </p>
               )}
+              {localFeedback.evaluation && (
+                <p className="text-xs">
+                  <span className="font-medium">Progression: </span>
+                  <span className="text-muted-foreground">{localFeedback.evaluation.reason}</span>
+                </p>
+              )}
+              {localFeedback.changes?.map((c) => (
+                <p key={`${c.change}-${c.date}`} className="text-xs text-muted-foreground">
+                  {c.date ? `${c.date}: ` : ""}{c.reason}
+                </p>
+              ))}
               {localFeedback.coach_response && (
                 <div className="rounded-md bg-secondary/50 p-2.5 text-xs leading-relaxed">
                   <span className="font-medium">Coach: </span>
@@ -327,6 +349,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
             </div>
           )}
 
+          {workout.session_status && !hasActual && workout.session_status !== "not_logged" && (
+            <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
+          )}
+          {!readOnly && !hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
+            <SessionControls workout={workout} onChanged={onPlanChanged} />
+          )}
           {/* Feedback form for completed days without feedback */}
           {showFeedbackForm && expanded && (
             <div className="border-t pt-3">

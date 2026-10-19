@@ -21,6 +21,9 @@ interface ApiPlanDay {
   warmup: string | null;
   cooldown: string | null;
   prescribed?: boolean;
+  session_status?: Workout["session_status"];
+  moved_to?: string | null;
+  adjustment_note?: string | null;
   actual?: {
     distance_miles: number;
     avg_pace: string | null;
@@ -44,6 +47,7 @@ interface ApiPlanDay {
     swap_reason: string | null;
     actual_workout_type: string | null;
     coach_response: string | null;
+    evaluation?: { decision: string; reason: string; evidence: string } | null;
   } | null;
 }
 
@@ -57,12 +61,21 @@ interface ApiWeek {
 
 interface ApiPlan {
   id: number;
+  preview?: boolean;
   start_date: string;
   end_date: string;
   block_number: number;
   is_deload: boolean;
   is_stale?: boolean;
   phase?: WeekPhaseInfo | null;
+  load?: {
+    baseline: number;
+    destination: number | null;
+    mode: string;
+    weekly_budgets: number[];
+    reasons: string[];
+  } | null;
+  assessment?: { decision: string | null; reasons: string[] } | null;
   weeks: ApiWeek[];
   pacing_guide: Record<string, string>;
   notes: string[];
@@ -99,13 +112,54 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       warmup: d.warmup || undefined,
       cooldown: d.cooldown || undefined,
       completed: !!d.actual,
-      skipped: false,
+      skipped: d.session_status === "skipped",
+      session_status: d.session_status,
+      moved_to: d.moved_to,
       prescribed: d.prescribed !== false,
       actual: d.actual || null,
       comparison: d.comparison || null,
       feedback: d.feedback || null,
+      adjustment_note: d.adjustment_note ?? null,
     })),
   };
+}
+
+const MODE_LABEL: Record<string, string> = {
+  build: "Building", hold: "Holding steady", reduce: "Easing back", recovery: "Recovery block",
+  deload: "Deload included", start: "Getting started",
+};
+
+function BlockSummary({ load, assessment }: { load: NonNullable<ApiPlan["load"]>; assessment: ApiPlan["assessment"] }) {
+  const budgets = load.weekly_budgets.map((b) => Math.round(b)).join(" → ");
+  return (
+    <Card>
+      <CardContent className="space-y-2 pt-4 text-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="font-medium">This block: {MODE_LABEL[load.mode] ?? load.mode}</h3>
+          <span className="shrink-0 font-mono text-muted-foreground">{budgets} mi/wk</span>
+        </div>
+        <p className="text-muted-foreground">
+          Baseline {Math.round(load.baseline)} mi/week from your recent runs
+          {load.destination ? ` · goal ${Math.round(load.destination)} mi/week` : ""}
+        </p>
+        {load.destination && load.destination > load.baseline && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-label="Progress toward mileage goal">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.min(100, (load.baseline / load.destination) * 100)}%`, background: "var(--viz-series-1)" }}
+            />
+          </div>
+        )}
+        {assessment?.reasons?.length ? (
+          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+            {assessment.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026. */
@@ -131,6 +185,11 @@ export default function PlanPage() {
 
   const fetchPlan = useCallback(async () => {
     try {
+      setError(null);
+      const draftRes = await fetch(apiUrl(`/plans/${USER_ID}/draft`));
+      if (!draftRes.ok) throw new Error("Could not load pending preview");
+      const draft = await draftRes.json();
+      if (draft) { setPlan(draft); setNoPlan(false); return; }
       const res = await fetch(apiUrl(`/plans/${USER_ID}/current`));
       if (res.status === 404) {
         setNoPlan(true);
@@ -150,14 +209,14 @@ export default function PlanPage() {
     }
   }, []);
 
-  const generatePlan = useCallback(async () => {
+  const generatePlan = useCallback(async (lighter = false) => {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ lighter }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -173,6 +232,18 @@ export default function PlanPage() {
       setGenerating(false);
     }
   }, [fetchPlan]);
+
+  async function finishPreview(action: "approve" | "discard") {
+    if (!plan) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/drafts/${plan.id}/${action}`), { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save your choice");
+      await fetchPlan();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not reach Stride"); }
+    finally { setGenerating(false); }
+  }
 
   useEffect(() => {
     const id = setTimeout(fetchPlan, 0);
@@ -197,7 +268,7 @@ export default function PlanPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No plan yet. Generate your first training plan.</p>
-            <Button onClick={generatePlan} disabled={generating}>
+            <Button onClick={() => generatePlan()} disabled={generating}>
               {generating ? "Generating..." : "Generate Your First Plan"}
             </Button>
             {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
@@ -207,7 +278,7 @@ export default function PlanPage() {
     );
   }
 
-  if (error || !plan) {
+  if (!plan) {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Current Plan</h1>
@@ -241,7 +312,7 @@ export default function PlanPage() {
               Generate a fresh 2-week block. It&apos;s built from your latest Garmin runs, current fitness and{" "}
               {plan.goal.race_date ? "where you are relative to race day" : "your goal"}.
             </p>
-            <Button onClick={generatePlan} disabled={generating}>
+            <Button onClick={() => generatePlan()} disabled={generating}>
               {generating ? "Building your plan…" : "Generate this week's plan"}
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -297,6 +368,19 @@ export default function PlanPage() {
         </div>
       </div>
 
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {plan.preview && <Card><CardContent className="space-y-3 pt-4">
+        <h2 className="font-semibold">Review this block before starting</h2>
+        <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={generating} onClick={() => finishPreview("approve")}>Approve</Button>
+          <Button variant="outline" disabled={generating} onClick={() => generatePlan(true)}>Make it lighter</Button>
+          <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Discard preview</Button>
+        </div>
+      </CardContent></Card>}
+      {!plan.preview && <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Preview next block</Button>}
+      {plan.load && <BlockSummary load={plan.load} assessment={plan.assessment ?? null} />}
+
       {/* Pacing Guide — the same numbers the workouts below use */}
       <Card>
         <CardContent className="pt-4">
@@ -331,6 +415,7 @@ export default function PlanPage() {
         <PlanWeek
           key={week.week_number}
           week={week}
+          readOnly={!!plan.preview}
           isCurrent={i === 0 && currentWeekIndex >= 0}
           onPlanChanged={() => {
             setLoading(true);

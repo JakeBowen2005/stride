@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { useGarminStatus } from "@/components/garmin-sync";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,19 @@ import { PRInput, type PREntry } from "@/components/onboarding/pr-input";
 import type { GoalType, RaceDistance } from "@/lib/types";
 
 const TOTAL_STEPS = 8;
+// DayPicker numbers days Sunday = 0 (JS convention); the backend stores names
+const PICKER_DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+function toSeconds(h: string, m: string, s: string): number | null {
+  const total = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
+  return total > 0 ? total : null;
+}
+
+interface Readiness {
+  ready: boolean;
+  reasons: string[];
+  suggestion: string | null;
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -66,9 +80,92 @@ export default function OnboardingPage() {
     if (step > 0) setStep(step - 1);
   }
 
-  function handleFinish() {
-    // In production, POST to /api/onboarding
-    router.push("/");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+
+  // Re-running setup starts from what's already saved
+  useEffect(() => {
+    getJson<{
+      age: number | null; units: string; workout_format?: string; years_running: number | null;
+      current_weekly_mileage: number | null; peak_weekly_mileage: number | null;
+      days_per_week: number; rest_days: string | null; long_run_day?: string | null;
+    }>(`/users/${USER_ID}`, { allowNotFound: true }).then((u) => {
+      if (!u) return;
+      if (u.age) setAge(String(u.age));
+      setUnits(u.units === "km" ? "kilometers" : "miles");
+      if (u.workout_format === "time" || u.workout_format === "distance") setWorkoutFormat(u.workout_format);
+      if (u.years_running != null) setYearsRunning(String(u.years_running));
+      if (u.current_weekly_mileage) setCurrentMileage([u.current_weekly_mileage]);
+      if (u.peak_weekly_mileage) setPeakMileage([u.peak_weekly_mileage]);
+      if (u.days_per_week) setDaysPerWeek([u.days_per_week]);
+      if (u.rest_days) setRestDays(u.rest_days.split(",").map((d) => PICKER_DAYS.indexOf(d.trim())).filter((i) => i >= 0));
+      if (u.long_run_day) setLongRunDay([PICKER_DAYS.indexOf(u.long_run_day)].filter((i) => i >= 0));
+    }).catch((e) => setSaveError(e instanceof Error ? e.message : "Could not load your profile"));
+  }, []);
+
+  async function send(path: string, method: string, body?: unknown) {
+    const res = await fetch(apiUrl(path), {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  }
+
+  /** Profile → goal → first plan. Each step is safe to retry (profile is an
+   * idempotent update of this athlete; a new goal replaces the active one; plan
+   * generation replaces the active plan atomically). */
+  async function handleFinish(overrideReadiness = false) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const prSeconds: Record<string, number> = {};
+      for (const p of prs) {
+        const t = toSeconds(p.hours, p.minutes, p.seconds);
+        if (p.distance && t) prSeconds[`pr_${p.distance === "half" ? "half" : p.distance}_seconds`] = t;
+      }
+      const profile = await send(`/users/${USER_ID}/profile`, "PUT", {
+        age: Number(age) || null,
+        units: units === "kilometers" ? "km" : "miles",
+        workout_format: workoutFormat,
+        years_running: Number(yearsRunning) || 0,
+        current_weekly_mileage: currentMileage[0],
+        peak_weekly_mileage: peakMileage[0],
+        days_per_week: daysPerWeek[0],
+        rest_days: restDays.map((i) => PICKER_DAYS[i]),
+        long_run_day: PICKER_DAYS[longRunDay[0] ?? 6],
+        ...prSeconds,
+      });
+      if (!profile.res.ok) throw new Error(typeof profile.data.detail === "string" ? profile.data.detail : "Couldn't save your profile");
+
+      const goal = await send(`/users/${USER_ID}/goal`, "POST", {
+        goal_type: goalType,
+        race_distance: goalType === "race" ? raceDistance || null : null,
+        target_time_seconds: goalType === "race" ? toSeconds(targetHours, targetMinutes, targetSeconds) : null,
+        race_date: goalType === "race" && raceDate ? raceDate : null,
+        target_weekly_mileage: goalType === "mileage" ? targetMileage[0] : null,
+        override_readiness: overrideReadiness,
+      });
+      if (goal.res.status === 409 && goal.data.detail?.readiness) {
+        setReadiness(goal.data.detail.readiness);
+        return;
+      }
+      if (!goal.res.ok) throw new Error(typeof goal.data.detail === "string" ? goal.data.detail : "Couldn't save your goal");
+
+      const plan = await send(`/plans/${USER_ID}/preview`, "POST", {});
+      if (!plan.res.ok) {
+        throw new Error(
+          typeof plan.data.detail === "string" ? plan.data.detail : "Saved your profile and goal, but the plan couldn't be generated",
+        );
+      }
+      router.push("/plan");
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (step === 0) {
@@ -295,7 +392,7 @@ export default function OnboardingPage() {
                   <SelectContent>
                     <SelectItem value="5k">5K</SelectItem>
                     <SelectItem value="10k">10K</SelectItem>
-                    <SelectItem value="half_marathon">Half Marathon</SelectItem>
+                    <SelectItem value="half">Half Marathon</SelectItem>
                     <SelectItem value="marathon">Marathon</SelectItem>
                   </SelectContent>
                 </Select>
@@ -412,11 +509,31 @@ export default function OnboardingPage() {
       totalSteps={TOTAL_STEPS}
       title="Review"
       subtitle="Everything look good? We'll generate your first 2-week plan."
-      onNext={handleFinish}
+      onNext={() => handleFinish(false)}
       onBack={back}
-      nextLabel="Generate My Plan"
+      nextLabel={saving ? "Building your plan…" : saveError ? "Try again" : "Generate My Plan"}
+      nextDisabled={saving || !goalType || (goalType === "race" && !raceDistance)}
     >
       <div className="space-y-3 text-sm">
+        {saveError && (
+          <p role="alert" className="rounded-md bg-destructive/10 p-2 text-destructive">
+            {saveError}. Your answers are still here; tap Try again.
+          </p>
+        )}
+        {readiness && !readiness.ready && (
+          <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <p className="font-medium">This goal looks like a stretch right now:</p>
+            <ul className="list-disc space-y-1 pl-5">
+              {readiness.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            {readiness.suggestion && <p>{readiness.suggestion}</p>}
+            <Button size="sm" variant="outline" onClick={() => handleFinish(true)} disabled={saving}>
+              Set it anyway
+            </Button>
+          </div>
+        )}
         <ReviewRow label="Age" value={age} />
         <ReviewRow label="Units" value={units === "miles" ? "Miles" : "Kilometers"} />
         <ReviewRow label="Format" value={workoutFormat === "distance" ? "Distance-based" : "Time-based"} />
@@ -428,10 +545,10 @@ export default function OnboardingPage() {
           label="Goal"
           value={
             goalType === "race"
-              ? `${raceDistance?.replace("_", " ").toUpperCase()} in ${targetHours || "0"}:${targetMinutes || "00"}:${targetSeconds || "00"}`
+              ? `${raceDistance?.toUpperCase()}${toSeconds(targetHours, targetMinutes, targetSeconds) ? ` in ${targetHours || "0"}:${(targetMinutes || "0").padStart(2, "0")}:${(targetSeconds || "0").padStart(2, "0")}` : ""}`
               : goalType === "mileage"
                 ? `${targetMileage[0]} mi/week`
-                : goalType?.replace("_", " ") || "Not set"
+                : goalType === "general" ? "General fitness" : goalType === "comeback" ? "Return from injury/break" : "Not set"
           }
         />
         <ReviewRow label="Garmin" value={garminConnected ? "Connected" : "Not connected"} />

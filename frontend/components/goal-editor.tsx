@@ -119,10 +119,10 @@ export function GoalEditor({
   async function regenerate() {
     setGenerating(true);
     try {
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), { method: "POST" });
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), { method: "POST" });
       if (res.ok) setGenerated(true);
-      else setError("Plan generation failed");
-    } finally {
+      else setError("Plan preview failed");
+    } catch { setError("Could not reach Stride"); } finally {
       setGenerating(false);
     }
   }
@@ -137,11 +137,11 @@ export function GoalEditor({
         <div className="flex flex-wrap gap-2">
           {generated ? (
             <Link href="/plan" className={buttonVariants({ size: "sm" })}>
-              View new plan
+              Review new block
             </Link>
           ) : (
             <Button size="sm" onClick={regenerate} disabled={generating}>
-              {generating ? "Generating…" : "Generate new plan"}
+              {generating ? "Generating…" : "Preview new block"}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={onSaved}>

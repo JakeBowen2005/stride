@@ -10,11 +10,19 @@ export const USER_ID = 1;
 
 export const apiUrl = (path: string) => `${API_BASE}/api${path}`;
 
-export async function getJson<T>(path: string): Promise<T | null> {
-  try {
-    const res = await fetch(apiUrl(path));
-    return res.ok ? ((await res.json()) as T) : null;
-  } catch {
-    return null;
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+export async function getJson<T>(path: string, options: { allowNotFound?: boolean } = {}): Promise<T | null> {
+  let res: Response;
+  try { res = await fetch(apiUrl(path)); }
+  catch { throw new ApiError("Can't reach Stride. Check your connection and try again.", 0); }
+  if (res.status === 404 && options.allowNotFound) return null;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status === 401 ? "Your session expired. Sign in again." :
+      typeof data.detail === "string" ? data.detail : `Stride request failed (${res.status}). Try again.`, res.status);
   }
+  return await res.json() as T;
 }

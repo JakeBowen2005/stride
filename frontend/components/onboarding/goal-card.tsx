@@ -22,12 +22,12 @@ const GOALS: GoalOption[] = [
     description: "Build up to a target weekly mileage",
   },
   {
-    type: "general_fitness",
+    type: "general",
     title: "General Fitness",
     description: "Run consistently without a specific target",
   },
   {
-    type: "return_from_injury",
+    type: "comeback",
     title: "Return from Injury",
     description: "Conservative rebuild plan to get back safely",
   },

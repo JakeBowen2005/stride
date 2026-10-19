@@ -1,12 +1,11 @@
 """End-to-end API tests against a temp SQLite DB (see conftest.py)."""
 
-import json
 from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal
 from app.main import app
 from app.models.activity import Activity
 from app.models.garmin import GarminConnection
@@ -19,21 +18,9 @@ client = TestClient(app)
 MI = 1609.34
 
 
-@pytest.fixture(autouse=True)
-def fresh_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+def _seed_runs(days: int = 60, skip_recent: int = 0):
     db = SessionLocal()
-    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday"))
-    db.add(Goal(user_id=1, goal_type="race", race_distance="5k", target_time_seconds=1020, active=True))
-    db.commit()
-    db.close()
-    yield
-
-
-def _seed_runs(days: int = 60):
-    db = SessionLocal()
-    for i in range(days):
+    for i in range(skip_recent, days):
         d = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0) - timedelta(days=i + 1)
         if d.weekday() == 4:
             continue
@@ -43,9 +30,17 @@ def _seed_runs(days: int = 60):
     db.close()
 
 
+def _preview_and_approve():
+    result = client.post("/api/plans/1/generate")
+    assert result.status_code == 200, result.text
+    approved = client.post(f"/api/plans/1/drafts/{result.json()['id']}/approve")
+    assert approved.status_code == 200, approved.text
+    return result
+
+
 def test_generate_plan_prescribes_today():
     _seed_runs()
-    r = client.post("/api/plans/1/generate")
+    r = _preview_and_approve()
     assert r.status_code == 200, r.text
     db = SessionLocal()
     plan = db.query(Plan).filter(Plan.is_active == True).one()  # noqa: E712
@@ -161,3 +156,123 @@ def test_wellness_endpoint_shape():
     assert r.status_code == 200
     body = r.json()
     assert body["today"] is None and body["history"] == [] and body["signals"] == []
+    assert body["freshness"] == "absent"
+
+
+def test_stale_wellness_never_drives_signals():
+    from app.models.wellness import DailyWellness
+
+    db = SessionLocal()
+    db.add(DailyWellness(user_id=1, date=(date.today() - timedelta(days=2)).isoformat(),
+                         hrv_last_night=50, hrv_baseline_low=78, readiness_score=30, readiness_level="POOR"))
+    db.commit()
+    db.close()
+    body = client.get("/api/wellness/1?days=7").json()
+    assert body["freshness"] == "stale" and body["today"] is None and body["signals"] == []
+    assert body["latest"]["readiness_score"] == 30 and body["as_of"] == (date.today() - timedelta(days=2)).isoformat()
+
+
+def _past_block(run_fraction: float, feel: int | None = None):
+    """An active plan covering the last 14 days, plus runs covering run_fraction of it."""
+    db = SessionLocal()
+    start = date.today() - timedelta(days=14)
+    plan = Plan(user_id=1, start_date=start.isoformat(), end_date=(date.today() - timedelta(days=1)).isoformat(),
+                is_active=True, prescribed_from=start.isoformat(), block_number=1)
+    db.add(plan)
+    db.flush()
+    for i in range(14):
+        d = start + timedelta(days=i)
+        kind = "rest" if d.weekday() == 4 else ("long_run" if d.weekday() == 5 else ("workout" if d.weekday() in (1, 3) else "easy"))
+        miles = 0 if kind == "rest" else (10 if kind == "long_run" else 5)
+        db.add(PlannedWorkout(plan_id=plan.id, date=d.isoformat(), day_name="x", week_number=i // 7 + 1,
+                              type=kind, title=kind, distance_miles=miles, feel_rating=feel if miles else None))
+        if miles and (i % 10) / 10 < run_fraction:
+            db.add(Activity(user_id=1, source="garmin", external_id=f"b{i}", name="Run",
+                            date=datetime.combine(d, datetime.min.time()).replace(hour=7),
+                            distance_meters=miles * MI, duration_seconds=miles * 540,
+                            average_pace_per_km=540 / 1.60934))
+    db.commit()
+    db.close()
+
+
+def test_two_block_cycle_well_run_block_builds():
+    _seed_runs(40)
+    _past_block(1.0, feel=7)
+    r = _preview_and_approve()
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assessment"]["decision"] == "build"
+    # Seeded history is weeks of steady loaded running, so a history-based deload is
+    # also due; the build shows in week 1, the deload in the first full future week.
+    assert body["load"]["mode"] in ("build", "deload")
+    assert body["load"]["weekly_budgets"][0] > body["load"]["baseline"]
+    current = client.get("/api/plans/1/current").json()
+    assert current["assessment"]["decision"] == "build"  # persisted, survives reload
+    assert any("planned miles" in n for n in current["notes"])
+
+
+def test_two_block_cycle_interrupted_block_reduces():
+    _seed_runs(60, skip_recent=14)  # history, then a 2-week interruption
+    _past_block(0.3)
+    body = client.post("/api/plans/1/generate").json()
+    assert body["assessment"]["decision"] == "reduce"
+    assert body["load"]["mode"] == "reduce"
+    assert all(b < body["load"]["baseline"] for b in body["load"]["weekly_budgets"])
+
+
+def test_failed_generation_keeps_previous_plan(monkeypatch):
+    _seed_runs(40)
+    _past_block(1.0)
+    import app.api.plans as plans_api
+
+    def boom(**kw):
+        raise RuntimeError("engine failure")
+
+    monkeypatch.setattr(plans_api, "generate_plan", boom)
+    with pytest.raises(RuntimeError):
+        client.post("/api/plans/1/generate")
+    db = SessionLocal()
+    active = db.query(Plan).filter(Plan.is_active == True).all()  # noqa: E712
+    assert len(active) == 1 and active[0].block_number == 1
+    db.close()
+
+
+def test_mileage_goal_flows_into_plan():
+    _seed_runs(40)
+    db = SessionLocal()
+    db.query(Goal).update({"active": False})
+    db.add(Goal(user_id=1, goal_type="mileage", target_weekly_mileage=75, active=True))
+    db.commit()
+    db.close()
+    body = client.post("/api/plans/1/generate").json()
+    assert body["load"]["destination"] == 75
+    assert body["goal"]["target_weekly_mileage"] == 75
+    assert max(body["load"]["weekly_budgets"]) < 75
+
+
+def test_profile_update_is_idempotent_and_validated():
+    body = {"age": 21, "units": "miles", "days_per_week": 6, "rest_days": ["friday"], "long_run_day": "saturday",
+            "current_weekly_mileage": 31, "pr_5k_seconds": 1106}
+    for _ in range(2):  # re-running setup updates the same athlete, no duplicates
+        r = client.put("/api/users/1/profile", json=body)
+        assert r.status_code == 200, r.text
+    db = SessionLocal()
+    assert db.query(User).count() == 1
+    u = db.query(User).one()
+    assert u.rest_days == "friday" and u.pr_5k == 1106 and u.current_weekly_mileage == 31
+    db.close()
+    assert client.put("/api/users/1/profile", json={"rest_days": ["saturday"], "long_run_day": "saturday"}).status_code == 422
+    assert client.put("/api/users/1/profile", json={"days_per_week": 7, "rest_days": ["sunday"]}).status_code == 422
+    assert client.put("/api/users/1/profile", json={"units": "kilometers"}).status_code == 422
+
+
+def test_long_finished_block_is_not_assessed():
+    _seed_runs(40)
+    db = SessionLocal()
+    old = date.today() - timedelta(days=120)
+    db.add(Plan(user_id=1, start_date=old.isoformat(), end_date=(old + timedelta(days=13)).isoformat(),
+                is_active=True, prescribed_from=old.isoformat()))
+    db.commit()
+    db.close()
+    body = client.post("/api/plans/1/generate").json()
+    assert body["assessment"] is None  # months-old block is history, not evidence

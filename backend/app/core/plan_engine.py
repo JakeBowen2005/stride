@@ -1,9 +1,9 @@
 """2-week rolling plan generator.
 
 Key principles:
-- Progression in BOTH mileage and intensity across blocks
+- Mileage progression within a demonstrated-load budget
 - Mileage ramp rate accounts for headroom (current vs peak)
-- Threshold pace PROGRESSES toward goal (starts conservative, builds)
+- Category paces change from execution evidence, not mileage or goal time
 - Workout variety via date-seeded rotation
 - Long runs have specific mile breakdowns (not just "steady finish")
 - Marathon-first design: everything builds toward race day
@@ -14,11 +14,12 @@ from datetime import date, timedelta
 from app.core.pacing import format_pace, goal_paces, pace_range
 from app.core.workouts import get_workout_library
 from app.core.workout_ladders import get_workout_at_level, get_deload_workout, get_week2_variant
+from app.core.load_policy import plan_load
 from app.core.periodization import WeekPhase, is_ultra, plan_phases
+from app.core.plan_validator import enforce_no_back_to_back_hard, fit_week_to_budget, validate_plan
 from app.core.special_weeks import (
     back_to_back_day,
     build_race_week,
-    enforce_no_back_to_back_hard,
     hill_session,
     ultra_long_run,
 )
@@ -88,7 +89,27 @@ def generate_plan(
     progression_state: dict | None = None,
     race_date: date | None = None,
     terrain: str | None = None,
+    target_weekly_mileage: float | None = None,
+    assessment: str | None = None,
+    completed_by_date: dict[str, float] | None = None,
+    prior_hard_dates: set[str] | None = None,
+    reported_mileage: float | None = None,
+    allow_preview: bool = True,
+    deload_is_due: bool | None = None,
 ) -> dict:
+    """Generate a block.
+
+    deload_is_due comes from completed training history (load_policy.deload_due);
+    when None, the legacy block-number cadence is used.
+
+    current_weekly_mileage is the demonstrated baseline (4-week average of completed
+    runs). completed_by_date carries real miles already run on days of the block that
+    are before first_prescribe_date, so a midweek plan only prescribes what's left.
+    prior_hard_dates are ISO dates of real hard runs just before the plan, so the
+    first prescribed day can't stack on yesterday's long run.
+    """
+    completed_by_date = completed_by_date or {}
+    prior_hard_dates = set(prior_hard_dates or ())
     if start_date is None:
         today = date.today()
         days_until_monday = (7 - today.weekday()) % 7
@@ -99,20 +120,36 @@ def generate_plan(
     if end_date is None:
         end_date = start_date + timedelta(days=num_weeks * 7 - 1)
 
-    # Check if this block should be a deload
-    is_deload = _is_deload_block(block_number, experience_level)
-
     # Race-date periodization: phase per week (base/build/peak/taper/race week/recovery)
     phases = plan_phases(start_date, num_weeks, goal_type, goal_distance, race_date)
 
-    week1_target, week2_target = _calculate_target_mileage(
-        current_weekly_mileage, peak_weekly_mileage, experience_level, goal_type
-    )
+    # Deloads land on the first full week that hasn't started yet (a deload label on a
+    # week that's already half run would be a deload in name only)
+    fpd = first_prescribe_date or date.today()
+    deload_week = None
+    due = _is_deload_block(block_number, experience_level) if deload_is_due is None else deload_is_due
+    if due:
+        for w in range(num_weeks):
+            wk_start = start_date + timedelta(days=7 * w)
+            if wk_start > fpd and phases[w].phase in ("general", "base", "build", "peak"):
+                deload_week = w
+                break
+    is_deload = deload_week is not None
 
-    if is_deload:
-        deload_mileage = round(current_weekly_mileage * 0.75, 1)
-        week1_target = deload_mileage
-        week2_target = round(current_weekly_mileage * (1 + 0.05), 1)
+    load = plan_load(
+        baseline=current_weekly_mileage,
+        peak=peak_weekly_mileage,
+        experience=experience_level,
+        goal_type=goal_type,
+        num_weeks=num_weeks,
+        target_weekly_mileage=target_weekly_mileage,
+        assessment=assessment,
+        deload_week=deload_week,
+        reported_mileage=reported_mileage,
+    )
+    # Volume that sessions are sized from (the baseline, or the starting load when
+    # there's no usable history)
+    sizing_mileage = max(current_weekly_mileage, load.weekly_budgets[0]) if load.weekly_budgets else current_weekly_mileage
 
     goal_pace_data = None
     if goal_type == "race" and goal_distance and target_time_seconds:
@@ -126,12 +163,16 @@ def generate_plan(
 
     # Ultras use the marathon library for road-style sessions (threshold, long-run variety)
     lib_distance = "marathon" if is_ultra(goal_distance) else (goal_distance or "5k")
-    workout_lib = get_workout_library(current_paces, lib_distance, current_weekly_mileage)
+    workout_lib = get_workout_library(current_paces, lib_distance, sizing_mileage)
 
     include_workouts = _should_include_workouts(
-        current_weekly_mileage, goal_type, experience_level
+        sizing_mileage, goal_type, experience_level
     )
-    workouts_per_week = _workouts_per_week(current_weekly_mileage, experience_level)
+    workouts_per_week = _workouts_per_week(sizing_mileage, experience_level)
+    if goal_type in ("mileage", "general", "comeback"):
+        # Building volume is the goal: one quality session (threshold, never race-specific
+        # VO2 work) plus strides. Intensity follows volume (training-principles.md, P1).
+        workouts_per_week = min(workouts_per_week, 1)
 
     rest_indices = [DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]
     long_run_idx = DAY_NAMES.index(long_run_day)
@@ -139,26 +180,24 @@ def generate_plan(
     # Same rounded range everywhere (easy days, long runs, pacing guide)
     easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
 
+    def restructure_long(miles: float) -> dict:
+        lr = _long_run_structure(miles, "easy", current_paces)
+        return {"title": lr["title"], "description": lr["description"], "purpose": lr["purpose"]}
+
+    easy_desc_all = (
+        "Conversational effort the entire time. Should be able to hold a full conversation — "
+        f"if you can't, slow down. ({easy_range}/mi or slower)"
+    )
+
     # Build all weeks
     weeks = []
-    # For mileage targets beyond week 2, interpolate
-    targets = [week1_target, week2_target]
-    for extra in range(2, num_weeks):
-        targets.append(round(week2_target * (1 + 0.03 * (extra - 1)), 1))
-
+    fit_notes: list[str] = []
     for wk in range(num_weeks):
         wk_num = wk + 1
         wk_start = start_date + timedelta(days=wk * 7)
-        wk_target = targets[wk] if wk < len(targets) else targets[-1]
-        # Only deload if this week doesn't overlap today (never deload the current week)
-        wk_end = wk_start + timedelta(days=6)
-        fpd = first_prescribe_date or date.today()
-        current_week_overlap = wk_start <= fpd <= wk_end
+        wk_target = load.weekly_budgets[wk]
         wk_phase = phases[wk]
-        wk_is_deload = (
-            is_deload and wk == 0 and not current_week_overlap
-            and wk_phase.phase in ("general", "base", "build", "peak")
-        )
+        wk_is_deload = wk == deload_week
         if wk_phase.volume_multiplier is not None:
             # Taper / race week / post-race recovery: scale from current volume, no ramp
             wk_target = round(max(current_weekly_mileage, 10) * wk_phase.volume_multiplier, 1)
@@ -180,46 +219,45 @@ def generate_plan(
             current_mileage=current_weekly_mileage, is_deload=wk_is_deload,
             progression_state=progression_state,
             phase=wk_phase, terrain=terrain, target_time_seconds=target_time_seconds,
+            max_workout_miles=max(5.0, wk_target * 0.30),
+            allow_preview=allow_preview, program_distance=goal_distance or goal_type,
         )
 
-        wk_actual = round(sum(d["distance_miles"] for d in week_days), 1)
-
-        # Each week should be >= previous week. Bump long run if not.
-        # (Not during taper/race/recovery weeks — those are meant to come down.)
-        if weeks and wk_phase.volume_multiplier is None and not is_ultra(goal_distance):
-            prev_mileage = weeks[-1]["target_mileage"]
-            if wk_actual < prev_mileage:
-                deficit = prev_mileage - wk_actual + 0.5
-                for d in week_days:
-                    if d["type"] == "long_run":
-                        d["distance_miles"] = _round_half(d["distance_miles"] + deficit)
-                        long_wo = _pick_long_run(workout_lib, include_workouts, wk_num, current_weekly_mileage, wk_start)
-                        run_type = long_wo["run_type"] if long_wo and long_wo.get("run_type") else "easy"
-                        lr = _long_run_structure(d["distance_miles"], run_type, current_paces)
-                        d["title"] = lr["title"]
-                        d["description"] = lr["description"]
-                        d["purpose"] = lr["purpose"]
-                        break
-                wk_actual = round(sum(d["distance_miles"] for d in week_days), 1)
-
-        # For first plan's current week, mark pre-today days as prescribe=False
-        if first_prescribe_date:
-            for d in week_days:
-                d_date = date.fromisoformat(d["date"])
-                if d_date < first_prescribe_date and d["type"] != "rest":
-                    d["prescribed"] = False
-                else:
-                    d["prescribed"] = True
-        else:
-            for d in week_days:
+        # Days before the plan starts prescribing already happened: they carry the
+        # real miles run (0 if none), never a hypothetical prescription.
+        for d in week_days:
+            if first_prescribe_date and date.fromisoformat(d["date"]) < first_prescribe_date:
+                actual = round(completed_by_date.get(d["date"], 0.0), 2)
+                d.update({
+                    "prescribed": False,
+                    "type": "easy" if actual > 0 else "rest",
+                    # Never present a hypothetical prescription for a day that already happened
+                    "title": "Run (before this plan)" if actual > 0 else "No run logged",
+                    "description": None, "purpose": None,
+                    "distance_miles": actual,
+                    "warmup": None, "cooldown": None,
+                })
+                d.pop("b2b", None)
+            else:
                 d["prescribed"] = True
+
+        if not any(d["type"] == "race" for d in week_days):
+            fit_notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
 
         weeks.append({
             "week_number": wk_num,
-            "target_mileage": wk_actual,
+            "budget_miles": wk_target,  # intended load
+            "target_mileage": round(sum(d["distance_miles"] for d in week_days), 1),  # scheduled
             "phase": wk_phase.to_dict(),
             "days": week_days,
         })
+
+    # Whole-plan safety pass: hard-day separation across week boundaries and against
+    # real hard runs just before the plan, then report anything still violated.
+    enforce_no_back_to_back_hard([d for w in weeks for d in w["days"]], easy_desc_all, prior_hard_dates)
+    for w in weeks:
+        w["target_mileage"] = round(sum(d["distance_miles"] for d in w["days"]), 1)
+    violations = validate_plan(weeks, rest_indices, prior_hard_dates)
 
     plan = {
         "start_date": start_date.isoformat(),
@@ -228,9 +266,15 @@ def generate_plan(
         "is_deload": is_deload,
         "weeks": weeks,
         "pacing_guide": _pacing_guide(easy_range, effective_paces(current_paces, progression_state)),
-        "notes": [],
+        "training_paces": effective_paces(current_paces, progression_state),
+        "notes": list(load.reasons),
         "phases": [w["phase"] for w in weeks],
+        "load": load.to_dict(),
+        "violations": violations,
     }
+    for note in fit_notes:
+        if note not in plan["notes"]:
+            plan["notes"].append(note)
 
     for wp in phases:
         for note in wp.notes:
@@ -267,7 +311,7 @@ def _pacing_guide(easy_range: str, paces: dict) -> dict:
         "easy": easy_range,
         "steady": format_pace(paces["steady_pace"]),
         "tempo": format_pace(tempo),  # continuous tempo
-        "threshold_reps": format_pace(tempo - 10),  # broken threshold reps
+        "threshold_reps": format_pace(paces.get("broken_threshold_pace", tempo - 10)),  # broken threshold reps
         "intervals": f"{format_pace(paces['interval_pace_fast'])}-{format_pace(paces['interval_pace'])}",
     }
 
@@ -278,26 +322,17 @@ def _build_current_paces(
     goal_pace_data: dict | None = None,
     current_mileage: float = 0,
 ) -> dict:
-    """Build training paces with progression toward goal.
+    """Conservative easy-pace defaults, overridden only by category evidence.
 
-    Threshold starts conservative (easy * 0.77 = ~7:00 from 9:06 easy).
-    As mileage builds (30-60 mpw), threshold blends toward goal target
-    (goal MP - 25sec/mi). This mirrors real training progression.
+    Goal pace is retained separately for explicitly eligible race-specific work.
+    Volume alone never moves threshold/interval training to a goal-time estimate.
     """
     # Base paces from easy pace
     base_threshold = easy_pace * 0.77
 
-    # Progress threshold toward goal as fitness builds
+    # Mileage and an aspirational goal are not evidence of pace fitness.
     threshold = base_threshold
     ultra = bool(goal_pace_data and goal_pace_data.get("is_ultra"))
-    if goal_pace_data and current_mileage >= 30 and not ultra:
-        goal_mp = goal_pace_data.get("race_pace")
-        if goal_mp:
-            # Target threshold = 25 sec/mi faster than goal MP
-            goal_threshold = goal_mp - 25
-            # Blend: 0% at 30mpw, 100% at 60mpw
-            progress = min((current_mileage - 30) / 30, 1.0)
-            threshold = base_threshold * (1 - progress) + goal_threshold * progress
 
     # Workouts are written from tempo_pace: continuous tempo at tempo_pace, broken
     # threshold reps ~10s/mi faster (workout_ladders tp_fast). `threshold` is only the
@@ -305,13 +340,7 @@ def _build_current_paces(
     tempo = threshold * 0.96
     steady = threshold + 25           # ~25sec slower than threshold, near MP range
 
-    # Interval pace progresses toward goal as mileage builds
-    base_interval = easy_pace * 0.67
-    interval = base_interval
-    if goal_pace_data and current_mileage >= 30 and not ultra:
-        goal_interval = goal_pace_data.get("interval_pace", base_interval)
-        progress = min((current_mileage - 30) / 30, 1.0)
-        interval = base_interval * (1 - progress) + goal_interval * progress
+    interval = easy_pace * 0.67
 
     # Round all paces to nearest 5 seconds
     threshold = _round_pace(threshold)
@@ -325,11 +354,12 @@ def _build_current_paces(
 
     if workout_paces:
         return {
-            "race_pace": _round_pace(workout_paces.get("race_pace", interval)),
+            "race_pace": _round_pace(workout_paces.get("race_pace", workout_paces.get("interval_pace", interval))),
             "interval_pace": _round_pace(workout_paces.get("interval_pace", interval)),
             "interval_pace_fast": _round_pace(workout_paces.get("interval_pace", interval) - 10),
             "tempo_pace": _round_pace(workout_paces.get("tempo_pace", tempo)),
             "threshold_pace": _round_pace(workout_paces.get("threshold_pace", threshold)),
+            "broken_threshold_pace": _round_pace(workout_paces.get("threshold_pace", tempo - 10)),
             "steady_pace": _round_pace(workout_paces.get("steady_pace", steady)),
             "easy_pace_low": _round_pace(easy_pace * 0.95),
             "easy_pace_high": _round_pace(easy_pace * 1.05),
@@ -344,6 +374,7 @@ def _build_current_paces(
         "interval_pace_fast": interval_fast,
         "tempo_pace": tempo,
         "threshold_pace": threshold,
+        "broken_threshold_pace": tempo - 10,
         "steady_pace": steady,
         "easy_pace_low": _round_pace(easy_pace * 0.95),
         "easy_pace_high": _round_pace(easy_pace * 1.05),
@@ -351,40 +382,6 @@ def _build_current_paces(
         "strides_pace": _round_pace(easy_pace * 0.55),
         "goal_race_pace": grp,
     }
-
-
-def _calculate_target_mileage(
-    current: float, peak: float, experience: str, goal_type: str
-) -> tuple[float, float]:
-    """Headroom-based mileage ramp."""
-    base = max(current, 10)
-
-    if goal_type == "comeback":
-        max_increase = 0.10
-    elif experience == "advanced" and peak > 0:
-        headroom = current / peak if peak > 0 else 1.0
-        if headroom < 0.5:
-            max_increase = 0.20
-        elif headroom < 0.75:
-            max_increase = 0.15
-        else:
-            max_increase = 0.10
-    elif experience == "intermediate":
-        max_increase = 0.12
-    else:
-        max_increase = 0.10
-
-    week1 = round(base * (1 + max_increase * 0.5), 1)
-    week2 = round(base * (1 + max_increase), 1)
-
-    if goal_type == "comeback":
-        ceiling = current * 1.3
-    else:
-        ceiling = min(peak * 0.9, current * 1.5)
-
-    week1 = min(week1, ceiling)
-    week2 = min(week2, ceiling)
-    return week1, week2
 
 
 def _is_deload_block(block_number: int, experience: str) -> bool:
@@ -523,6 +520,9 @@ def _build_week(
     phase: WeekPhase | None = None,
     terrain: str | None = None,
     target_time_seconds: float | None = None,
+    max_workout_miles: float | None = None,
+    allow_preview: bool = True,
+    program_distance: str | None = None,
 ) -> list[dict]:
     phase = phase or WeekPhase(phase="general")
     easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
@@ -572,9 +572,14 @@ def _build_week(
             day_assignments[b2b_idx] = "b2b"
     hard_block = {i for i in (long_run_idx, b2b_idx) if i is not None}
 
+    # Quality budget (80/20): with few run days, hard days would dominate the week.
+    # 5+ run days allow two workouts, 4 allow one, 3 or fewer allow none (the long
+    # run is the week's quality).
+    num_workouts = min(num_workouts, max(0, len(run_days) - 3))
+
     # Single-quality-session weeks (base, taper) use threshold for longer races,
     # race-specific intervals for 5K/10K
-    single_threshold = num_workouts == 1 and goal_distance not in ("5k", "10k", None)
+    single_threshold = num_workouts == 1 and goal_distance not in ("5k", "10k")
 
     workout1 = None
     workout2 = None
@@ -592,8 +597,10 @@ def _build_week(
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
+                        max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
                 elif placed == 1 and ultra and trail and phase.phase in ("base", "build", "peak"):
                     # Trail/mountain ultras: hills replace track intervals early in the week
@@ -604,16 +611,20 @@ def _build_week(
                     day_assignments[wd] = "workout_speed"
                     workout1 = _pick_workout_progressive(
                         workout_lib, "intervals", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
+                        max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
                 else:
                     # Threshold later in the week
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
+                        max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
 
     wo1_miles = _round_half(workout1["total_miles"]) if workout1 and workout1.get("total_miles") else 0
@@ -645,8 +656,8 @@ def _build_week(
             distance = _round_half(mileage_dist.get("long", target_mileage * 0.28))
             long_wo = _pick_long_run(workout_lib, include_workouts, week_num, current_mileage, block_start)
 
-            if long_wo and long_wo.get("structure"):
-                # Peak fixed-structure long runs — use as-is
+            if long_wo and long_wo.get("structure") and long_wo.get("total_miles", distance) <= distance * 1.15:
+                # Peak fixed-structure long runs — use as-is (only when they fit this week)
                 days.append({
                     "date": day_date.isoformat(), "day": day_name,
                     "type": "long_run",
@@ -687,6 +698,7 @@ def _build_week(
                 "description": workout1["structure"],
                 "purpose": workout1["purpose"],
                 "distance_miles": wo1_miles,
+                "prescription": workout1.get("prescription"),
                 "warmup": workout1.get("warmup", "1.5mi easy"),
                 "cooldown": workout1.get("cooldown", "1.5mi easy"),
             })
@@ -699,6 +711,7 @@ def _build_week(
                 "description": workout2["structure"],
                 "purpose": workout2["purpose"],
                 "distance_miles": wo2_miles,
+                "prescription": workout2.get("prescription"),
                 "warmup": workout2.get("warmup", "1.5mi easy"),
                 "cooldown": workout2.get("cooldown", "1.5mi easy"),
             })
@@ -729,22 +742,13 @@ def _build_week(
         days[b2b_idx] = back_to_back_day(
             start_date + timedelta(days=b2b_idx), main, current_paces, terrain, before_main=b2b_idx < long_run_idx,
         )
+        # Explicitly mark the planned pair: the only hard-after-hard the validator allows
+        main["b2b"] = True
+        days[b2b_idx]["b2b"] = True
 
-    if ultra:
-        _rebalance_ultra_easy_days(days, target_mileage)
-
+    # Easy-day sizing happens in generate_plan via fit_week_to_budget, which accounts
+    # for every session actually placed (ultra long runs are sized by time).
     return enforce_no_back_to_back_hard(days, easy_desc)
-
-
-def _rebalance_ultra_easy_days(days: list[dict], target_mileage: float):
-    """Ultra long runs are sized by time, so re-spread the remaining miles over easy days."""
-    fixed = sum(d["distance_miles"] for d in days if d["type"] != "easy")
-    easy = [d for d in days if d["type"] == "easy"]
-    if not easy:
-        return
-    per = _round_half(max((target_mileage - fixed) / len(easy), 3.0))
-    for d in easy:
-        d["distance_miles"] = min(per, 10.0)
 
 
 def _rest_day(day_date: date, day_name: str) -> dict:
@@ -802,7 +806,7 @@ def effective_paces(current_paces: dict, progression_state: dict | None) -> dict
             paces["interval_pace_fast"] = pace - 10
         elif category == "threshold":
             paces["tempo_pace"] = pace
-            paces["threshold_pace"] = pace
+            paces["broken_threshold_pace"] = pace - 10
     return paces
 
 
@@ -810,41 +814,68 @@ def _pick_workout_progressive(
     workout_lib: dict, category: str, week_num: int, block_start: date,
     current_paces: dict, goal_distance: str,
     is_deload: bool, progression_state: dict | None,
+    max_miles: float | None = None,
+    allow_preview: bool = True,
+    current_mileage: float | None = None,
+    phase_name: str | None = None,
 ) -> dict:
     """Pick a workout using the progression ladder if state exists,
     falling back to the old rotation system if not.
+
+    max_miles caps the full session (warmup + work + cooldown) at what the week's
+    budget can hold: a high ladder level on a low-mileage week steps down the ladder
+    for this prescription (the athlete's stored level is unchanged).
     """
-    # If no progression state, fall back to old system
     if not progression_state or category not in progression_state:
-        return _pick_workout(workout_lib, category, week_num, block_start, deload=is_deload)
+        progression_state = {category: {"current_level": 1, "last_execution": "insufficient"}}
 
     state = progression_state[category]
     level = state.get("current_level", 1)
 
     paces = effective_paces(current_paces, progression_state)
 
-    if is_deload:
-        return get_deload_workout(category, level, paces, goal_distance)
+    def at(lvl: int) -> dict:
+        return get_workout_at_level(category, lvl, paces, goal_distance, phase_name or "general")
 
-    # Week 1 = current level, Week 2 = variant (next level preview)
-    if week_num % 2 == 0:
-        return get_week2_variant(category, level, paces, goal_distance)
-    else:
-        return get_workout_at_level(category, level, paces, goal_distance)
+    if is_deload:
+        return get_deload_workout(category, level, paces, goal_distance, phase_name or "general")
+
+    # Week 2 previews the next level only when the athlete's last result allows it
+    preview = allow_preview and week_num % 2 == 0 and state.get("last_execution") not in ("hold", "regress", "insufficient")
+    wo = get_week2_variant(category, level, paces, goal_distance, phase_name or "general") if preview else at(level)
+    if max_miles:
+        lvl = level + (1 if preview else 0)
+        while (wo.get("total_miles") or 0) > max_miles and lvl > 1:
+            lvl -= 1
+            wo = at(lvl)
+    return wo
+
+
+def _eligible(w: dict, current_mileage: float | None, goal_distance: str | None, phase_name: str | None) -> bool:
+    """Library readiness metadata: min_mpw, and marathon-pace sessions only for a
+    marathon goal at ≥ their mileage during build/peak."""
+    if current_mileage is not None and current_mileage < w.get("min_mpw", 0):
+        return False
+    if w.get("requires_mp_readiness"):
+        return goal_distance == "marathon" and phase_name in ("build", "peak")
+    return True
 
 
 def _pick_workout(workout_lib: dict, category: str, week_num: int,
-                   start_date: date = None, deload: bool = False) -> dict:
+                  start_date: date = None, deload: bool = False,
+                  current_mileage: float | None = None, goal_distance: str | None = None,
+                  phase_name: str | None = None) -> dict:
     """Pick a workout, rotating across blocks via start_date seed.
 
     Week 1 and week 2 within the same block always get different workouts.
     The block_seed shifts each 2-week block so workouts rotate over time.
     On deload: pick from the lighter workouts (lower total_miles).
     """
-    options = workout_lib.get(category, [])
+    options = [w for w in workout_lib.get(category, []) if _eligible(w, current_mileage, goal_distance, phase_name)]
 
     if not options:
-        options = workout_lib.get("threshold", []) or workout_lib.get("tempo", [])
+        options = [w for w in (workout_lib.get("threshold", []) or workout_lib.get("tempo", []))
+                   if _eligible(w, current_mileage, goal_distance, phase_name)]
 
     if not options:
         return {

@@ -9,9 +9,10 @@ interface PlanWeekProps {
   week: PlanWeekType;
   isCurrent: boolean;
   onPlanChanged?: () => void;
+  readOnly?: boolean;
 }
 
-export function PlanWeek({ week, isCurrent, onPlanChanged }: PlanWeekProps) {
+export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly }: PlanWeekProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const today = localDateStr();
 
@@ -49,6 +50,7 @@ export function PlanWeek({ week, isCurrent, onPlanChanged }: PlanWeekProps) {
           <PlanDay
             key={w.id}
             workout={w}
+            readOnly={readOnly}
             isToday={w.date === today}
             expanded={expandedId === w.id}
             onToggle={() =>

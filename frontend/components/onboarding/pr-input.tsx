@@ -54,7 +54,7 @@ export function PRInput({ entries, onChange }: PRInputProps) {
             <SelectContent>
               <SelectItem value="5k">5K</SelectItem>
               <SelectItem value="10k">10K</SelectItem>
-              <SelectItem value="half_marathon">Half Marathon</SelectItem>
+              <SelectItem value="half">Half Marathon</SelectItem>
               <SelectItem value="marathon">Marathon</SelectItem>
             </SelectContent>
           </Select>
