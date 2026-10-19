@@ -5,6 +5,8 @@ as system prompt context so the LLM response is grounded in real training
 principles — not generic advice.
 """
 
+import logging
+from functools import lru_cache
 from pathlib import Path
 
 import anthropic
@@ -17,6 +19,13 @@ from app.models.plan import Plan, PlannedWorkout
 from app.models.user import Goal, User
 
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs"
+logger = logging.getLogger("stride.coach")
+
+
+@lru_cache(maxsize=1)
+def _client() -> anthropic.Anthropic:
+    """One shared client (connection pooling) for the process."""
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 # Map goal distances to science doc filenames
 SCIENCE_DOCS = {
@@ -187,15 +196,35 @@ def _build_system_prompt(user_id: int, goal: Goal | None, db: Session) -> str:
             if science:
                 sections.append(f"=== {goal.race_distance.upper()} TRAINING SCIENCE ===\n" + science)
 
-    # Athlete profile
-    profile = _load_doc("athlete-profile-jake.md")
+    # Athlete profile: the hand-written founder profile only belongs to that user;
+    # everyone else gets a profile built from their own data.
+    profile = _load_doc(settings.athlete_profile_doc) if user_id == settings.default_user_id else ""
+    if not profile:
+        profile = _profile_from_db(user_id, db)
     if profile:
         sections.append("=== ATHLETE PROFILE ===\n" + profile)
 
     return "\n\n".join(sections)
 
 
-async def get_coach_feedback(
+def _profile_from_db(user_id: int, db: Session) -> str:
+    from app.models.activity import PersonalRecord
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return ""
+    lines = [f"Name: {user.name or 'Athlete'}"]
+    if user.age:
+        lines.append(f"Age: {user.age}")
+    if user.years_running:
+        lines.append(f"Years running: {user.years_running:g}")
+    prs = db.query(PersonalRecord).filter(PersonalRecord.user_id == user_id).all()
+    if prs:
+        lines.append("PRs: " + ", ".join(f"{p.distance_label} {int(p.time_seconds // 60)}:{int(p.time_seconds % 60):02d}" for p in prs))
+    return "\n".join(lines)
+
+
+def get_coach_feedback(
     user_id: int,
     pw: PlannedWorkout,
     activities: list[Activity],
@@ -222,8 +251,7 @@ async def get_coach_feedback(
     user_message = f"RECENT TRAINING:\n{recent}\n\nTODAY'S RUN:\n{today}\n\nGive me quick coach feedback on today's run."
 
     try:
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        response = await client.messages.create(
+        response = _client().messages.create(
             model=settings.coach_model,
             max_tokens=2048,
             output_config={"effort": "low"},  # short coaching notes don't need deep reasoning
@@ -231,10 +259,15 @@ async def get_coach_feedback(
             system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
+        u = response.usage
+        logger.info(
+            "coach call user=%s in=%s cached=%s out=%s",
+            user_id, u.input_tokens, getattr(u, "cache_read_input_tokens", 0), u.output_tokens,
+        )
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         return text or _template_feedback(feedback, pw, activities)
-    except anthropic.APIError as e:
-        print(f"Coach LLM error: {e}")
+    except Exception:  # never lose the athlete's feedback over an LLM failure
+        logger.exception("Coach LLM call failed; using template feedback")
         return _template_feedback(feedback, pw, activities)
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -8,6 +8,7 @@ from app.database import Base
 
 class Plan(Base):
     __tablename__ = "plans"
+    __table_args__ = (Index("ix_plans_user_active", "user_id", "is_active"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
@@ -24,6 +25,7 @@ class Plan(Base):
     goal_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     athlete_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     phases: Mapped[str | None] = mapped_column(Text)  # JSON list, one periodization phase per week
+    prescribed_from: Mapped[str | None] = mapped_column(String(20))  # local ISO date the plan starts prescribing
 
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(
@@ -33,6 +35,7 @@ class Plan(Base):
 
 class PlannedWorkout(Base):
     __tablename__ = "planned_workouts"
+    __table_args__ = (Index("ix_planned_workouts_plan_date", "plan_id", "date"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     plan_id: Mapped[int] = mapped_column(Integer, ForeignKey("plans.id"), nullable=False)

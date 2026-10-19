@@ -8,7 +8,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import type { WeeklyMileage } from "@/lib/types";
 
@@ -38,14 +37,6 @@ export function WeeklyMileageChart({ data }: { data: WeeklyMileage[] }) {
             borderRadius: "var(--radius-md)",
             fontSize: 12,
           }}
-        />
-        <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-        <Bar
-          dataKey="planned"
-          fill="var(--color-muted-foreground)"
-          radius={[3, 3, 0, 0]}
-          opacity={0.3}
-          name="Planned"
         />
         <Bar
           dataKey="actual"

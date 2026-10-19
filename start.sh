@@ -29,6 +29,16 @@ trap 'kill $BACKEND_PID 2>/dev/null' EXIT
 
 # ── Frontend ──
 cd "$ROOT/frontend"
+# The app is reachable from the whole Wi-Fi network, so it's password-protected.
+# First run: generate a password and keep it in .env.local (git-ignored).
+if ! grep -q '^STRIDE_PASSWORD=' .env.local 2>/dev/null; then
+  STRIDE_PASSWORD_NEW="$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
+  echo "STRIDE_PASSWORD=$STRIDE_PASSWORD_NEW" >> .env.local
+  echo
+  echo "  Created your Stride password (saved in frontend/.env.local): $STRIDE_PASSWORD_NEW"
+  echo "  Enter it once on each device; it stays signed in."
+  echo
+fi
 [ -d node_modules ] || npm install
 if [ "$MODE" = "dev" ]; then
   npx next dev -H 0.0.0.0 -p 3000 &

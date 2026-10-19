@@ -1,14 +1,17 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
+from app.models.garmin import GarminConnection
 from app.models.user import User
-from app.services.garmin import GarminNotConnected, get_connection, has_tokens, sync_garmin
+from app.services.garmin import GarminNotConnected, has_tokens, sync_garmin
 from app.services.wellness import sync_wellness
 
 router = APIRouter(prefix="/api/garmin", tags=["garmin"])
+logger = logging.getLogger("stride.garmin")
 
 # Background full-sync status, keyed by user id (single-process app)
 _full_sync_jobs: dict[int, dict] = {}
@@ -17,8 +20,10 @@ _background_tasks: set[asyncio.Task] = set()
 
 @router.get("/status/{user_id}")
 def garmin_status(user_id: int, db: Session = Depends(get_db)):
-    conn = get_connection(user_id, db)
-    db.commit()
+    # Read-only: no row yet just means "never connected"
+    conn = db.query(GarminConnection).filter(GarminConnection.user_id == user_id).first() or GarminConnection(
+        user_id=user_id, connected=False, full_sync_done=False
+    )
     return {
         "tokens_present": has_tokens(),
         "connected": conn.connected and has_tokens(),
@@ -26,7 +31,8 @@ def garmin_status(user_id: int, db: Session = Depends(get_db)):
         "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
         "last_new_activity_at": conn.last_new_activity_at.isoformat() if conn.last_new_activity_at else None,
         "last_error": conn.last_error,
-        "full_sync_done": conn.full_sync_done,
+        "full_sync_done": bool(conn.full_sync_done),
+        "backoff_until": conn.backoff_until.isoformat() if conn.backoff_until else None,
         "full_sync_job": _full_sync_jobs.get(user_id),
     }
 
@@ -40,8 +46,9 @@ async def garmin_sync(user_id: int, db: Session = Depends(get_db)):
         return await asyncio.to_thread(_sync_in_new_session, user_id, False)
     except GarminNotConnected as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Garmin sync failed: {e}")
+    except Exception:
+        logger.exception("Garmin sync failed")
+        raise HTTPException(status_code=502, detail="Garmin sync failed. Check the Stride terminal for details.")
 
 
 @router.post("/full-sync/{user_id}")
@@ -59,8 +66,9 @@ async def garmin_full_sync(user_id: int, db: Session = Depends(get_db)):
         try:
             result = await asyncio.to_thread(_sync_in_new_session, user_id, True)
             _full_sync_jobs[user_id] = {"state": "done", "result": result}
-        except Exception as e:
-            _full_sync_jobs[user_id] = {"state": "error", "result": str(e)}
+        except Exception:
+            logger.exception("Full Garmin import failed")
+            _full_sync_jobs[user_id] = {"state": "error", "result": "Import failed. Check the Stride terminal for details."}
 
     task = asyncio.create_task(run())
     _background_tasks.add(task)

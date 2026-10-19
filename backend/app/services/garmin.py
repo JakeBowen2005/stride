@@ -16,6 +16,7 @@ and upgraded in place (keeping their descriptions, feel ratings and plan links)
 instead of being duplicated.
 """
 
+import bisect
 import json
 import logging
 import statistics
@@ -40,6 +41,7 @@ TOKEN_FILE = "garmin_tokens.json"
 PAGE_SIZE_INCREMENTAL = 20
 PAGE_SIZE_FULL = 100
 FULL_SYNC_DELAY = 0.4  # seconds between per-activity requests during full sync
+RATE_LIMIT_BACKOFF = timedelta(minutes=30)  # after a Garmin 429, stop calling for this long
 
 _client = None
 _client_lock = threading.Lock()
@@ -185,28 +187,40 @@ def build_description(user_desc: str | None, laps: list[dict], easy_pace_sec: fl
 
 # ── Sync ────────────────────────────────────────────────────────
 
-def recent_easy_pace(user_id: int, db: Session, as_of: datetime | None = None) -> float | None:
-    """Typical easy pace (sec/mi) in the ~90 days before `as_of` — the reference for lap analysis.
+class EasyPaceIndex:
+    """Typical easy pace (sec/mi) as of any date — the reference for lap analysis.
 
-    Falls back to all history before `as_of` when that window is thin (e.g. coming back
-    from a break), so lap detection never has to guess from a single run.
+    Loads the athlete's run paces once, then answers per-activity lookups from
+    memory (a full import asks ~600 times; querying the DB each time was O(n^2)).
+    Uses the 60th percentile of 3-10 mile runs in the 90 days before the date,
+    falling back to all earlier history when that window is thin.
     """
-    as_of = as_of or datetime.now()
-    base = db.query(Activity.distance_meters, Activity.duration_seconds).filter(
-        Activity.user_id == user_id,
-        Activity.date < as_of,
-        Activity.distance_meters >= 4800,
-        Activity.distance_meters <= 16000,
-        Activity.duration_seconds > 0,
-    )
 
-    def pct60(rows) -> float | None:
-        paces = [dur / (dist / METERS_PER_MILE) for dist, dur in rows]
+    def __init__(self, user_id: int, db: Session):
+        rows = db.query(Activity.date, Activity.distance_meters, Activity.duration_seconds).filter(
+            Activity.user_id == user_id,
+            Activity.distance_meters >= 4800,
+            Activity.distance_meters <= 16000,
+            Activity.duration_seconds > 0,
+        ).order_by(Activity.date).all()
+        self.dates = [r[0] for r in rows]
+        self.paces = [r[2] / (r[1] / METERS_PER_MILE) for r in rows]
+
+    @staticmethod
+    def _pct60(paces: list[float]) -> float | None:
         if len(paces) < 5:
             return None
-        return statistics.quantiles(paces, n=10)[5]  # 60th percentile, like analyzer.py
+        return statistics.quantiles(paces, n=10)[5]
 
-    return pct60(base.filter(Activity.date >= as_of - timedelta(days=90)).all()) or pct60(base.all())
+    def at(self, as_of: datetime | None = None) -> float | None:
+        as_of = as_of or datetime.now()
+        end = bisect.bisect_left(self.dates, as_of)
+        start = bisect.bisect_left(self.dates, as_of - timedelta(days=90))
+        return self._pct60(self.paces[start:end]) or self._pct60(self.paces[:end])
+
+
+def recent_easy_pace(user_id: int, db: Session, as_of: datetime | None = None) -> float | None:
+    return EasyPaceIndex(user_id, db).at(as_of)
 
 
 def _find_legacy_match(user_id: int, parsed: dict, db: Session) -> Activity | None:
@@ -238,7 +252,7 @@ def _apply(activity: Activity, parsed: dict):
         setattr(activity, key, val)
 
 
-def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session) -> str:
+def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session, easy_pace: float | None) -> str:
     """Insert/merge one activity. Returns 'new', 'merged' or 'updated'."""
     activity = db.query(Activity).filter(
         Activity.user_id == user_id,
@@ -275,7 +289,7 @@ def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session) 
     base_desc = user_desc or (legacy_desc if outcome != "new" else None)
     if base_desc and base_desc.startswith("Garmin laps:"):
         base_desc = None  # regenerate our own summary rather than nesting it
-    activity.description = build_description(base_desc, laps, recent_easy_pace(user_id, db, parsed["date"]))
+    activity.description = build_description(base_desc, laps, easy_pace)
     activity.has_workout_description = is_workout_description(activity.description)
     return outcome
 
@@ -284,6 +298,10 @@ def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
     """Pull running activities from Garmin into the DB. Thread-safe; one sync at a time."""
     if not _sync_lock.acquire(blocking=False):
         return {"status": "busy", "message": "A Garmin sync is already running."}
+    conn = get_connection(user_id, db)
+    if conn.backoff_until and conn.backoff_until > datetime.now():
+        _sync_lock.release()
+        return {"status": "backoff", "message": f"Garmin rate-limited us; retrying after {conn.backoff_until:%H:%M}."}
     try:
         with garmin_io_lock:
             return _sync(user_id, db, full)
@@ -302,7 +320,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         raise
     except Exception as e:
         reset_client()
-        conn.last_error = f"Garmin login failed: {e}"
+        _record_failure(conn, e)
         db.commit()
         raise
 
@@ -317,8 +335,12 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
             Activity.user_id == user_id, Activity.source == "garmin"
         )
     }
-    full = full or not known  # first sync = full history
+    # Until one full import has completed (it may have been interrupted), keep walking the
+    # whole history — but skip runs already stored, so a resume doesn't redo finished work.
+    backfill = not full and not conn.full_sync_done
+    full = full or backfill
     page_size = PAGE_SIZE_FULL if full else PAGE_SIZE_INCREMENTAL
+    easy_paces = EasyPaceIndex(user_id, db)
     counts = {"new": 0, "merged": 0, "updated": 0, "skipped_non_runs": 0, "seen": 0}
     refresh_cutoff = datetime.now() - timedelta(hours=48)
 
@@ -335,6 +357,8 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
                 if parsed is None:
                     counts["skipped_non_runs"] += 1
                     continue
+                if parsed["external_id"] in known and backfill:
+                    continue
                 if parsed["external_id"] in known and not full:
                     # Re-check the last 48h so renamed runs / added notes come through
                     if parsed["date"] >= refresh_cutoff:
@@ -342,7 +366,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
                         continue
                     reached_known = True
                     break
-                outcome = _store_activity(client, user_id, raw, parsed, db)
+                outcome = _store_activity(client, user_id, raw, parsed, db, easy_paces.at(parsed["date"]))
                 counts[outcome] += 1
                 if full:
                     time.sleep(FULL_SYNC_DELAY)
@@ -355,7 +379,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
     except Exception as e:
         db.rollback()
         conn = get_connection(user_id, db)
-        conn.last_error = f"Sync error: {e}"
+        _record_failure(conn, e)
         db.commit()
         raise
 
@@ -385,6 +409,22 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
     return counts
 
 
+def _record_failure(conn: GarminConnection, e: Exception):
+    """Classify a Garmin failure: expired session (rebuild client), rate limit (back off)."""
+    from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
+
+    if isinstance(e, GarminConnectAuthenticationError):
+        reset_client()
+        conn.connected = False
+        conn.last_error = "Garmin session expired. Re-run `python garmin_login.py` in backend/."
+    elif isinstance(e, GarminConnectTooManyRequestsError):
+        conn.backoff_until = datetime.now() + RATE_LIMIT_BACKOFF
+        conn.last_error = "Garmin rate limit hit; pausing sync for 30 minutes."
+    else:
+        conn.last_error = f"Sync error: {type(e).__name__}"
+    logger.warning("Garmin sync failed for user %s: %s", conn.user_id, e)
+
+
 def _refresh_summary(user_id: int, raw: dict, parsed: dict, db: Session):
     activity = db.query(Activity).filter(
         Activity.user_id == user_id,
@@ -397,7 +437,7 @@ def _refresh_summary(user_id: int, raw: dict, parsed: dict, db: Session):
     user_desc = raw.get("description")
     if user_desc and user_desc not in (activity.description or ""):
         laps = json.loads(activity.splits) if activity.splits else []
-        activity.description = build_description(user_desc, laps, recent_easy_pace(user_id, db, activity.date))
+        activity.description = build_description(user_desc, laps, recent_easy_pace(user_id, db, activity.date))  # rare path
         activity.has_workout_description = is_workout_description(activity.description)
 
 
@@ -418,6 +458,7 @@ def reanalyze_laps(user_id: int, db: Session) -> dict:
     acts = db.query(Activity).filter(
         Activity.user_id == user_id, Activity.source == "garmin", Activity.splits.isnot(None)
     ).all()
+    easy_paces = EasyPaceIndex(user_id, db)
     changed = 0
     for a in acts:
         try:
@@ -426,7 +467,7 @@ def reanalyze_laps(user_id: int, db: Session) -> dict:
             continue
         if not laps or "distance_m" not in laps[0]:
             continue  # legacy Strava mile splits, not Garmin laps
-        new_desc = build_description(_strip_lap_summary(a.description), laps, recent_easy_pace(user_id, db, a.date))
+        new_desc = build_description(_strip_lap_summary(a.description), laps, easy_paces.at(a.date))
         if new_desc != a.description:
             a.description = new_desc
             a.has_workout_description = is_workout_description(new_desc)

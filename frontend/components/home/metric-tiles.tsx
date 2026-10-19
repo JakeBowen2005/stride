@@ -78,7 +78,7 @@ const METRICS: MetricDef[] = [
     help: "Garmin's aerobic-capacity estimate from your runs. Trend matters more than the number.",
   },
   {
-    key: "load", label: "Load Ratio", unit: "", neutralTrend: true,
+    key: "load", label: "Garmin Load", unit: "ratio", neutralTrend: true,
     value: (w) => w.acwr,
     display: (w) => (w.acwr != null ? w.acwr.toFixed(2) : "—"),
     sub: (w) => (w.acwr == null ? "acute:chronic" : w.acwr > 1.5 ? "High risk" : w.acwr < 0.8 ? "Detraining" : "Optimal"),
@@ -103,11 +103,16 @@ function shortDate(iso: string) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Shown before "Show all": the four that most often change what you should run today
+const PRIMARY: MetricKey[] = ["sleep", "hrv", "rhr", "load"];
+
 export function MetricTiles({ today, history }: { today: Wellness | null; history: Wellness[] }) {
   const [selected, setSelected] = useState<MetricKey>("hrv");
+  const [showAll, setShowAll] = useState(false);
   if (!today) return null;
 
   const available = METRICS.filter((m) => m.value(today) != null || history.some((h) => m.value(h) != null));
+  const tiles = showAll ? available : available.filter((m) => PRIMARY.includes(m.key) || m.key === selected);
   const active = available.find((m) => m.key === selected) ?? available[0];
   if (!active) return null;
 
@@ -128,7 +133,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
         <span className="text-xs text-muted-foreground">from Garmin · tap a tile for its trend</span>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {available.map((m) => (
+        {tiles.map((m) => (
           <button
             key={m.key}
             type="button"
@@ -139,7 +144,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
               active.key === m.key && "border-foreground/40 ring-1 ring-foreground/20",
             )}
           >
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{m.label}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{m.label}</div>
             <div className="mt-0.5 flex items-baseline gap-1">
               <span className="font-mono text-xl font-semibold">{m.display(today)}</span>
               {m.unit && <span className="text-xs text-muted-foreground">{m.unit}</span>}
@@ -149,6 +154,15 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
           </button>
         ))}
       </div>
+      {available.length > tiles.length || showAll ? (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="text-sm text-muted-foreground underline underline-offset-2"
+        >
+          {showAll ? "Show fewer" : `Show all ${available.length} (body battery, stress, steps, VO2max)`}
+        </button>
+      ) : null}
 
       <Card>
         <CardContent className="space-y-2 pt-4">
@@ -187,7 +201,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">Not enough history yet.</p>
           )}
-          {band && <p className="text-[11px] text-muted-foreground">Shaded band = {active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}.</p>}
+          {band && <p className="text-xs text-muted-foreground">Shaded band = {active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}.</p>}
         </CardContent>
       </Card>
     </div>

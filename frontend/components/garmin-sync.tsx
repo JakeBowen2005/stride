@@ -1,9 +1,10 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface GarminStatus {
   tokens_present: boolean;
@@ -45,7 +46,7 @@ export function GarminSync({
 
   const loadStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/garmin/status/1`);
+      const res = await fetch(apiUrl(`/garmin/status/${USER_ID}`));
       if (res.ok) setStatus(await res.json());
     } catch {
       /* backend offline — handled on sync */
@@ -57,7 +58,7 @@ export function GarminSync({
       setSyncing(true);
       if (manual) setMessage(null);
       try {
-        const res = await fetch(`${API}/api/garmin/sync/1`, { method: "POST" });
+        const res = await fetch(apiUrl(`/garmin/sync/${USER_ID}`), { method: "POST" });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           if (data.status === "busy") {
@@ -69,7 +70,7 @@ export function GarminSync({
             setMessage("Up to date");
           }
         } else if (res.status === 409) {
-          setMessage("Garmin not connected — see Settings");
+          setMessage(null); // status line below explains it
         } else if (manual) {
           setMessage(data.detail || "Sync failed");
         }
@@ -110,14 +111,16 @@ export function GarminSync({
       <Button variant="outline" size="sm" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
         {syncing ? "Syncing…" : label}
       </Button>
-      <span className="text-xs text-muted-foreground">
-        {message ??
-          (notConnected
-            ? "Garmin not connected"
-            : status?.last_error
-              ? "Last sync failed"
-              : `Synced ${timeAgo(status?.last_sync_at ?? null)}`)}
-      </span>
+      {notConnected || (status?.last_error && !message) ? (
+        <Link href="/settings" className="text-right text-xs text-muted-foreground underline underline-offset-2">
+          {status?.last_sync_at ? `Synced ${timeAgo(status.last_sync_at)} · ` : ""}
+          {notConnected ? "reconnect Garmin" : "last sync failed"}
+        </Link>
+      ) : (
+        <span className="text-xs text-muted-foreground">
+          {message ?? `Synced ${timeAgo(status?.last_sync_at ?? null)}`}
+        </span>
+      )}
     </div>
   );
 }
@@ -125,7 +128,7 @@ export function GarminSync({
 export function useGarminStatus() {
   const [status, setStatus] = useState<GarminStatus | null>(null);
   useEffect(() => {
-    fetch(`${API}/api/garmin/status/1`)
+    fetch(apiUrl(`/garmin/status/${USER_ID}`))
       .then((r) => (r.ok ? r.json() : null))
       .then(setStatus)
       .catch(() => setStatus(null));

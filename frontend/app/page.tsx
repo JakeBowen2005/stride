@@ -1,5 +1,6 @@
 "use client";
 
+import { getJson, USER_ID } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { WeeklyMileageChartWrapper } from "@/components/charts-wrapper";
@@ -13,7 +14,6 @@ import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { formatDate, formatDistance, localDateStr, secondsToTime } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface GoalData {
   description: string;
@@ -24,17 +24,9 @@ interface GoalData {
 
 interface PlanResponse {
   is_stale?: boolean;
+  athlete?: { injury_risk?: string | null };
   phase?: { label: string; phase: string } | null;
   weeks: { target_mileage: number; days: PlanDayLite[] }[];
-}
-
-async function getJson<T>(path: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API}${path}`);
-    return res.ok ? ((await res.json()) as T) : null;
-  } catch {
-    return null;
-  }
 }
 
 export default function TodayPage() {
@@ -49,12 +41,12 @@ export default function TodayPage() {
 
   const load = useCallback(async () => {
     const [acts, mileage, goalData, planData, wellnessData, prList] = await Promise.all([
-      getJson<Activity[]>("/api/analysis/1/activities?limit=10"),
-      getJson<WeeklyMileage[]>("/api/analysis/1/weekly-mileage?weeks=12"),
-      getJson<GoalData>("/api/plans/1/goal"),
-      getJson<PlanResponse>("/api/plans/1/current"),
-      getJson<WellnessResponse>("/api/wellness/1?days=28"),
-      getJson<{ distance: string; time_seconds: number }[]>("/api/analysis/1/prs"),
+      getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
+      getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
+      getJson<GoalData>(`/plans/${USER_ID}/goal`),
+      getJson<PlanResponse>(`/plans/${USER_ID}/current`),
+      getJson<WellnessResponse>(`/wellness/${USER_ID}?days=28`),
+      getJson<{ distance: string; time_seconds: number }[]>(`/analysis/${USER_ID}/prs`),
     ]);
     setRecentRuns((acts ?? []).map((a) => ({ ...a, splits: a.splits || [] })));
     setWeeklyMileage((mileage ?? []).map((d) => ({ ...d, planned: 0 })));
@@ -105,6 +97,7 @@ export default function TodayPage() {
             statusLabel={wellness?.training_status_label ?? null}
             signals={wellness?.signals ?? []}
             planStale={planStale || !plan}
+            mileageRisk={planStale ? null : plan?.athlete?.injury_risk}
           />
 
           {thisWeek && (
@@ -116,10 +109,6 @@ export default function TodayPage() {
           )}
 
           <MetricTiles today={wellness?.today ?? null} history={wellness?.history ?? []} />
-
-          <RacePredictions wellness={wellness?.today ?? null} prs={prs} goal={goal} />
-
-          <WeeklyMileageChartWrapper data={weeklyMileage} />
 
           <div>
             <h3 className="mb-2 text-sm font-medium">Recent Runs</h3>
@@ -150,6 +139,10 @@ export default function TodayPage() {
               </Card>
             )}
           </div>
+
+          <RacePredictions wellness={wellness?.today ?? null} prs={prs} goal={goal} />
+
+          <WeeklyMileageChartWrapper data={weeklyMileage} />
         </>
       )}
 

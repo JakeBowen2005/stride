@@ -1,12 +1,12 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { GoalEditor } from "@/components/goal-editor";
 import { GarminConnectionCard } from "@/components/garmin-connection-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface PR {
   id: number;
@@ -48,6 +48,16 @@ interface AnalysisData {
   };
 }
 
+interface UserData {
+  name: string | null;
+  age: number | null;
+  units: string;
+  workout_format?: string;
+  days_per_week: number;
+  rest_days: string | null;
+  long_run_day?: string | null;
+}
+
 interface GoalData {
   description: string;
   type: string;
@@ -65,19 +75,22 @@ export default function SettingsPage() {
   const [prs, setPrs] = useState<PR[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [goal, setGoal] = useState<GoalData | null>(null);
+  const [user, setUser] = useState<UserData | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [prRes, analysisRes, goalRes] = await Promise.all([
-          fetch(`${API}/api/analysis/1/prs`),
-          fetch(`${API}/api/analysis/1/baseline`),
-          fetch(`${API}/api/plans/1/goal`),
+        const [prRes, analysisRes, goalRes, userRes] = await Promise.all([
+          fetch(apiUrl(`/analysis/${USER_ID}/prs`)),
+          fetch(apiUrl(`/analysis/${USER_ID}/baseline`)),
+          fetch(apiUrl(`/plans/${USER_ID}/goal`)),
+          fetch(apiUrl(`/users/${USER_ID}`)),
         ]);
 
         if (prRes.ok) setPrs(await prRes.json());
+        if (userRes.ok) setUser(await userRes.json());
         if (analysisRes.ok) setAnalysis(await analysisRes.json());
         if (goalRes.ok) {
           const data = await goalRes.json();
@@ -110,10 +123,10 @@ export default function SettingsPage() {
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Profile</h2>
           <div className="space-y-2 text-sm">
-            <Row label="Name" value="Jake Bowen" />
-            <Row label="Age" value="21" />
-            <Row label="Units" value="Miles" />
-            <Row label="Workout format" value="Distance-based" />
+            <Row label="Name" value={user?.name || "—"} />
+            <Row label="Age" value={user?.age ? String(user.age) : "Not set"} />
+            <Row label="Units" value={user?.units === "km" ? "Kilometers" : "Miles"} />
+            <Row label="Workout format" value={user?.workout_format === "time" ? "Time-based" : "Distance-based"} />
           </div>
         </CardContent>
       </Card>
@@ -123,9 +136,9 @@ export default function SettingsPage() {
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Training</h2>
           <div className="space-y-2 text-sm">
-            <Row label="Days per week" value="6" />
-            <Row label="Rest day" value="Sunday" />
-            <Row label="Long run day" value="Saturday" />
+            <Row label="Days per week" value={user ? String(user.days_per_week) : "—"} />
+            <Row label="Rest day" value={titleList(user?.rest_days) || "None"} />
+            <Row label="Long run day" value={titleList(user?.long_run_day) || "—"} />
             <Row
               label="Current mileage (4wk avg)"
               value={analysis ? `${analysis.current_fitness.weekly_mileage_4w_avg} mi/week` : "—"}
@@ -255,9 +268,12 @@ export default function SettingsPage() {
             <h2 className="text-sm font-medium">Injury Risk</h2>
             <div className="space-y-2 text-sm">
               <Row
-                label="Acute:Chronic ratio"
+                label="Stride mileage ratio (last week vs 4-week avg)"
                 value={String(analysis.injury_risk.acute_chronic_ratio)}
               />
+              <p className="text-xs text-muted-foreground">
+                Based on miles. The &quot;Garmin Load&quot; tile on Today uses Garmin&apos;s training-load ratio, which weighs intensity, so the two can differ.
+              </p>
               <div className="rounded-md bg-secondary/50 p-2 text-sm text-muted-foreground">
                 {analysis.injury_risk.assessment}
               </div>
@@ -269,19 +285,17 @@ export default function SettingsPage() {
       {/* Connections */}
       <GarminConnectionCard />
 
-      {/* Data */}
-      <Card>
-        <CardContent className="space-y-4 pt-4">
-          <h2 className="text-sm font-medium">Data</h2>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              Re-run Onboarding
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
+}
+
+function titleList(csv?: string | null): string {
+  return (csv || "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+    .join(", ");
 }
 
 function Row({ label, value }: { label: string; value: string }) {

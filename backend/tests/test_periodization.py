@@ -146,7 +146,7 @@ def test_100mi_plan_has_time_based_long_runs_with_fueling():
     # mountain ultra: hills instead of track intervals
     assert any("Hill" in d["title"] or "Climb" in d["title"] for d in all_days(p) if d["type"] == "workout")
     # ultra goal pace must not leak into threshold pace
-    assert p["pacing_guide"]["current_threshold"] < "8:00"
+    assert p["pacing_guide"]["tempo"] < "8:00"
 
 
 def test_100mi_b2b_weekend_present_in_build():
@@ -192,3 +192,15 @@ def test_b2b_before_long_run_when_day_after_is_rest():
     assert wk[5]["type"] == "long_run" and wk[6]["type"] == "rest"
     assert not any("hard-day stack" in d["title"] for d in wk)  # planned cleanly, not patched
     assert wk[1]["type"] == "workout"  # tuesday quality kept
+
+
+def test_pacing_guide_matches_workout_text():
+    from app.core.workout_ladders import with_rep_times
+
+    p = plan("5k", None, weeks=2)
+    g = p["pacing_guide"]
+    assert g["threshold_reps"] < g["tempo"]  # broken reps run faster than continuous tempo
+    assert with_rep_times("8x800m at 5:50-6:00/mi with 90sec jog rest.") == (
+        "8x800m in 2:54-2:59 (5:50-6:00/mi) with 90sec jog rest."
+    )
+    assert with_rep_times("4x1mi at 6:00-6:10/mi") == "4x1mi in 6:00-6:10 (6:00-6:10/mi)"

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,6 @@ import { PlanWeek } from "@/components/plan-week";
 import { formatDateShort, localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface ApiPlanDay {
   date: string;
@@ -108,6 +108,19 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
   };
 }
 
+/** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026. */
+function pacingRows(g: Record<string, string>): [string, string, string][] {
+  const rows: [string, string, string | undefined][] = [
+    ["Easy", "conversational", g.easy],
+    ["Steady", "long-run finishes", g.steady],
+    ["Tempo", "continuous", g.tempo ?? g.current_tempo],
+    ["Threshold reps", "e.g. 2x10min", g.threshold_reps ?? g.current_threshold],
+    ["Intervals", "800m-mile reps", g.intervals ?? g.current_interval],
+    ["Goal race", "target", g.goal_race_pace],
+  ];
+  return rows.filter((r): r is [string, string, string] => !!r[2]);
+}
+
 export default function PlanPage() {
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,7 +131,7 @@ export default function PlanPage() {
 
   const fetchPlan = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/plans/1/current`);
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/current`));
       if (res.status === 404) {
         setNoPlan(true);
         return;
@@ -141,7 +154,7 @@ export default function PlanPage() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/api/plans/1/generate`, {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -284,33 +297,19 @@ export default function PlanPage() {
         </div>
       </div>
 
-      {/* Pacing Guide */}
+      {/* Pacing Guide — the same numbers the workouts below use */}
       <Card>
         <CardContent className="pt-4">
-          <h3 className="text-sm font-medium mb-2">Pacing Guide</h3>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Easy</span>
-              <span className="font-mono">{plan.pacing_guide.easy}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tempo</span>
-              <span className="font-mono">{plan.pacing_guide.current_tempo}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Threshold</span>
-              <span className="font-mono">{plan.pacing_guide.current_threshold}/mi</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Intervals</span>
-              <span className="font-mono">{plan.pacing_guide.current_interval}/mi</span>
-            </div>
-            {plan.pacing_guide.goal_race_pace && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Goal Race</span>
-                <span className="font-mono">{plan.pacing_guide.goal_race_pace}/mi</span>
+          <h3 className="mb-2 text-sm font-medium">Pacing Guide</h3>
+          <div className="space-y-1 text-sm">
+            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+              <div key={label} className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">
+                  {label} <span className="text-xs">· {hint}</span>
+                </span>
+                <span className="shrink-0 font-mono">{value}/mi</span>
               </div>
-            )}
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -175,6 +175,8 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "pr_marathon": user.pr_marathon,
         "days_per_week": user.days_per_week,
         "rest_days": user.rest_days,
+        "long_run_day": user.long_run_day,
+        "workout_format": user.workout_format,
         "garmin_connected": _garmin_connected(user_id, db),
         "experience_level": user.experience_level,
     }

@@ -25,8 +25,14 @@ _last_today_refresh: dict[int, float] = {}
 
 
 def _safe(fn, *args):
+    """One endpoint failing (or unsupported on this watch) shouldn't drop the rest —
+    but an expired session or rate limit must stop the whole sync."""
+    from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
+
     try:
         return fn(*args)
+    except (GarminConnectAuthenticationError, GarminConnectTooManyRequestsError):
+        raise
     except Exception as e:
         logger.debug("Garmin wellness call %s failed: %s", getattr(fn, "__name__", fn), e)
         return None

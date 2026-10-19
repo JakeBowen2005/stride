@@ -1,7 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -34,30 +34,6 @@ def get_calibrated_paces(user_id: int, weeks: int = Query(default=12), db: Sessi
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return calibrate_paces(user_id, db, weeks_back=weeks)
-
-
-@router.post("/{user_id}/full-sync")
-async def full_sync_and_analyze(user_id: int, db: Session = Depends(get_db)):
-    """Full pipeline: re-sync all Garmin history, classify, detect PRs, analyze."""
-    import asyncio
-
-    from app.api.garmin import _sync_in_new_session
-    from app.services.garmin import GarminNotConnected
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    try:
-        sync_result = await asyncio.to_thread(_sync_in_new_session, user_id, True)
-    except GarminNotConnected as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-    db.expire_all()
-    return {
-        "sync": sync_result,
-        "personal_records": get_prs(user_id, db),
-        "analysis": analyze_athlete(user_id, db),
-    }
 
 
 @router.get("/{user_id}/prs")
@@ -147,7 +123,7 @@ def get_activity_detail(user_id: int, activity_id: int, db: Session = Depends(ge
 
 
 class ReviewData(BaseModel):
-    feel_rating: int
+    feel_rating: int = Field(ge=1, le=10)
     notes: str | None = None
 
 

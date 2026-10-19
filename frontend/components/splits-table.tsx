@@ -1,6 +1,8 @@
 import type { Split } from "@/lib/types";
 
-export function SplitsTable({ splits }: { splits: Split[] }) {
+export function SplitsTable({ splits: all }: { splits: Split[] }) {
+  // Drop the stub lap Garmin records when you stop the watch a few steps late
+  const splits = all.filter((s, i) => !(i === all.length - 1 && s.distance_miles !== undefined && s.distance_miles < 0.05));
   if (splits.length === 0) return null;
   // Garmin rows are laps (any length); legacy Strava rows are 1-mile splits
   const isLaps = splits.some((s) => s.distance_miles !== undefined);
@@ -27,7 +29,7 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
               <span className="font-mono">{split.pace}</span>
               {split.heart_rate && (
                 <span className="font-mono text-xs text-muted-foreground">
-                  {split.heart_rate} bpm
+                  {Math.round(split.heart_rate)} bpm
                 </span>
               )}
             </div>

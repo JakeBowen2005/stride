@@ -18,7 +18,7 @@ export function WeekProgress({ days, plannedMiles }: { days: PlanDayLite[]; plan
     <div className="space-y-3">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">This week</div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">This week</div>
           <div className="font-mono text-4xl font-semibold leading-none">
             {formatDistance(done)}
             <span className="ml-1 text-base font-normal text-muted-foreground">/ {formatDistance(plannedMiles)} mi</span>
@@ -48,7 +48,7 @@ export function WeekProgress({ days, plannedMiles }: { days: PlanDayLite[]; plan
               <span className={cn("text-muted-foreground", isToday && "font-semibold text-foreground")}>{dayName}</span>
               <span
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-full border font-mono text-[11px]",
+                  "flex size-7 items-center justify-center rounded-full border font-mono text-xs",
                   d.actual && "border-transparent text-white",
                   !d.actual && HARD.has(d.type) && "border-foreground/50 font-semibold",
                   !d.actual && d.type === "rest" && "border-dashed",
@@ -72,7 +72,7 @@ export function WeekProgress({ days, plannedMiles }: { days: PlanDayLite[]; plan
           {sel.description && <p className="mt-1 text-muted-foreground">{sel.description}</p>}
         </div>
       )}
-      <p className="text-[11px] text-muted-foreground">Filled = run done · bold ring = quality day · dashed = rest. Tap a day for details.</p>
+      <p className="text-xs text-muted-foreground">Filled = run done · bold ring = quality day · dashed = rest. Tap a day for details.</p>
     </div>
   );
 }

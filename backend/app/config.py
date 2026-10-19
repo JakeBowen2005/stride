@@ -7,9 +7,9 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./stride.db"
-    secret_key: str = "stride-dev-secret-key-change-in-production"
     anthropic_api_key: str = ""
     coach_model: str = "claude-haiku-5-5"
+    athlete_profile_doc: str = "athlete-profile-jake.md"  # hand-written profile for default_user_id
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"
 
     # Garmin Connect — tokens are created once by `python garmin_login.py`

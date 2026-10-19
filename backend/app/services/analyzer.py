@@ -37,8 +37,10 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
 
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
-    df["week"] = df["date"].dt.isocalendar().week.astype(int)
-    df["year"] = df["date"].dt.year
+    # ISO year + ISO week together: Dec 29-31 can belong to week 1 of the NEXT year
+    iso = df["date"].dt.isocalendar()
+    df["week"] = iso.week.astype(int)
+    df["year"] = iso.year.astype(int)
     df["year_week"] = df["year"].astype(str) + "-W" + df["week"].astype(str).str.zfill(2)
 
     now = datetime.now()

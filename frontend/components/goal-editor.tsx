@@ -1,12 +1,12 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState } from "react";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 export interface EditableGoal {
   type: string;
@@ -95,7 +95,7 @@ export function GoalEditor({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/api/users/1/goal`, {
+      const res = await fetch(apiUrl(`/users/${USER_ID}/goal`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload(override)),
@@ -119,7 +119,7 @@ export function GoalEditor({
   async function regenerate() {
     setGenerating(true);
     try {
-      const res = await fetch(`${API}/api/plans/1/generate`, { method: "POST" });
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), { method: "POST" });
       if (res.ok) setGenerated(true);
       else setError("Plan generation failed");
     } finally {

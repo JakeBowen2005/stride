@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FeedbackForm } from "@/components/feedback-form";
 import Link from "next/link";
 import { ChevronDown, CircleCheck, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ export interface PlanDayLite {
   warmup?: string | null;
   cooldown?: string | null;
   actual?: { distance_miles: number; avg_pace: string | null } | null;
+  feedback?: { feel_rating: number | null; coach_response: string | null } | null;
 }
 
 const LEVEL_COLOR: Record<string, string> = {
@@ -45,7 +47,7 @@ function ReadinessRing({ score, level }: { score: number; level: string | null |
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono text-xl font-semibold leading-none">{score}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">ready</span>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">ready</span>
       </div>
     </div>
   );
@@ -66,17 +68,26 @@ export function TodayCard({
   statusLabel,
   signals,
   planStale,
+  mileageRisk,
 }: {
   today: PlanDayLite | null;
   wellness: Wellness | null;
   statusLabel: string | null;
   signals: RecoverySignal[];
   planStale: boolean;
+  /** Stride's own mileage-based injury risk (from the plan's athlete snapshot) */
+  mileageRisk?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const cautions = signals.filter((s) => s.level !== "good");
-  const hardToday = today && (today.type === "workout" || today.type === "long_run");
+  const hardToday = !!today && (today.type === "workout" || today.type === "long_run" || today.type === "race");
   const done = !!today?.actual;
+  // Hard days open by default so the "why" is visible without a tap
+  const [open, setOpen] = useState(hardToday && !done);
+  const [feedback, setFeedback] = useState(today?.feedback ?? null);
+  const highMileageRisk = !!mileageRisk && mileageRisk.toUpperCase().startsWith("HIGH");
+  const allSignals: RecoverySignal[] = highMileageRisk
+    ? [...signals, { level: "warning", metric: "mileage", message: `Stride mileage check: ${mileageRisk}` }]
+    : signals;
+  const cautions = allSignals.filter((s) => s.level !== "good");
 
   return (
     <Card>
@@ -101,9 +112,9 @@ export function TodayCard({
           </div>
         )}
 
-        {signals.length > 0 && (
+        {allSignals.length > 0 && (
           <ul className="space-y-1.5">
-            {signals.map((s) => (
+            {allSignals.map((s) => (
               <li key={s.metric} className="flex gap-2 text-sm">
                 {s.level === "good" ? (
                   <CircleCheck className="mt-0.5 size-4 shrink-0" style={{ color: "var(--status-good)" }} aria-label="Good" />
@@ -117,7 +128,7 @@ export function TodayCard({
         )}
 
         <div className="border-t pt-3">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s run</div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s run</div>
           {planStale ? (
             <div className="mt-1 space-y-2">
               <p className="text-sm text-muted-foreground">Your last training block has ended.</p>
@@ -152,6 +163,20 @@ export function TodayCard({
                 </div>
               )}
             </button>
+          )}
+          {done && today && today.type !== "rest" && !feedback?.feel_rating && (
+            <div className="mt-3 rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium">
+                Nice — {formatDistance(today.actual!.distance_miles)} mi done. How did it feel?
+              </p>
+              <FeedbackForm compact date={today.date} onSubmitted={(fb) => setFeedback(fb)} />
+            </div>
+          )}
+          {feedback?.coach_response && (
+            <div className="mt-3 rounded-lg bg-muted p-3 text-sm">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Coach</div>
+              <p className="leading-relaxed">{feedback.coach_response}</p>
+            </div>
           )}
           {hardToday && !done && cautions.length > 0 && (
             <p className="mt-3 rounded-md bg-muted p-2 text-sm">

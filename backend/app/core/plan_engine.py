@@ -136,7 +136,8 @@ def generate_plan(
     rest_indices = [DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]
     long_run_idx = DAY_NAMES.index(long_run_day)
 
-    easy_range = pace_range(easy_pace_seconds * 0.95, easy_pace_seconds * 1.05)
+    # Same rounded range everywhere (easy days, long runs, pacing guide)
+    easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
 
     # Build all weeks
     weeks = []
@@ -226,13 +227,7 @@ def generate_plan(
         "block_number": block_number,
         "is_deload": is_deload,
         "weeks": weeks,
-        "pacing_guide": {
-            "easy": easy_range,
-            "steady": format_pace(current_paces["steady_pace"]),
-            "current_threshold": format_pace(current_paces["threshold_pace"]),
-            "current_tempo": format_pace(current_paces["tempo_pace"]),
-            "current_interval": f"{format_pace(current_paces['interval_pace_fast'])}-{format_pace(current_paces['interval_pace'])}",
-        },
+        "pacing_guide": _pacing_guide(easy_range, effective_paces(current_paces, progression_state)),
         "notes": [],
         "phases": [w["phase"] for w in weeks],
     }
@@ -265,6 +260,18 @@ def generate_plan(
     return plan
 
 
+def _pacing_guide(easy_range: str, paces: dict) -> dict:
+    """Same numbers the workouts print (see workout_ladders.get_workout_at_level)."""
+    tempo = paces["tempo_pace"]
+    return {
+        "easy": easy_range,
+        "steady": format_pace(paces["steady_pace"]),
+        "tempo": format_pace(tempo),  # continuous tempo
+        "threshold_reps": format_pace(tempo - 10),  # broken threshold reps
+        "intervals": f"{format_pace(paces['interval_pace_fast'])}-{format_pace(paces['interval_pace'])}",
+    }
+
+
 def _build_current_paces(
     easy_pace: float,
     workout_paces: dict | None,
@@ -292,8 +299,10 @@ def _build_current_paces(
             progress = min((current_mileage - 30) / 30, 1.0)
             threshold = base_threshold * (1 - progress) + goal_threshold * progress
 
-    # Derive other paces from threshold
-    tempo = threshold * 0.96          # slightly faster than threshold
+    # Workouts are written from tempo_pace: continuous tempo at tempo_pace, broken
+    # threshold reps ~10s/mi faster (workout_ladders tp_fast). `threshold` is only the
+    # base it's derived from, so the pacing guide shows tempo, not this number.
+    tempo = threshold * 0.96
     steady = threshold + 25           # ~25sec slower than threshold, near MP range
 
     # Interval pace progresses toward goal as mileage builds
@@ -516,7 +525,7 @@ def _build_week(
     target_time_seconds: float | None = None,
 ) -> list[dict]:
     phase = phase or WeekPhase(phase="general")
-    easy_range = pace_range(easy_pace * 0.95, easy_pace * 1.05)
+    easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
     easy_desc = f"Conversational effort the entire time. Should be able to hold a full conversation — if you can't, slow down. ({easy_range}/mi or slower)"
 
     if phase.race_date and goal_distance:
@@ -780,6 +789,23 @@ def _distribute_mileage(
     return distribution
 
 
+def effective_paces(current_paces: dict, progression_state: dict | None) -> dict:
+    """Paces actually used in workouts: base paces with any ladder recalibration
+    applied. The pacing guide uses this too, so the two can never disagree."""
+    paces = dict(current_paces)
+    for category, state in (progression_state or {}).items():
+        pace = state.get("current_pace_sec")
+        if not pace:
+            continue
+        if category == "intervals":
+            paces["interval_pace"] = pace
+            paces["interval_pace_fast"] = pace - 10
+        elif category == "threshold":
+            paces["tempo_pace"] = pace
+            paces["threshold_pace"] = pace
+    return paces
+
+
 def _pick_workout_progressive(
     workout_lib: dict, category: str, week_num: int, block_start: date,
     current_paces: dict, goal_distance: str,
@@ -795,15 +821,7 @@ def _pick_workout_progressive(
     state = progression_state[category]
     level = state.get("current_level", 1)
 
-    # Apply pace override from recalibration
-    paces = dict(current_paces)
-    if state.get("current_pace_sec"):
-        if category == "intervals":
-            paces["interval_pace"] = state["current_pace_sec"]
-            paces["interval_pace_fast"] = state["current_pace_sec"] - 10
-        elif category == "threshold":
-            paces["tempo_pace"] = state["current_pace_sec"]
-            paces["threshold_pace"] = state["current_pace_sec"]
+    paces = effective_paces(current_paces, progression_state)
 
     if is_deload:
         return get_deload_workout(category, level, paces, goal_distance)

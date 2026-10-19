@@ -1,12 +1,12 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { GarminSync } from "@/components/garmin-sync";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface Status {
   tokens_present: boolean;
@@ -25,7 +25,7 @@ export function GarminConnectionCard() {
 
   async function load() {
     try {
-      const res = await fetch(`${API}/api/garmin/status/1`);
+      const res = await fetch(apiUrl(`/garmin/status/${USER_ID}`));
       setStatus(await res.json());
       setOffline(false);
     } catch {
@@ -47,7 +47,7 @@ export function GarminConnectionCard() {
   }, [running]);
 
   async function fullSync() {
-    await fetch(`${API}/api/garmin/full-sync/1`, { method: "POST" });
+    await fetch(apiUrl(`/garmin/full-sync/${USER_ID}`), { method: "POST" });
     load();
   }
 
@@ -73,14 +73,17 @@ export function GarminConnectionCard() {
 
         {status && !status.tokens_present && (
           <div className="space-y-2 rounded-md bg-secondary/40 p-3 text-sm">
-            <p className="font-medium">Connect once from your computer:</p>
-            <pre className="overflow-x-auto rounded bg-background p-2 text-xs">
-              cd backend{"\n"}venv/bin/python garmin_login.py
-            </pre>
+            <p className="font-medium">Garmin needs to be connected (or reconnected) from your computer.</p>
             <p className="text-muted-foreground">
-              Enter your Garmin email, password and MFA code there. Only a session token is saved — then come back and
-              tap Sync.
+              Garmin doesn&apos;t offer a sign-in button for personal apps, so this is a one-time step on the computer
+              that runs Stride. Your password is never stored, only a session token.
             </p>
+            <details>
+              <summary className="cursor-pointer text-muted-foreground">Show the command</summary>
+              <pre className="mt-2 overflow-x-auto rounded bg-background p-2 text-xs">
+                cd backend{"\n"}venv/bin/python garmin_login.py
+              </pre>
+            </details>
           </div>
         )}
 

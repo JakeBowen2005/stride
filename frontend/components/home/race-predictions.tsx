@@ -33,7 +33,7 @@ export function RacePredictions({
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="pb-1 font-medium">Distance</th>
               <th className="pb-1 text-right font-medium">Predicted</th>
               <th className="pb-1 text-right font-medium">PR</th>
@@ -51,7 +51,7 @@ export function RacePredictions({
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Predictions dip during a rebuild and climb as fitness returns. Use them to track the trend, not to set race pace.
         </p>
       </CardContent>

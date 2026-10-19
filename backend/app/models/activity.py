@@ -1,13 +1,22 @@
+from typing import TYPE_CHECKING
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
+if TYPE_CHECKING:  # string relationship targets, for type checkers only
+    from app.models.user import User
+
 
 class Activity(Base):
     __tablename__ = "activities"
+    __table_args__ = (
+        Index("ix_activities_user_date", "user_id", "date"),
+        # One row per provider activity — sync upserts rely on this
+        Index("ux_activities_user_source_external", "user_id", "source", "external_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)

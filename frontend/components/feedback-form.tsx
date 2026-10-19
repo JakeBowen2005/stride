@@ -1,11 +1,11 @@
 "use client";
 
+import { apiUrl, USER_ID } from "@/lib/api";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { DayFeedback } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 const FEEL_OPTIONS = [
   { value: 1, label: "1" },
@@ -45,9 +45,11 @@ const RESCHEDULE_TYPES = [
 interface FeedbackFormProps {
   date: string;
   onSubmitted: (feedback: DayFeedback) => void;
+  /** Parent already asks "how did it feel?" — hide the form's own headings */
+  compact?: boolean;
 }
 
-export function FeedbackForm({ date, onSubmitted }: FeedbackFormProps) {
+export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFormProps) {
   const [feel, setFeel] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [pace, setPace] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function FeedbackForm({ date, onSubmitted }: FeedbackFormProps) {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/api/plans/1/feedback/${date}`, {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/feedback/${date}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -102,19 +104,25 @@ export function FeedbackForm({ date, onSubmitted }: FeedbackFormProps) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        How&apos;d it go?
-      </p>
+      {!compact && (
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          How&apos;d it go?
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">Your rating adjusts the next few days of your plan.</p>
 
-      {/* Feel rating */}
+      {/* Feel rating — how it FELT, not effort (low scores trigger extra recovery) */}
       <div>
-        <p className="text-xs text-muted-foreground mb-1.5">How did it feel?</p>
-        <div className="flex gap-1">
+        {!compact && <p className="mb-1.5 text-sm text-muted-foreground">How did it feel?</p>}
+        <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How did the run feel, 1 to 10">
           {FEEL_OPTIONS.map((opt) => (
             <button
               key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={feel === opt.value}
               onClick={(e) => { e.stopPropagation(); setFeel(opt.value); }}
-              className={`h-7 w-7 rounded text-xs font-mono transition-colors ${
+              className={`h-11 rounded-md font-mono text-sm transition-colors ${
                 feel === opt.value
                   ? "bg-foreground text-background"
                   : "bg-secondary hover:bg-secondary/80"
@@ -123,6 +131,11 @@ export function FeedbackForm({ date, onSubmitted }: FeedbackFormProps) {
               {opt.label}
             </button>
           ))}
+        </div>
+        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+          <span>1 = awful</span>
+          <span>5 = okay</span>
+          <span>10 = felt amazing</span>
         </div>
       </div>
 
