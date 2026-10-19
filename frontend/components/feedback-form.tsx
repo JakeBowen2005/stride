@@ -77,7 +77,8 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
           swapped,
           swap_reason: swapReason || null,
           actual_workout_type: swapped ? swapType : null,
-          desired_reschedule_type: swapped && rescheduleType !== "skip" ? rescheduleType : null,
+          // "skip" is sent explicitly: the backend only reschedules on an explicit workout choice
+          desired_reschedule_type: swapped ? rescheduleType : null,
         }),
       });
       if (!res.ok) {
@@ -94,6 +95,8 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
         swap_reason: data.swap_reason || null,
         actual_workout_type: data.actual_workout_type || null,
         coach_response: data.coach_response,
+        evaluation: data.evaluation ?? null,
+        changes: data.changes ?? [],
       });
     } catch {
       setError("Failed to connect to server");

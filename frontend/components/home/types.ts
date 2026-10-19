@@ -40,7 +40,12 @@ export interface RecoverySignal {
 }
 
 export interface WellnessResponse {
+  /** Today's Garmin data only (null if today hasn't synced) */
   today: Wellness | null;
+  /** Most recent day, for trends/tiles; may be older than today */
+  latest: Wellness | null;
+  freshness: "fresh" | "stale" | "absent";
+  as_of: string | null;
   training_status_label: string | null;
   signals: RecoverySignal[];
   history: Wellness[];

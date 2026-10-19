@@ -13,7 +13,7 @@ Key design:
 
 import re
 
-from app.core.pacing import format_pace, pace_range
+from app.core.pacing import format_pace
 
 
 # ── Threshold Ladder (5K/10K) ─────────────────────────────────────

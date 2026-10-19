@@ -92,6 +92,9 @@ export default function TodayPage() {
       ) : (
         <>
           <TodayCard
+            // Remount when the day or its saved feedback changes, so local state follows the data
+            key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
+            onFeedbackSaved={load}
             today={todayPlan}
             wellness={wellness?.today ?? null}
             statusLabel={wellness?.training_status_label ?? null}
@@ -108,7 +111,12 @@ export default function TodayPage() {
             </Card>
           )}
 
-          <MetricTiles today={wellness?.today ?? null} history={wellness?.history ?? []} />
+          {wellness?.freshness === "stale" && wellness.as_of && (
+            <p className="text-xs text-muted-foreground">
+              Today&apos;s Garmin data hasn&apos;t synced yet. Showing {wellness.as_of}; readiness is hidden until it does.
+            </p>
+          )}
+          <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
 
           <div>
             <h3 className="mb-2 text-sm font-medium">Recent Runs</h3>
@@ -140,7 +148,7 @@ export default function TodayPage() {
             )}
           </div>
 
-          <RacePredictions wellness={wellness?.today ?? null} prs={prs} goal={goal} />
+          <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
 
           <WeeklyMileageChartWrapper data={weeklyMileage} />
         </>

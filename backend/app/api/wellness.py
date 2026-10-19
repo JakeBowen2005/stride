@@ -64,10 +64,16 @@ def get_wellness(user_id: int, days: int = Query(default=28, le=120), db: Sessio
     history = [wellness_to_dict(r) for r in rows]
     today_row = next((h for h in reversed(history) if h["date"] == date.today().isoformat()), None)
     latest = history[-1] if history else None
+    # Fresh = today's Garmin data. An older row is shown as "as of <date>" but never
+    # drives readiness or recovery signals (stale data mustn't imply readiness).
+    freshness = "fresh" if today_row else ("stale" if latest else "absent")
     current = today_row or latest
     return {
-        "today": current,
+        "today": today_row,
+        "latest": current,
+        "freshness": freshness,
+        "as_of": current["date"] if current else None,
         "training_status_label": training_status_label((current or {}).get("training_status")),
-        "signals": recovery_signals(current),
+        "signals": recovery_signals(today_row),
         "history": history,
     }

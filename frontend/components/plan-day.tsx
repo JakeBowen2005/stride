@@ -126,6 +126,9 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
               )}
             </div>
             {actualLine && <div className="text-xs text-muted-foreground">{actualLine}</div>}
+            {workout.adjustment_note && (
+              <div className="text-xs text-muted-foreground">Adjusted: {workout.adjustment_note}</div>
+            )}
             {workout.intervals && !hasActual && (
               <div className="font-mono text-xs text-muted-foreground">
                 {workout.intervals}
@@ -318,6 +321,17 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
                   Swap reason: {localFeedback.swap_reason}
                 </p>
               )}
+              {localFeedback.evaluation && (
+                <p className="text-xs">
+                  <span className="font-medium">Progression: </span>
+                  <span className="text-muted-foreground">{localFeedback.evaluation.reason}</span>
+                </p>
+              )}
+              {localFeedback.changes?.map((c) => (
+                <p key={`${c.change}-${c.date}`} className="text-xs text-muted-foreground">
+                  {c.date ? `${c.date}: ` : ""}{c.reason}
+                </p>
+              ))}
               {localFeedback.coach_response && (
                 <div className="rounded-md bg-secondary/50 p-2.5 text-xs leading-relaxed">
                   <span className="font-medium">Coach: </span>

@@ -85,6 +85,8 @@ export interface DayFeedback {
   swap_reason: string | null;
   actual_workout_type: string | null;
   coach_response: string | null;
+  evaluation?: { decision: string; reason: string; evidence: string } | null;
+  changes?: { date: string | null; change: string; reason: string }[];
 }
 
 export interface RunComparison {
@@ -110,6 +112,7 @@ export interface Workout {
   actual?: ActualRun | null;
   comparison?: RunComparison | null;
   feedback?: DayFeedback | null;
+  adjustment_note?: string | null;
 }
 
 export interface PlanWeek {

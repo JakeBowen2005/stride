@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.core.plan_engine import calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
     evaluate_workout,
-    extract_splits_from_description,
     determine_starting_level,
 )
 from app.database import get_db
@@ -283,6 +282,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             "warmup": pw.warmup if is_prescribed else None,
             "cooldown": pw.cooldown if is_prescribed else None,
             "prescribed": is_prescribed,
+            "adjustment_note": pw.adjustment_note,
             "actual": actual,
             "comparison": comparison,
             "feedback": {
@@ -293,6 +293,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
                 "swap_reason": pw.swap_reason,
                 "actual_workout_type": pw.actual_workout_type,
                 "coach_response": pw.coach_response,
+                "evaluation": json.loads(pw.evaluation) if pw.evaluation else None,
             } if pw.feel_rating or pw.swapped else None,
         }
         weeks_map[pw.week_number]["days"].append(day_data)
@@ -368,9 +369,14 @@ def submit_feedback(
     if not pw:
         raise HTTPException(status_code=404, detail="No planned workout for this date")
 
-    # Re-submitting edits the rating/notes but must not re-run plan side effects
-    # (ladder progression, fatigue downgrade, rescheduling) — a double tap would apply them twice.
-    is_edit = pw.feel_rating is not None
+    activities = _get_activities_for_date(feedback_date, user_id, db)
+
+    # Claim the side effects atomically. Only the first successful submission for a
+    # day applies progression / rescheduling / fatigue changes; edits, retries and
+    # concurrent duplicates update the rating and notes only.
+    claimed = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == pw.id, PlannedWorkout.side_effects_applied_at.is_(None)
+    ).update({"side_effects_applied_at": datetime.now()}, synchronize_session=False) == 1
 
     # Save feedback to PlannedWorkout
     pw.feel_rating = req.feel_rating
@@ -380,113 +386,138 @@ def submit_feedback(
     pw.swap_reason = req.swap_reason
     pw.actual_workout_type = req.actual_workout_type
 
-    # Also save feel_rating + notes to the matched Activity
-    activities = _get_activities_for_date(feedback_date, user_id, db)
-    if activities:
-        primary = max(activities, key=lambda a: a.distance_meters)
-        primary.feel_rating = req.feel_rating
-        primary.feel_notes = req.feel_notes
+    evidence_act = _work_evidence_activity(activities)
+    if evidence_act:
+        evidence_act.feel_rating = req.feel_rating
+        evidence_act.feel_notes = req.feel_notes
 
-    # Persist the athlete's input before anything that can fail (LLM call)
+    # Persist the athlete's input (and the claim) before anything that can fail
+    db.commit()
+    db.refresh(pw)
+
+    evaluation = json.loads(pw.evaluation) if pw.evaluation else None
+    changes: list[dict] = []
+    if claimed:
+        try:
+            evaluation, changes = _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req, db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            db.query(PlannedWorkout).filter(PlannedWorkout.id == pw.id).update(
+                {"side_effects_applied_at": None}, synchronize_session=False
+            )
+            db.commit()
+            raise
+
+    # Coach explains the final, persisted decision (never raises; template fallback)
+    from app.services.coach import get_coach_feedback
+    decision_summary = _decision_summary(evaluation, changes)
+    coach_response = get_coach_feedback(user_id, pw, activities, req, db, decision_summary=decision_summary)
+    pw.coach_response = coach_response
     db.commit()
 
-    # Get coach response (never raises — falls back to a template)
-    from app.services.coach import get_coach_feedback
-    coach_response = get_coach_feedback(user_id, pw, activities, req, db)
-    pw.coach_response = coach_response
+    return {
+        "date": feedback_date,
+        "feel_rating": pw.feel_rating,
+        "pace_assessment": pw.pace_assessment,
+        "swapped": pw.swapped,
+        "coach_response": coach_response,
+        "rescheduled_to": next((c["date"] for c in changes if c["change"] == "rescheduled"), None),
+        "plan_adjusted": bool(changes),
+        "changes": changes,
+        "progression_decision": evaluation["decision"] if evaluation else None,
+        "evaluation": evaluation,
+        "side_effects_applied": claimed,
+    }
 
-    # Evaluate workout and update progression state (only for hard workout days)
-    evaluation_decision = None
-    if pw.type == "workout" and not req.swapped and not is_edit:
-        # Determine which category this workout belongs to
-        workout_category = _detect_workout_category(pw.title)
-        if workout_category:
-            # Get the prescribed pace for comparison
-            prescribed_pace = _extract_prescribed_pace(pw.description)
 
-            # Get actual description from Strava
-            actual_desc = None
-            actual_avg_pace = None
-            actual_dist = None
-            if activities:
-                primary = max(activities, key=lambda a: a.distance_meters)
-                actual_desc = primary.description
-                if primary.average_pace_per_km:
-                    actual_avg_pace = primary.average_pace_per_km * 1.60934  # km to mile
-                actual_dist = primary.distance_meters / 1609.34
+def _work_evidence_activity(activities: list[Activity]) -> Activity | None:
+    """The activity holding the workout's reps. Split recordings (warmup / workout /
+    cooldown as separate activities) mean the longest one may be the warmup."""
+    if not activities:
+        return None
+    from app.core.workout_evaluator import _extract_paced_reps, extract_splits_from_description
 
-            eval_result = evaluate_workout(
-                actual_description=actual_desc,
-                actual_avg_pace_sec=actual_avg_pace,
-                actual_distance_miles=actual_dist,
+    def has_work(a: Activity) -> bool:
+        d = a.description or ""
+        return bool(extract_splits_from_description(d)) or bool(_extract_paced_reps(d)[1])
+
+    with_work = [a for a in activities if has_work(a)]
+    return max(with_work or activities, key=lambda a: a.distance_meters or 0)
+
+
+def _snapshot(pw: PlannedWorkout) -> str:
+    return json.dumps({k: getattr(pw, k) for k in ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown")})
+
+
+def _mark_changed(pw: PlannedWorkout, reason: str):
+    if not pw.original_prescription:
+        pw.original_prescription = _snapshot(pw)
+    pw.adjustment_note = reason
+
+
+def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req, db) -> tuple[dict | None, list[dict]]:
+    """Deterministic consequences of feedback. Caller owns the transaction."""
+    changes: list[dict] = []
+    evaluation = None
+    feedback_date = pw.date
+
+    # 1. Evaluate the workout and move ONE progression lever
+    if pw.type == "workout" and not req.swapped:
+        category = _detect_workout_category(pw.title)
+        if category:
+            only_one = len(activities) == 1
+            ev = evaluate_workout(
+                actual_description=evidence_act.description if evidence_act else None,
+                # A whole-run average only means something when the run was one activity,
+                # and even then it is weak evidence (never enough to advance)
+                actual_avg_pace_sec=(evidence_act.average_pace_per_km * 1.60934)
+                if (evidence_act and only_one and evidence_act.average_pace_per_km) else None,
+                actual_distance_miles=sum(a.distance_meters for a in activities) / 1609.34 if activities else None,
                 prescribed_type=pw.type,
-                prescribed_pace_sec=prescribed_pace,
+                prescribed_pace_sec=_extract_prescribed_pace(pw.description),
                 prescribed_name=pw.title,
                 feel_rating=req.feel_rating,
             )
-            evaluation_decision = eval_result.decision
-
+            evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
+            pw.evaluation = json.dumps(evaluation)
             _update_progression_from_evaluation(
-                user_id=user_id,
-                category=workout_category,
-                evaluation_decision=eval_result.decision,
-                workout_name=pw.title,
-                workout_date=feedback_date,
-                new_pace_sec=eval_result.new_pace_sec,
-                db=db,
+                user_id=user_id, category=category, evaluation_decision=ev.decision,
+                workout_name=pw.title, workout_date=feedback_date, new_pace_sec=ev.new_pace_sec, db=db,
             )
 
-    # If a hard workout was swapped, reschedule based on user intent
-    rescheduled_date = None
-    if req.swapped and pw.type == "workout" and not is_edit:
-        hard_swap_types = {"tempo", "intervals", "threshold"}
-        # Use explicit desired_reschedule_type if provided, fall back to parsing swap_reason
-        reschedule_type = req.desired_reschedule_type
-        if not reschedule_type and req.swap_reason:
-            reason_lower = req.swap_reason.lower()
-            for ht in hard_swap_types:
-                if ht in reason_lower:
-                    reschedule_type = ht
-                    break
-        wants_hard = reschedule_type in hard_swap_types
-
-        if wants_hard:
-            # User wants a specific hard workout — find a safe slot and generate from ladder
-            safe_day = _find_safe_easy_day(db_plan.id, feedback_date, db)
-            if safe_day:
-                workout = _generate_swap_workout(user_id, reschedule_type, db_plan, db)
-                safe_day.type = "workout"
-                safe_day.title = workout["name"]
-                safe_day.description = workout["structure"]
-                safe_day.purpose = workout["purpose"]
-                safe_day.distance_miles = workout.get("total_miles", pw.distance_miles)
-                safe_day.warmup = workout.get("warmup")
-                safe_day.cooldown = workout.get("cooldown")
-                rescheduled_date = safe_day.date
+    # 2. Swapped a hard workout: only an explicit choice reschedules
+    if req.swapped and pw.type == "workout":
+        choice = req.desired_reschedule_type
+        if choice in {"tempo", "intervals", "threshold"}:
+            slot, why_not = _find_safe_slot(db_plan, feedback_date, db)
+            if slot:
+                workout = _generate_swap_workout(user_id, choice, db_plan, db)
+                _mark_changed(slot, f"Rescheduled {choice} workout after {feedback_date} was swapped.")
+                slot.type = "workout"
+                slot.title = workout["name"]
+                slot.description = workout["structure"]
+                slot.purpose = workout["purpose"]
+                slot.distance_miles = workout.get("total_miles", pw.distance_miles)
+                slot.warmup = workout.get("warmup")
+                slot.cooldown = workout.get("cooldown")
+                changes.append({"date": slot.date, "change": "rescheduled", "reason": slot.adjustment_note})
             else:
-                # No safe slot — fall back to copying original
-                next_easy = _find_next_easy_day(db_plan.id, feedback_date, db)
-                if next_easy:
-                    _copy_workout_to_day(pw, next_easy)
-                    rescheduled_date = next_easy.date
-        else:
-            # User chose easy/recovery/rest — copy original workout forward
-            next_easy = _find_next_easy_day(db_plan.id, feedback_date, db)
-            if next_easy:
-                _copy_workout_to_day(pw, next_easy)
-                rescheduled_date = next_easy.date
+                changes.append({"date": None, "change": "not_rescheduled", "reason": why_not})
 
-    # If feel rating is low (fatigued), reduce intensity of next hard day
-    if req.feel_rating <= 4 and not req.swapped and not is_edit:
+    # 3. Feel ≤ 4: the next unrun hard workout becomes easy
+    if req.feel_rating <= 4 and not req.swapped:
+        today = date.today().isoformat()
         next_hard = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == db_plan.id,
             PlannedWorkout.date > feedback_date,
+            PlannedWorkout.date >= today,  # never rewrite the past
             PlannedWorkout.type == "workout",
-            PlannedWorkout.activity_id == None,
+            PlannedWorkout.activity_id == None,  # noqa: E711
         ).order_by(PlannedWorkout.date).first()
-
         if next_hard:
-            # Downgrade next hard workout to easy — fatigue recovery
+            reason = f"Adjusted to easy: you rated {feedback_date} {req.feel_rating}/10, so the next workout became recovery."
+            _mark_changed(next_hard, reason)
             next_hard.type = "easy"
             next_hard.title = "Easy Run (adjusted — recovery)"
             next_hard.description = (
@@ -497,19 +528,43 @@ def submit_feedback(
             next_hard.distance_miles = min(next_hard.distance_miles, 4.0)
             next_hard.warmup = None
             next_hard.cooldown = None
+            changes.append({"date": next_hard.date, "change": "downgraded", "reason": reason})
 
-    db.commit()
+    if changes:
+        db.flush()
+    return evaluation, changes
 
-    return {
-        "date": feedback_date,
-        "feel_rating": pw.feel_rating,
-        "pace_assessment": pw.pace_assessment,
-        "swapped": pw.swapped,
-        "coach_response": coach_response,
-        "rescheduled_to": rescheduled_date,
-        "plan_adjusted": not is_edit,
-        "progression_decision": evaluation_decision,
-    }
+
+def _decision_summary(evaluation: dict | None, changes: list[dict]) -> str | None:
+    parts = []
+    if evaluation:
+        parts.append(f"Progression decision: {evaluation['decision']} — {evaluation['reason']}")
+    for c in changes:
+        parts.append(f"Schedule change ({c['change']}{' on ' + c['date'] if c['date'] else ''}): {c['reason']}")
+    return "\n".join(parts) or None
+
+
+def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[PlannedWorkout | None, str | None]:
+    """A future easy day with no run yet, on a non-rest day, with no hard day (planned
+    workout, long run or race — or a real hard run) on either side. Never falls back
+    to an unsafe day; returns the reason instead."""
+    today = date.today().isoformat()
+    floor = max(after_date, today)
+    days = db.query(PlannedWorkout).filter(PlannedWorkout.plan_id == db_plan.id).order_by(PlannedWorkout.date).all()
+    by_date = {d.date: d for d in days}
+    acts = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
+    for c in days:
+        if c.date <= floor or c.type != "easy" or c.activity_id or acts.get(c.date):
+            continue
+        d = date.fromisoformat(c.date)
+        neighbours = [(d - timedelta(days=1)).isoformat(), (d + timedelta(days=1)).isoformat()]
+        if any(by_date.get(n) is not None and by_date[n].type in HARD_ACTIVITY_TYPES | {"race"} for n in neighbours):
+            continue
+        if any(a.workout_type in HARD_ACTIVITY_TYPES for n in neighbours for a in acts.get(n, [])):
+            continue
+        return c, None
+    return None, ("No safe day left in this block for the extra workout: every remaining easy day sits next to a "
+                  "hard day. It was dropped rather than stacked; your next block will include it.")
 
 
 HARD_ACTIVITY_TYPES = {"workout", "race", "long_run"}
@@ -802,63 +857,22 @@ def _update_progression_from_evaluation(
     prog.last_workout_name = workout_name
     prog.last_execution = evaluation_decision
 
+    # One lever per decision: advance moves the level, recalibrate moves the pace.
     if evaluation_decision == "advance":
         prog.current_level = min(prog.current_level + 1, 12)
         prog.sessions_at_level = 0
         prog.format_rotation = (prog.format_rotation + 1) % 3
-        if new_pace_sec:
-            prog.current_pace_sec = new_pace_sec
     elif evaluation_decision == "recalibrate":
-        prog.current_level = min(prog.current_level + 1, 12)
-        prog.sessions_at_level = 0
         if new_pace_sec:
             prog.current_pace_sec = new_pace_sec
     elif evaluation_decision == "regress":
         prog.current_level = max(prog.current_level - 1, 1)
         prog.sessions_at_level = 0
-    else:  # hold
+    elif evaluation_decision == "hold":
         prog.sessions_at_level += 1
+    # "insufficient": no evidence either way — level and session count unchanged
 
     db.add(prog)
-
-
-def _find_next_easy_day(plan_id: int, after_date: str, db: Session) -> PlannedWorkout | None:
-    """Find the next unmatched easy day after a given date."""
-    return db.query(PlannedWorkout).filter(
-        PlannedWorkout.plan_id == plan_id,
-        PlannedWorkout.date > after_date,
-        PlannedWorkout.type == "easy",
-        PlannedWorkout.activity_id == None,
-    ).order_by(PlannedWorkout.date).first()
-
-
-def _find_safe_easy_day(plan_id: int, after_date: str, db: Session) -> PlannedWorkout | None:
-    """Find next easy day where neither the day before nor after is a hard workout."""
-    candidates = db.query(PlannedWorkout).filter(
-        PlannedWorkout.plan_id == plan_id,
-        PlannedWorkout.date > after_date,
-        PlannedWorkout.type == "easy",
-        PlannedWorkout.activity_id == None,
-    ).order_by(PlannedWorkout.date).all()
-
-    for c in candidates:
-        d = date.fromisoformat(c.date)
-        prev = (d - timedelta(days=1)).isoformat()
-        nxt = (d + timedelta(days=1)).isoformat()
-
-        prev_day = db.query(PlannedWorkout).filter(
-            PlannedWorkout.plan_id == plan_id, PlannedWorkout.date == prev
-        ).first()
-        next_day = db.query(PlannedWorkout).filter(
-            PlannedWorkout.plan_id == plan_id, PlannedWorkout.date == nxt
-        ).first()
-
-        prev_hard = prev_day and prev_day.type == "workout"
-        next_hard = next_day and next_day.type == "workout"
-
-        if not prev_hard and not next_hard:
-            return c
-    return None
 
 
 def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: Session) -> dict:
@@ -882,14 +896,3 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
     goal_distance = goal_snapshot.get("distance", "5k")
 
     return get_workout_at_level(category, level, paces, goal_distance)
-
-
-def _copy_workout_to_day(source: PlannedWorkout, target: PlannedWorkout):
-    """Copy workout prescription from one PlannedWorkout to another."""
-    target.type = source.type
-    target.title = source.title
-    target.description = source.description
-    target.purpose = source.purpose
-    target.distance_miles = source.distance_miles
-    target.warmup = source.warmup
-    target.cooldown = source.cooldown

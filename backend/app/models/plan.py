@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -67,6 +67,14 @@ class PlannedWorkout(Base):
     swap_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_workout_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # what they did if swapped
     coach_response: Mapped[str | None] = mapped_column(Text, nullable=True)  # LLM feedback
+
+    # Deterministic decisions (persisted so UI, coach and reloads agree)
+    evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON WorkoutEvaluation
+    adjustment_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # why this day was changed
+    original_prescription: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON, before any change
+    # Durable dedup: set once when feedback side effects (progression, rescheduling,
+    # fatigue downgrade) are applied, so retries/concurrent submits apply them once
+    side_effects_applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     plan: Mapped["Plan"] = relationship("Plan", back_populates="planned_workouts")

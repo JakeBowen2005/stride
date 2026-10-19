@@ -1,34 +1,21 @@
 """End-to-end API tests against a temp SQLite DB (see conftest.py)."""
 
-import json
 from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal
 from app.main import app
 from app.models.activity import Activity
 from app.models.garmin import GarminConnection
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
-from app.models.user import Goal, User
+from app.models.user import Goal
 from app.services import garmin
 
 client = TestClient(app)
 MI = 1609.34
-
-
-@pytest.fixture(autouse=True)
-def fresh_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday"))
-    db.add(Goal(user_id=1, goal_type="race", race_distance="5k", target_time_seconds=1020, active=True))
-    db.commit()
-    db.close()
-    yield
 
 
 def _seed_runs(days: int = 60, skip_recent: int = 0):
@@ -161,6 +148,20 @@ def test_wellness_endpoint_shape():
     assert r.status_code == 200
     body = r.json()
     assert body["today"] is None and body["history"] == [] and body["signals"] == []
+    assert body["freshness"] == "absent"
+
+
+def test_stale_wellness_never_drives_signals():
+    from app.models.wellness import DailyWellness
+
+    db = SessionLocal()
+    db.add(DailyWellness(user_id=1, date=(date.today() - timedelta(days=2)).isoformat(),
+                         hrv_last_night=50, hrv_baseline_low=78, readiness_score=30, readiness_level="POOR"))
+    db.commit()
+    db.close()
+    body = client.get("/api/wellness/1?days=7").json()
+    assert body["freshness"] == "stale" and body["today"] is None and body["signals"] == []
+    assert body["latest"]["readiness_score"] == 30 and body["as_of"] == (date.today() - timedelta(days=2)).isoformat()
 
 
 def _past_block(run_fraction: float, feel: int | None = None):

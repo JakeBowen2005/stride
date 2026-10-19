@@ -21,6 +21,7 @@ interface ApiPlanDay {
   warmup: string | null;
   cooldown: string | null;
   prescribed?: boolean;
+  adjustment_note?: string | null;
   actual?: {
     distance_miles: number;
     avg_pace: string | null;
@@ -44,6 +45,7 @@ interface ApiPlanDay {
     swap_reason: string | null;
     actual_workout_type: string | null;
     coach_response: string | null;
+    evaluation?: { decision: string; reason: string; evidence: string } | null;
   } | null;
 }
 
@@ -112,6 +114,7 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       actual: d.actual || null,
       comparison: d.comparison || null,
       feedback: d.feedback || null,
+      adjustment_note: d.adjustment_note ?? null,
     })),
   };
 }

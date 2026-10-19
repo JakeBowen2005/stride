@@ -4,7 +4,7 @@ Stores where the athlete is on each workout ladder (threshold, intervals)
 and the evaluation history that drives progression decisions.
 """
 
-from datetime import date as date_type, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Date, DateTime, Float, Integer, String
 from app.database import Base

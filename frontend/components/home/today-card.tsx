@@ -21,7 +21,12 @@ export interface PlanDayLite {
   warmup?: string | null;
   cooldown?: string | null;
   actual?: { distance_miles: number; avg_pace: string | null } | null;
-  feedback?: { feel_rating: number | null; coach_response: string | null } | null;
+  feedback?: {
+    feel_rating: number | null;
+    coach_response: string | null;
+    evaluation?: { decision: string; reason: string } | null;
+    changes?: { date: string | null; change: string; reason: string }[];
+  } | null;
 }
 
 const LEVEL_COLOR: Record<string, string> = {
@@ -69,6 +74,7 @@ export function TodayCard({
   signals,
   planStale,
   mileageRisk,
+  onFeedbackSaved,
 }: {
   today: PlanDayLite | null;
   wellness: Wellness | null;
@@ -77,6 +83,8 @@ export function TodayCard({
   planStale: boolean;
   /** Stride's own mileage-based injury risk (from the plan's athlete snapshot) */
   mileageRisk?: string | null;
+  /** Feedback can change upcoming days and the plan — let the page reload its data */
+  onFeedbackSaved?: () => void;
 }) {
   const hardToday = !!today && (today.type === "workout" || today.type === "long_run" || today.type === "race");
   const done = !!today?.actual;
@@ -169,9 +177,27 @@ export function TodayCard({
               <p className="mb-2 text-sm font-medium">
                 Nice — {formatDistance(today.actual!.distance_miles)} mi done. How did it feel?
               </p>
-              <FeedbackForm compact date={today.date} onSubmitted={(fb) => setFeedback(fb)} />
+              <FeedbackForm
+                compact
+                date={today.date}
+                onSubmitted={(fb) => {
+                  setFeedback(fb);
+                  onFeedbackSaved?.();
+                }}
+              />
             </div>
           )}
+          {feedback?.evaluation && (
+            <p className="mt-3 text-sm">
+              <span className="font-medium">Progression: </span>
+              <span className="text-muted-foreground">{feedback.evaluation.reason}</span>
+            </p>
+          )}
+          {feedback?.changes?.map((c) => (
+            <p key={`${c.change}-${c.date}`} className="mt-1 text-sm text-muted-foreground">
+              {c.reason}
+            </p>
+          ))}
           {feedback?.coach_response && (
             <div className="mt-3 rounded-lg bg-muted p-3 text-sm">
               <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Coach</div>
