@@ -63,6 +63,14 @@ interface ApiPlan {
   is_deload: boolean;
   is_stale?: boolean;
   phase?: WeekPhaseInfo | null;
+  load?: {
+    baseline: number;
+    destination: number | null;
+    mode: string;
+    weekly_budgets: number[];
+    reasons: string[];
+  } | null;
+  assessment?: { decision: string | null; reasons: string[] } | null;
   weeks: ApiWeek[];
   pacing_guide: Record<string, string>;
   notes: string[];
@@ -106,6 +114,44 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       feedback: d.feedback || null,
     })),
   };
+}
+
+const MODE_LABEL: Record<string, string> = {
+  build: "Building", hold: "Holding steady", reduce: "Easing back", recovery: "Recovery block",
+  deload: "Deload included", start: "Getting started",
+};
+
+function BlockSummary({ load, assessment }: { load: NonNullable<ApiPlan["load"]>; assessment: ApiPlan["assessment"] }) {
+  const budgets = load.weekly_budgets.map((b) => Math.round(b)).join(" → ");
+  return (
+    <Card>
+      <CardContent className="space-y-2 pt-4 text-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="font-medium">This block: {MODE_LABEL[load.mode] ?? load.mode}</h3>
+          <span className="shrink-0 font-mono text-muted-foreground">{budgets} mi/wk</span>
+        </div>
+        <p className="text-muted-foreground">
+          Baseline {Math.round(load.baseline)} mi/week from your recent runs
+          {load.destination ? ` · goal ${Math.round(load.destination)} mi/week` : ""}
+        </p>
+        {load.destination && load.destination > load.baseline && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-label="Progress toward mileage goal">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.min(100, (load.baseline / load.destination) * 100)}%`, background: "var(--viz-series-1)" }}
+            />
+          </div>
+        )}
+        {assessment?.reasons?.length ? (
+          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+            {assessment.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026. */
@@ -296,6 +342,8 @@ export default function PlanPage() {
           )}
         </div>
       </div>
+
+      {plan.load && <BlockSummary load={plan.load} assessment={plan.assessment ?? null} />}
 
       {/* Pacing Guide — the same numbers the workouts below use */}
       <Card>

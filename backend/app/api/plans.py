@@ -60,7 +60,10 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     easy_pace_seconds = _parse_pace(easy_pace_str) if easy_pace_str else 540
 
     calibrated = calibrate_paces(user_id, db)
-    current_workout_paces = calibrated if "interval_pace" in calibrated else None
+    # Keep any category's evidence (threshold-only history is still evidence)
+    current_workout_paces = calibrated if any(
+        k in calibrated for k in ("interval_pace", "tempo_pace", "threshold_pace")
+    ) else None
 
     rest_days = []
     if user.rest_days:
@@ -68,17 +71,35 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     if not rest_days:
         rest_days = ["sunday"]
 
-    # Deactivate any existing active plan
-    db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update(
-        {"is_active": False}
-    )
-
     # Calculate smart plan params (or use explicit start_date)
     if req and req.start_date:
         start = date.fromisoformat(req.start_date)
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
     else:
         params = calculate_plan_params()
+
+    fpd = params.get("first_prescribe_date") or params["start_date"]
+    baseline = current_fitness["weekly_mileage_4w_avg"]
+
+    # Real training already done in this block's first week, and real hard runs just
+    # before it — so a midweek plan prescribes only what's left and can't stack a
+    # workout on yesterday's long run.
+    window_start = (min(params["start_date"], fpd) - timedelta(days=3)).isoformat()
+    recent = _activities_by_date(user_id, window_start, (fpd - timedelta(days=1)).isoformat(), db)
+    completed_by_date = {
+        d: sum(a.distance_meters for a in acts) / 1609.34
+        for d, acts in recent.items() if d >= params["start_date"].isoformat()
+    }
+    prior_hard_dates = {
+        d for d, acts in recent.items()
+        if (fpd - timedelta(days=3)).isoformat() <= d < fpd.isoformat()
+        and any(_is_hard_activity(a, baseline) for a in acts)
+    }
+
+    # Assess the previous block (what was prescribed and actually run) — drives
+    # build / hold / reduce / recovery for the next block's volume.
+    prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
+    assessment = _assess_previous_block(prev_plan, db) if prev_plan else None
 
     # Determine block number — reuse on overlapping regeneration, increment on new block
     last_plan = db.query(Plan).filter(Plan.user_id == user_id).order_by(Plan.id.desc()).first()
@@ -115,7 +136,15 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         progression_state=progression_state,
         race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
         terrain=goal.terrain,
+        target_weekly_mileage=goal.target_weekly_mileage,
+        assessment=assessment.decision if assessment else None,
+        completed_by_date=completed_by_date,
+        prior_hard_dates=prior_hard_dates,
+        reported_mileage=user.current_weekly_mileage,
+        allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
     )
+    if assessment:
+        plan_data["notes"] = assessment.reasons + plan_data["notes"]
 
     goal_snapshot = {
         "type": goal.goal_type,
@@ -124,6 +153,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "race_date": goal.race_date,
         "description": goal.description,
         "terrain": goal.terrain,
+        "target_weekly_mileage": goal.target_weekly_mileage,
     }
     athlete_snapshot = {
         "name": user.name,
@@ -133,7 +163,9 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "injury_risk": analysis["injury_risk"]["assessment"],
     }
 
-    # Persist to DB
+    # Persist atomically: the previous plan is only deactivated in the same commit
+    # that saves its replacement, so a failure above leaves the old plan usable.
+    db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update({"is_active": False})
     db_plan = Plan(
         user_id=user_id,
         start_date=plan_data["start_date"],
@@ -147,6 +179,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         athlete_snapshot=json.dumps(athlete_snapshot),
         phases=json.dumps(plan_data.get("phases", [])),
         prescribed_from=(params.get("first_prescribe_date") or params["start_date"]).isoformat(),
+        load=json.dumps(plan_data.get("load")),
+        assessment=json.dumps(assessment.to_dict()) if assessment else None,
     )
     db.add(db_plan)
     db.flush()  # get the plan ID
@@ -168,11 +202,16 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
             )
             db.add(pw)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(db_plan)
 
     # Return the full plan response
     plan_data["id"] = db_plan.id
+    plan_data["assessment"] = assessment.to_dict() if assessment else None
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     return plan_data
@@ -263,6 +302,8 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
     for wk_num in sorted(weeks_map.keys()):
         wk = weeks_map[wk_num]
         wk["phase"] = phases[wk_num - 1] if 0 < wk_num <= len(phases) else None
+        budgets = (json.loads(db_plan.load) or {}).get("weekly_budgets", []) if db_plan.load else []
+        wk["budget_miles"] = budgets[wk_num - 1] if 0 < wk_num <= len(budgets) else None
         wk["target_mileage"] = round(sum(d["distance_miles"] for d in wk["days"]), 1)
         # Calculate actual mileage from matched activities
         actual_mileage = 0
@@ -281,6 +322,8 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         # A plan whose last day is behind us shouldn't be shown as "current"
         "is_stale": db_plan.end_date < today,
         "phase": _current_phase(weeks, today),
+        "load": json.loads(db_plan.load) if db_plan.load else None,
+        "assessment": json.loads(db_plan.assessment) if db_plan.assessment else None,
         "weeks": weeks,
         "pacing_guide": json.loads(db_plan.pacing_guide) if db_plan.pacing_guide else {},
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
@@ -467,6 +510,32 @@ def submit_feedback(
         "plan_adjusted": not is_edit,
         "progression_decision": evaluation_decision,
     }
+
+
+HARD_ACTIVITY_TYPES = {"workout", "race", "long_run"}
+
+
+def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
+    """A real run that counts as a hard day for spacing: a classified workout/race/long
+    run, or a run that's long relative to the athlete's week (≥8 mi and ≥25% of it)."""
+    miles = (a.distance_meters or 0) / 1609.34
+    return (a.workout_type in HARD_ACTIVITY_TYPES) or (miles >= 8 and miles >= 0.25 * baseline_mpw)
+
+
+def _assess_previous_block(prev_plan: Plan, db: Session):
+    from app.core.block_assessment import DayRecord, assess_block
+
+    today = date.today().isoformat()
+    start = prev_plan.prescribed_from or prev_plan.start_date
+    by_date = _activities_by_date(prev_plan.user_id, prev_plan.start_date, prev_plan.end_date, db)
+    records = []
+    for pw in prev_plan.planned_workouts:
+        if not (start <= pw.date < today):
+            continue
+        actual = sum(a.distance_meters for a in by_date.get(pw.date, [])) / 1609.34
+        records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
+                                 actual_miles=actual, feel=pw.feel_rating))
+    return assess_block(records)
 
 
 def _current_phase(weeks: list[dict], today: str) -> dict | None:
@@ -692,7 +761,8 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
                 "sessions_at_level": 0,
             }
 
-    db.commit()
+    # No commit here: the caller's transaction (plan generation) owns it
+    db.flush()
     return result
 
 

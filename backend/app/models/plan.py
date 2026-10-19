@@ -26,6 +26,8 @@ class Plan(Base):
     athlete_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     phases: Mapped[str | None] = mapped_column(Text)  # JSON list, one periodization phase per week
     prescribed_from: Mapped[str | None] = mapped_column(String(20))  # local ISO date the plan starts prescribing
+    load: Mapped[str | None] = mapped_column(Text)  # JSON LoadPlan: baseline, destination, budgets, reasons
+    assessment: Mapped[str | None] = mapped_column(Text)  # JSON BlockAssessment of the previous block
 
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(

@@ -16,8 +16,9 @@ from app.core.periodization import (
     is_ultra,
 )
 
+from app.core.plan_validator import HARD_TYPES  # noqa: F401  (re-exported for callers/tests)
+
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-HARD_TYPES = {"workout", "long_run", "race"}
 
 RACE_LABELS = {
     "5k": "5K", "10k": "10K", "half": "Half Marathon", "marathon": "Marathon",
@@ -216,25 +217,6 @@ def hill_session(phase: str) -> dict:
 
 
 # ── Safety net ──────────────────────────────────────────────────
-
-def enforce_no_back_to_back_hard(days: list[dict], easy_desc: str) -> list[dict]:
-    """Never two hard days in a row (CLAUDE.md). A back-to-back long-run pair is the
-    one allowed exception. On conflict the workout is downgraded to easy — fail safe."""
-    for i in range(1, len(days)):
-        a, b = days[i - 1], days[i]
-        if a["type"] not in HARD_TYPES or b["type"] not in HARD_TYPES:
-            continue
-        if a["type"] == "long_run" and b["type"] == "long_run":
-            continue  # B2B weekend
-        victim = b if b["type"] == "workout" else a if a["type"] == "workout" else None
-        if victim is None:
-            continue
-        victim.update({
-            "type": "easy",
-            "title": "Easy Run (moved off a hard-day stack)",
-            "description": easy_desc,
-            "purpose": "Keeps easy days between hard efforts so each hard day can be done well.",
-            "distance_miles": min(victim["distance_miles"], 6.0),
-            "warmup": None, "cooldown": None,
-        })
-    return days
+# The hard-day rule lives in plan_validator so generation and every later schedule
+# mutation share one implementation.
+from app.core.plan_validator import enforce_no_back_to_back_hard  # noqa: E402,F401

@@ -31,9 +31,9 @@ def fresh_db():
     yield
 
 
-def _seed_runs(days: int = 60):
+def _seed_runs(days: int = 60, skip_recent: int = 0):
     db = SessionLocal()
-    for i in range(days):
+    for i in range(skip_recent, days):
         d = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0) - timedelta(days=i + 1)
         if d.weekday() == 4:
             continue
@@ -161,3 +161,78 @@ def test_wellness_endpoint_shape():
     assert r.status_code == 200
     body = r.json()
     assert body["today"] is None and body["history"] == [] and body["signals"] == []
+
+
+def _past_block(run_fraction: float, feel: int | None = None):
+    """An active plan covering the last 14 days, plus runs covering run_fraction of it."""
+    db = SessionLocal()
+    start = date.today() - timedelta(days=14)
+    plan = Plan(user_id=1, start_date=start.isoformat(), end_date=(date.today() - timedelta(days=1)).isoformat(),
+                is_active=True, prescribed_from=start.isoformat(), block_number=1)
+    db.add(plan)
+    db.flush()
+    for i in range(14):
+        d = start + timedelta(days=i)
+        kind = "rest" if d.weekday() == 4 else ("long_run" if d.weekday() == 5 else ("workout" if d.weekday() in (1, 3) else "easy"))
+        miles = 0 if kind == "rest" else (10 if kind == "long_run" else 5)
+        db.add(PlannedWorkout(plan_id=plan.id, date=d.isoformat(), day_name="x", week_number=i // 7 + 1,
+                              type=kind, title=kind, distance_miles=miles, feel_rating=feel if miles else None))
+        if miles and (i % 10) / 10 < run_fraction:
+            db.add(Activity(user_id=1, source="garmin", external_id=f"b{i}", name="Run",
+                            date=datetime.combine(d, datetime.min.time()).replace(hour=7),
+                            distance_meters=miles * MI, duration_seconds=miles * 540,
+                            average_pace_per_km=540 / 1.60934))
+    db.commit()
+    db.close()
+
+
+def test_two_block_cycle_well_run_block_builds():
+    _seed_runs(40)
+    _past_block(1.0, feel=7)
+    r = client.post("/api/plans/1/generate")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assessment"]["decision"] == "build"
+    assert body["load"]["mode"] == "build"
+    current = client.get("/api/plans/1/current").json()
+    assert current["assessment"]["decision"] == "build"  # persisted, survives reload
+    assert any("planned miles" in n for n in current["notes"])
+
+
+def test_two_block_cycle_interrupted_block_reduces():
+    _seed_runs(60, skip_recent=14)  # history, then a 2-week interruption
+    _past_block(0.3)
+    body = client.post("/api/plans/1/generate").json()
+    assert body["assessment"]["decision"] == "reduce"
+    assert body["load"]["mode"] == "reduce"
+    assert all(b < body["load"]["baseline"] for b in body["load"]["weekly_budgets"])
+
+
+def test_failed_generation_keeps_previous_plan(monkeypatch):
+    _seed_runs(40)
+    _past_block(1.0)
+    import app.api.plans as plans_api
+
+    def boom(**kw):
+        raise RuntimeError("engine failure")
+
+    monkeypatch.setattr(plans_api, "generate_plan", boom)
+    with pytest.raises(RuntimeError):
+        client.post("/api/plans/1/generate")
+    db = SessionLocal()
+    active = db.query(Plan).filter(Plan.is_active == True).all()  # noqa: E712
+    assert len(active) == 1 and active[0].block_number == 1
+    db.close()
+
+
+def test_mileage_goal_flows_into_plan():
+    _seed_runs(40)
+    db = SessionLocal()
+    db.query(Goal).update({"active": False})
+    db.add(Goal(user_id=1, goal_type="mileage", target_weekly_mileage=75, active=True))
+    db.commit()
+    db.close()
+    body = client.post("/api/plans/1/generate").json()
+    assert body["load"]["destination"] == 75
+    assert body["goal"]["target_weekly_mileage"] == 75
+    assert max(body["load"]["weekly_budgets"]) < 75
