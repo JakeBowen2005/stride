@@ -21,6 +21,8 @@ interface ApiPlanDay {
   warmup: string | null;
   cooldown: string | null;
   prescribed?: boolean;
+  session_status?: Workout["session_status"];
+  moved_to?: string | null;
   adjustment_note?: string | null;
   actual?: {
     distance_miles: number;
@@ -109,7 +111,9 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       warmup: d.warmup || undefined,
       cooldown: d.cooldown || undefined,
       completed: !!d.actual,
-      skipped: false,
+      skipped: d.session_status === "skipped",
+      session_status: d.session_status,
+      moved_to: d.moved_to,
       prescribed: d.prescribed !== false,
       actual: d.actual || null,
       comparison: d.comparison || null,

@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -250,11 +251,12 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
     # Match past days to actual activities (store primary activity_id for backwards compat)
     for pw in planned_workouts:
-        if pw.date > today or pw.type == "rest" or pw.activity_id:
+        if pw.date > today or pw.activity_id:
             continue
         activities = by_date.get(pw.date)
         if activities:
             pw.activity_id = max(activities, key=lambda a: a.distance_meters).id
+            pw.session_status = "completed"
     db.commit()
 
     # Build response
@@ -297,6 +299,10 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             "cooldown": pw.cooldown if is_prescribed else None,
             "prescribed": is_prescribed,
             "adjustment_note": pw.adjustment_note,
+            "session_status": "completed" if actual else (pw.session_status or "not_logged"),
+            "moved_to": pw.moved_to,
+            "moved_from": pw.moved_from,
+            "original_prescription": json.loads(pw.original_prescription) if pw.original_prescription else None,
             "actual": actual,
             "comparison": comparison,
             "feedback": {
@@ -364,6 +370,103 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
         "elevation_gain_ft": goal.elevation_gain_ft,
         "target_weekly_mileage": goal.target_weekly_mileage,
     }
+
+
+class SessionAction(BaseModel):
+    action: Literal["skip", "replace", "move"]
+    target_date: date | None = None
+    replacement: Literal["easy", "rest", "threshold", "intervals"] | None = None
+    distance_miles: float | None = Field(default=None, gt=0, le=30, allow_inf_nan=False)
+    reason: str = Field(default="Changed by athlete", max_length=500)
+
+
+def _validate_schedule(plan: Plan, db: Session):
+    """Validate mutations against real runs, rest preferences and stored budgets."""
+    from app.core.plan_validator import validate_plan
+
+    user = db.get(User, plan.user_id)
+    names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    rest = [names.index(d.strip()) for d in (user.rest_days or "").split(",") if d.strip() in names]
+    rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
+    acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=1)).isoformat(), plan.end_date, db)
+    budgets = (json.loads(plan.load) if plan.load else {}).get("weekly_budgets", [])
+    weeks = {}
+    for row in rows:
+        w = weeks.setdefault(row.week_number, {"week_number": row.week_number, "days": []})
+        if row.week_number <= len(budgets):
+            w["budget_miles"] = budgets[row.week_number - 1]
+        actuals = acts.get(row.date, [])
+        # Completed work cannot be altered to make a proposed change fit.
+        w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, 0) for a in actuals) else row.type,
+                           "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
+                           "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
+    prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, 0) for a in runs)}
+    errors = validate_plan(list(weeks.values()), rest, prior)
+    if errors:
+        raise HTTPException(409, detail="; ".join(e["message"] for e in errors))
+
+
+@router.post("/{user_id}/sessions/{session_date}")
+def change_session(user_id: int, session_date: date, req: SessionAction, db: Session = Depends(get_db)):
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if not plan:
+        raise HTTPException(404, "No active plan")
+    source = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=session_date.isoformat()).first()
+    if not source:
+        raise HTTPException(404, "Session not found")
+    if source.date < (plan.prescribed_from or plan.start_date) or source.type == "race":
+        raise HTTPException(409, "History and race days cannot be changed here")
+    if source.activity_id or _get_activities_for_date(source.date, user_id, db):
+        raise HTTPException(409, "This day already has a recorded activity")
+    if source.session_status in {"skipped", "moved"}:
+        raise HTTPException(409, "This session has already been skipped or moved")
+    if req.action != "skip" and source.date < date.today().isoformat():
+        raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
+    try:
+        if req.action == "move":
+            target = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=req.target_date.isoformat() if req.target_date else "").first()
+            if not target or target.date <= source.date or target.date < date.today().isoformat():
+                raise HTTPException(422, "Choose a later day in this block")
+            if target.type not in {"easy", "rest"} or target.activity_id or _get_activities_for_date(target.date, user_id, db):
+                raise HTTPException(409, "Choose an unrun easy or rest day")
+            if target.session_status in {"skipped", "moved", "replaced"}:
+                raise HTTPException(409, "The destination has already been changed")
+            _mark_changed(target, f"Moved from {source.date}: {req.reason}")
+            for key in ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown"):
+                setattr(target, key, getattr(source, key))
+            target.session_status = "moved"
+            target.moved_from = source.date
+            source.moved_to = target.date
+        elif req.action == "replace":
+            if not req.replacement:
+                raise HTTPException(422, "Choose a replacement")
+            _mark_changed(source, req.reason)
+            if req.replacement in {"threshold", "intervals"}:
+                workout = _generate_swap_workout(user_id, req.replacement, plan, db)
+                source.type, source.title = "workout", workout["name"]
+                source.description, source.purpose = workout["structure"], workout["purpose"]
+                source.distance_miles = workout["total_miles"]
+                source.warmup, source.cooldown = workout.get("warmup"), workout.get("cooldown")
+            else:
+                source.type = req.replacement
+                source.title = "Rest Day" if source.type == "rest" else "Easy Run"
+                source.description = "Rest and recover." if source.type == "rest" else "Conversational effort, truly easy."
+                source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, 6)
+                source.warmup = source.cooldown = None
+            source.session_status = "replaced"
+        if req.action in {"skip", "move"}:
+            _mark_changed(source, f"{req.action.title()}: {req.reason}")
+            source.type, source.title, source.description = "rest", "Session moved" if req.action == "move" else "Session skipped", req.reason
+            source.distance_miles = 0
+            source.warmup = source.cooldown = None
+            source.session_status = "moved" if req.action == "move" else "skipped"
+        db.flush()
+        _validate_schedule(plan, db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"date": source.date, "session_status": source.session_status, "moved_to": source.moved_to}
 
 
 @router.post("/{user_id}/feedback/{feedback_date}")

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
   formatDistance,
@@ -341,6 +342,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
             </div>
           )}
 
+          {workout.session_status && !hasActual && workout.session_status !== "not_logged" && (
+            <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
+          )}
+          {!hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
+            <SessionControls workout={workout} onChanged={onPlanChanged} />
+          )}
           {/* Feedback form for completed days without feedback */}
           {showFeedbackForm && expanded && (
             <div className="border-t pt-3">

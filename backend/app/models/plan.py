@@ -54,6 +54,10 @@ class PlannedWorkout(Base):
     warmup: Mapped[str | None] = mapped_column(String(200))
     cooldown: Mapped[str | None] = mapped_column(String(200))
 
+    session_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    moved_to: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    moved_from: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Matched actual activity
     activity_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("activities.id"), nullable=True

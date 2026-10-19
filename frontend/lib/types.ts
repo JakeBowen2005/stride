@@ -109,6 +109,8 @@ export interface Workout {
   intervals?: string;
   completed: boolean;
   skipped: boolean;
+  session_status?: "completed" | "not_logged" | "skipped" | "replaced" | "moved";
+  moved_to?: string | null;
   prescribed?: boolean;
   actual?: ActualRun | null;
   comparison?: RunComparison | null;
