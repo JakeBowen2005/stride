@@ -95,6 +95,14 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         and any(_is_hard_activity(a, baseline) for a in acts)
     }
 
+    # Deloads come from what was actually run, not from how many times a plan was generated
+    from app.core.load_policy import deload_due
+    from app.services.analyzer import compute_weekly_mileage
+
+    this_monday = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+    full_weeks = [w["actual"] for w in compute_weekly_mileage(user_id, db, weeks=10) if w["week_start"] < this_monday]
+    is_deload_due, deload_reason = deload_due(full_weeks[-8:], analysis["overview"]["experience_level"])
+
     # Assess the previous block (what was prescribed and actually run) — drives
     # build / hold / reduce / recovery for the next block's volume.
     prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
@@ -141,7 +149,10 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         prior_hard_dates=prior_hard_dates,
         reported_mileage=user.current_weekly_mileage,
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
+        deload_is_due=is_deload_due and not (assessment and assessment.decision in ("reduce", "recovery")),
     )
+    if is_deload_due:
+        plan_data["notes"].insert(0, deload_reason)
     if assessment:
         plan_data["notes"] = assessment.reasons + plan_data["notes"]
 

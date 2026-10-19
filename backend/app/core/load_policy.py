@@ -89,6 +89,30 @@ def default_destination(goal_type: str, target_weekly_mileage: float | None) -> 
     return None  # race goals: growth is limited by demonstrated training each block
 
 
+# Consecutive loaded weeks before a deload is due (training-principles.md: every
+# 3rd-4th week for beginners/intermediates, 5th-7th for advanced)
+DELOAD_AFTER_WEEKS = {"beginner": 3, "intermediate": 3, "advanced": 5}
+DOWN_WEEK_RATIO = 0.85  # a week under 85% of the previous 3 weeks' average counts as a down week
+
+
+def deload_due(weekly_miles: list[float], experience: str) -> tuple[bool, str]:
+    """From completed weekly mileage (oldest → newest, full weeks only), is a deload due?
+    Counts consecutive loaded weeks since the last naturally lighter week, so plan
+    regeneration can't skip or invent a deload."""
+    limit = DELOAD_AFTER_WEEKS.get(experience, 3)
+    streak = 0
+    for i, miles in enumerate(weekly_miles):
+        prev = weekly_miles[max(0, i - 3):i]
+        avg = sum(prev) / len(prev) if prev else 0
+        if miles <= 0 or (avg > 0 and miles < avg * DOWN_WEEK_RATIO):
+            streak = 0
+        else:
+            streak += 1
+    if streak >= limit:
+        return True, f"{streak} loaded weeks in a row since your last lighter week: a deload is due."
+    return False, f"{streak} loaded week{'s' if streak != 1 else ''} since your last lighter week (deload after {limit})."
+
+
 def plan_load(
     baseline: float,
     peak: float,

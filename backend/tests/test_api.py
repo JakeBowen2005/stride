@@ -194,7 +194,10 @@ def test_two_block_cycle_well_run_block_builds():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["assessment"]["decision"] == "build"
-    assert body["load"]["mode"] == "build"
+    # Seeded history is weeks of steady loaded running, so a history-based deload is
+    # also due; the build shows in week 1, the deload in the first full future week.
+    assert body["load"]["mode"] in ("build", "deload")
+    assert body["load"]["weekly_budgets"][0] > body["load"]["baseline"]
     current = client.get("/api/plans/1/current").json()
     assert current["assessment"]["decision"] == "build"  # persisted, survives reload
     assert any("planned miles" in n for n in current["notes"])

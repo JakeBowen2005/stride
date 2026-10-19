@@ -221,3 +221,56 @@ def test_fatigued_block_recovers():
 
 def test_barely_started_block_is_not_assessed():
     assert assess_block(_block(1.0, [9])[:3]).decision is None
+
+
+# ── Deloads from completed history ──────────────────────────────
+
+from app.core.load_policy import deload_due  # noqa: E402
+
+
+def test_deload_due_after_loaded_streak():
+    assert deload_due([30, 32, 34], "intermediate")[0] is True
+    assert deload_due([30, 32, 34, 36], "advanced")[0] is False
+    assert deload_due([30, 32, 34, 36, 38], "advanced")[0] is True
+
+
+def test_natural_down_week_resets_the_streak():
+    due, why = deload_due([30, 32, 34, 22, 30], "intermediate")
+    assert due is False and "1 loaded week" in why or "2 loaded weeks" in why
+
+
+def test_missed_weeks_reset_rather_than_accumulate():
+    assert deload_due([30, 0, 30], "intermediate")[0] is False
+
+
+def test_history_based_deload_overrides_block_counter():
+    p = plan(current_weekly_mileage=40, block_number=1, deload_is_due=True)
+    assert p["is_deload"] and p["load"]["mode"] == "deload"
+    p = plan(current_weekly_mileage=40, block_number=4, deload_is_due=False)  # block 4 alone doesn't deload
+    assert not p["is_deload"]
+
+
+# ── Priority 4: goals shape session selection ───────────────────
+
+def test_mileage_goal_gets_one_threshold_session_not_5k_intervals():
+    p = plan(goal_type="mileage", current_weekly_mileage=45, target_weekly_mileage=75)
+    for w in p["weeks"]:
+        workouts = [d for d in w["days"] if d["type"] == "workout"]
+        assert len(workouts) <= 1
+        assert all("800" not in d["title"] and "1K" not in d["title"] for d in workouts)
+
+
+def test_5k_goal_still_gets_two_sessions_with_intervals():
+    p = plan(goal_type="race", goal_distance="5k", current_weekly_mileage=45)
+    titles = [d["title"] for d in p["weeks"][0]["days"] if d["type"] == "workout"]
+    assert len(titles) == 2 and any("800" in t or "1K" in t or "mi" in t for t in titles)
+
+
+def test_mp_readiness_sessions_need_marathon_build_or_peak():
+    from app.core.plan_engine import _eligible
+
+    mp = {"min_mpw": 50, "requires_mp_readiness": True}
+    assert not _eligible(mp, 55, "5k", "peak")
+    assert not _eligible(mp, 55, "marathon", "base")
+    assert not _eligible(mp, 45, "marathon", "peak")
+    assert _eligible(mp, 55, "marathon", "peak")

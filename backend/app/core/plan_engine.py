@@ -95,8 +95,12 @@ def generate_plan(
     prior_hard_dates: set[str] | None = None,
     reported_mileage: float | None = None,
     allow_preview: bool = True,
+    deload_is_due: bool | None = None,
 ) -> dict:
     """Generate a block.
+
+    deload_is_due comes from completed training history (load_policy.deload_due);
+    when None, the legacy block-number cadence is used.
 
     current_weekly_mileage is the demonstrated baseline (4-week average of completed
     runs). completed_by_date carries real miles already run on days of the block that
@@ -123,7 +127,8 @@ def generate_plan(
     # week that's already half run would be a deload in name only)
     fpd = first_prescribe_date or date.today()
     deload_week = None
-    if _is_deload_block(block_number, experience_level):
+    due = _is_deload_block(block_number, experience_level) if deload_is_due is None else deload_is_due
+    if due:
         for w in range(num_weeks):
             wk_start = start_date + timedelta(days=7 * w)
             if wk_start > fpd and phases[w].phase in ("general", "base", "build", "peak"):
@@ -164,6 +169,10 @@ def generate_plan(
         sizing_mileage, goal_type, experience_level
     )
     workouts_per_week = _workouts_per_week(sizing_mileage, experience_level)
+    if goal_type in ("mileage", "general", "comeback"):
+        # Building volume is the goal: one quality session (threshold, never race-specific
+        # VO2 work) plus strides. Intensity follows volume (training-principles.md, P1).
+        workouts_per_week = min(workouts_per_week, 1)
 
     rest_indices = [DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]
     long_run_idx = DAY_NAMES.index(long_run_day)
@@ -579,7 +588,7 @@ def _build_week(
 
     # Single-quality-session weeks (base, taper) use threshold for longer races,
     # race-specific intervals for 5K/10K
-    single_threshold = num_workouts == 1 and goal_distance not in ("5k", "10k", None)
+    single_threshold = num_workouts == 1 and goal_distance not in ("5k", "10k")
 
     workout1 = None
     workout2 = None
@@ -600,6 +609,7 @@ def _build_week(
                         current_paces, goal_distance or "5k",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
                 elif placed == 1 and ultra and trail and phase.phase in ("base", "build", "peak"):
                     # Trail/mountain ultras: hills replace track intervals early in the week
@@ -613,6 +623,7 @@ def _build_week(
                         current_paces, goal_distance or "5k",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
                 else:
                     # Threshold later in the week
@@ -622,6 +633,7 @@ def _build_week(
                         current_paces, goal_distance or "5k",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
+                        current_mileage=current_mileage, phase_name=phase.phase,
                     )
 
     wo1_miles = _round_half(workout1["total_miles"]) if workout1 and workout1.get("total_miles") else 0
@@ -811,6 +823,8 @@ def _pick_workout_progressive(
     is_deload: bool, progression_state: dict | None,
     max_miles: float | None = None,
     allow_preview: bool = True,
+    current_mileage: float | None = None,
+    phase_name: str | None = None,
 ) -> dict:
     """Pick a workout using the progression ladder if state exists,
     falling back to the old rotation system if not.
@@ -821,7 +835,8 @@ def _pick_workout_progressive(
     """
     # If no progression state, fall back to old system
     if not progression_state or category not in progression_state:
-        wo = _pick_workout(workout_lib, category, week_num, block_start, deload=is_deload)
+        wo = _pick_workout(workout_lib, category, week_num, block_start, deload=is_deload,
+                           current_mileage=current_mileage, goal_distance=goal_distance, phase_name=phase_name)
         if max_miles and (wo.get("total_miles") or 0) > max_miles:
             fits = [w for w in workout_lib.get(category, []) if (w.get("total_miles") or 99) <= max_miles]
             if fits:
@@ -850,18 +865,31 @@ def _pick_workout_progressive(
     return wo
 
 
+def _eligible(w: dict, current_mileage: float | None, goal_distance: str | None, phase_name: str | None) -> bool:
+    """Library readiness metadata: min_mpw, and marathon-pace sessions only for a
+    marathon goal at ≥ their mileage during build/peak."""
+    if current_mileage is not None and current_mileage < w.get("min_mpw", 0):
+        return False
+    if w.get("requires_mp_readiness"):
+        return goal_distance == "marathon" and phase_name in ("build", "peak")
+    return True
+
+
 def _pick_workout(workout_lib: dict, category: str, week_num: int,
-                   start_date: date = None, deload: bool = False) -> dict:
+                  start_date: date = None, deload: bool = False,
+                  current_mileage: float | None = None, goal_distance: str | None = None,
+                  phase_name: str | None = None) -> dict:
     """Pick a workout, rotating across blocks via start_date seed.
 
     Week 1 and week 2 within the same block always get different workouts.
     The block_seed shifts each 2-week block so workouts rotate over time.
     On deload: pick from the lighter workouts (lower total_miles).
     """
-    options = workout_lib.get(category, [])
+    options = [w for w in workout_lib.get(category, []) if _eligible(w, current_mileage, goal_distance, phase_name)]
 
     if not options:
-        options = workout_lib.get("threshold", []) or workout_lib.get("tempo", [])
+        options = [w for w in (workout_lib.get("threshold", []) or workout_lib.get("tempo", []))
+                   if _eligible(w, current_mileage, goal_distance, phase_name)]
 
     if not options:
         return {
