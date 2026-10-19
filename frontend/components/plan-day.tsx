@@ -156,8 +156,14 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
           {isPast && !hasActual && !workout.skipped && !isToday && workout.type !== "rest" && isPrescribed && (
             <span className="text-xs text-muted-foreground">Not logged</span>
           )}
-          {workout.skipped && (
+          {workout.skipped && !hasActual && (
             <span className="text-xs text-muted-foreground">Skipped</span>
+          )}
+          {!hasActual && workout.session_status === "moved" && (
+            <span className="text-xs text-muted-foreground">{workout.moved_to ? `Moved to ${workout.moved_to}` : "Moved here"}</span>
+          )}
+          {!hasActual && workout.session_status === "replaced" && (
+            <span className="text-xs text-muted-foreground">Replaced</span>
           )}
         </div>
       </div>

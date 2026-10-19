@@ -55,3 +55,24 @@ def test_lighter_supersedes_and_reduces_volume_without_pace_change():
     assert client.post(f"/api/plans/1/drafts/{a['id']}/approve").status_code == 409
     assert client.post(f"/api/plans/1/drafts/{b['id']}/discard").status_code == 200
     assert client.get('/api/plans/1/draft').json() is None
+
+
+def test_legacy_generate_also_requires_approval_and_invalid_date_is_422():
+    old = seed()
+    draft = client.post('/api/plans/1/generate', json={'preview': False}).json()
+    assert draft['preview'] is True
+    assert client.get('/api/plans/1/current').json()['id'] == old
+    assert client.post('/api/plans/1/generate', json={'start_date': 'invalid'}).status_code == 422
+
+
+def test_mileage_program_identity_survives_preview():
+    seed()
+    with SessionLocal() as db:
+        goal = db.query(Goal).filter_by(active=True).one()
+        goal.goal_type, goal.race_distance, goal.target_weekly_mileage = 'mileage', None, 75
+        db.commit()
+    draft = client.post('/api/plans/1/preview').json()
+    work = [day for week in draft['weeks'] for day in week['days'] if day['type'] == 'workout']
+    assert work and all(day['prescription']['program_key'] == 'ladder-v2:mileage' for day in work)
+    approved = client.post(f"/api/plans/1/drafts/{draft['id']}/approve")
+    assert approved.status_code == 200, approved.text

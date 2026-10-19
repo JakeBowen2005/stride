@@ -316,7 +316,7 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
         reps = 2 + (level - 1) // 4
         rep_minutes = duration + (level - 1) % 4
         if phase == "base":
-            reps, rep_minutes = 2, max(5, rep_minutes - 3)
+            reps, rep_minutes = 2, max(5, int(reps * rep_minutes * .65 / 2))
         elif phase in ("taper", "race_week", "recovery"):
             reps, rep_minutes = 2, 4 if phase == "taper" else 3
         if category == "threshold":

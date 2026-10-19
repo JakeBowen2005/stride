@@ -26,8 +26,7 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 
 class PlanRequest(BaseModel):
-    start_date: str | None = None  # ISO date, defaults to smart calculation
-    preview: bool = False  # legacy generate remains available; UI uses /preview
+    start_date: date | None = None  # ISO date, defaults to smart calculation
     lighter: bool = False
 
 
@@ -43,7 +42,8 @@ class FeedbackRequest(BaseModel):
 
 @router.post("/{user_id}/generate")
 def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = Depends(get_db)):
-    """Generate a training plan, persist it, and return it."""
+    """Generate an inactive preview; approval is the only activation path."""
+    _begin_schedule_write(db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -76,7 +76,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     # Calculate smart plan params (or use explicit start_date)
     if req and req.start_date:
-        start = date.fromisoformat(req.start_date)
+        start = req.start_date
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
     else:
         params = calculate_plan_params()
@@ -182,11 +182,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     # Persist atomically: the previous plan is only deactivated in the same commit
     # that saves its replacement, so a failure above leaves the old plan usable.
-    preview = bool(req and req.preview)
-    if not preview:
-        db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update({"is_active": False})
-    else:
-        db.query(Plan).filter_by(user_id=user_id, preview_state="draft").update({"preview_state": "superseded"})
+    preview = True
+    db.query(Plan).filter_by(user_id=user_id, preview_state="draft").update({"preview_state": "superseded"})
     db_plan = Plan(
         user_id=user_id,
         start_date=plan_data["start_date"],
@@ -272,9 +269,7 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
 
 @router.post("/{user_id}/preview")
 def preview_plan(user_id: int, req: PlanRequest | None = None, db: Session = Depends(get_db)):
-    request = req or PlanRequest()
-    request.preview = True
-    return generate_training_plan(user_id, request, db)
+    return generate_training_plan(user_id, req or PlanRequest(), db)
 
 
 @router.get("/{user_id}/draft")
@@ -286,9 +281,7 @@ def pending_draft(user_id: int, db: Session = Depends(get_db)):
 @router.post("/{user_id}/drafts/{plan_id}/approve")
 def approve_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
     # Serialize approvals before reading their context; two approvals cannot both win.
-    from sqlalchemy import text
-    if db.bind.dialect.name == "sqlite":
-        db.execute(text("BEGIN IMMEDIATE"))
+    _begin_schedule_write(db)
     try:
         draft = db.query(Plan).filter_by(id=plan_id, user_id=user_id).first()
         if not draft or draft.preview_state != "draft":
@@ -504,6 +497,7 @@ def _validate_schedule(plan: Plan, db: Session):
 
 @router.post("/{user_id}/sessions/{session_date}")
 def change_session(user_id: int, session_date: date, req: SessionAction, db: Session = Depends(get_db)):
+    _begin_schedule_write(db)
     plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
     if not plan:
         raise HTTPException(404, "No active plan")
@@ -704,6 +698,13 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 feel_rating=req.feel_rating,
                 prescription=prescribed, execution=execution,
             )
+            state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
+            if prescribed and ev.decision == "advance" and (
+                prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
+                or (state and prescribed.get('level', 1) < state.current_level)
+            ):
+                ev.decision = "hold"
+                ev.reason = "Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated."
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:
@@ -1159,6 +1160,9 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
         guide = json.loads(db_plan.pacing_guide or "{}")
         easy = _parse_pace(guide.get("easy", "9:00").split("-")[0]) or 540
         paces = _build_current_paces(easy, _calibrate(user_id, db))
+    if prog and prog.current_pace_sec:
+        from app.core.plan_engine import effective_paces
+        paces = effective_paces(paces, {category: {"current_pace_sec": prog.current_pace_sec}})
     phases = json.loads(db_plan.phases or "[]")
     week_index = max(0, (date.fromisoformat(session_date or db_plan.start_date) - date.fromisoformat(db_plan.start_date)).days // 7)
     phase = phases[week_index].get("phase", "general") if week_index < len(phases) else "general"
@@ -1170,3 +1174,10 @@ def _plan_program(plan: Plan) -> str | None:
     from app.core.workout_ladders import program_key
     goal = json.loads(plan.goal_snapshot or "{}")
     return program_key(goal.get("distance") or goal.get("type")) if goal else None
+
+
+def _begin_schedule_write(db: Session):
+    """Serialize read/validate/write decisions for this single-athlete SQLite app."""
+    from sqlalchemy import text
+    if db.bind.dialect.name == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))

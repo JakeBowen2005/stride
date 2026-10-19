@@ -220,7 +220,7 @@ def generate_plan(
             progression_state=progression_state,
             phase=wk_phase, terrain=terrain, target_time_seconds=target_time_seconds,
             max_workout_miles=max(5.0, wk_target * 0.30),
-            allow_preview=allow_preview,
+            allow_preview=allow_preview, program_distance=goal_distance or goal_type,
         )
 
         # Days before the plan starts prescribing already happened: they carry the
@@ -522,6 +522,7 @@ def _build_week(
     target_time_seconds: float | None = None,
     max_workout_miles: float | None = None,
     allow_preview: bool = True,
+    program_distance: str | None = None,
 ) -> list[dict]:
     phase = phase or WeekPhase(phase="general")
     easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
@@ -596,7 +597,7 @@ def _build_week(
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "general",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,
@@ -610,7 +611,7 @@ def _build_week(
                     day_assignments[wd] = "workout_speed"
                     workout1 = _pick_workout_progressive(
                         workout_lib, "intervals", week_num, block_start,
-                        current_paces, goal_distance or "general",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,
@@ -620,7 +621,7 @@ def _build_week(
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "general",
+                        current_paces, program_distance or goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,

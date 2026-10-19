@@ -170,3 +170,50 @@ def test_full_session_budget_and_guide_use_the_numeric_prescription():
     assert w['total_miles'] - data['total_distance_meters'] / 1609.34 < .5
     assert data['warmup']['distance_meters'] == 1.5 * 1609.34
     assert _pacing_guide('9:00', paces)['threshold_reps'] == '6:45'
+
+
+def test_incomplete_numeric_work_cannot_reenter_calibration_through_its_prose():
+    from app.models.plan import Plan, PlannedWorkout
+    p = get_workout_at_level('threshold', 1, PACES)['prescription']
+    with SessionLocal() as db:
+        plan = Plan(user_id=1, start_date='2026-01-01', end_date='2026-12-31')
+        db.add(plan)
+        db.flush()
+        for days in (1, 3):
+            day = datetime.now() - timedelta(days=days)
+            act = Activity(user_id=1, source='manual', date=day, distance_meters=8000, duration_seconds=2700,
+                           description='threshold (6:45,6:44)', has_workout_description=True)
+            db.add(act)
+            db.flush()
+            ex = {'schema_version': 1, 'confidence': 'high', 'completion': .5, 'matched_activity_ids': [act.id]}
+            db.add(PlannedWorkout(plan_id=plan.id, date=day.date().isoformat(), day_name='monday', week_number=1,
+                                  type='workout', title='Threshold', prescription=json.dumps(p), execution=json.dumps(ex)))
+        db.flush()
+        assert 'threshold_pace' not in calibrate_paces(1, db)
+
+
+def test_phase_and_budget_reduced_sessions_do_not_advance_full_program_level():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models.plan import Plan, PlannedWorkout
+    from app.models.progression import WorkoutProgression
+    from app.core.workout_ladders import program_key
+    today = datetime.now().date().isoformat()
+    p = get_workout_at_level('threshold', 1, PACES, phase='base')['prescription']
+    with SessionLocal() as db:
+        plan = Plan(user_id=1, start_date=today, end_date=today, prescribed_from=today,
+                    goal_snapshot=json.dumps({'distance': '5k', 'type': 'race'}))
+        db.add(plan)
+        db.flush()
+        db.add(PlannedWorkout(plan_id=plan.id, date=today, day_name='monday', week_number=1, type='workout',
+                              title='Base threshold', description=render(p), distance_miles=5, prescription=json.dumps(p)))
+        db.add(Activity(user_id=1, source='manual', date=datetime.now(), distance_meters=8000, duration_seconds=3000,
+                        splits=run_work(p).splits))
+        db.add(WorkoutProgression(user_id=1, category='threshold', program_key=program_key('5k'), current_level=3))
+        db.commit()
+    r = TestClient(app).post(f'/api/plans/1/feedback/{today}', json={'feel_rating': 8})
+    assert r.status_code == 200, r.text
+    assert r.json()['evaluation']['decision'] == 'hold'
+    assert 'adapted session' in r.json()['evaluation']['reason']
+    with SessionLocal() as db:
+        assert db.query(WorkoutProgression).one().current_level == 3

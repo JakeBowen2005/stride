@@ -30,9 +30,17 @@ def _seed_runs(days: int = 60, skip_recent: int = 0):
     db.close()
 
 
+def _preview_and_approve():
+    result = client.post("/api/plans/1/generate")
+    assert result.status_code == 200, result.text
+    approved = client.post(f"/api/plans/1/drafts/{result.json()['id']}/approve")
+    assert approved.status_code == 200, approved.text
+    return result
+
+
 def test_generate_plan_prescribes_today():
     _seed_runs()
-    r = client.post("/api/plans/1/generate")
+    r = _preview_and_approve()
     assert r.status_code == 200, r.text
     db = SessionLocal()
     plan = db.query(Plan).filter(Plan.is_active == True).one()  # noqa: E712
@@ -190,7 +198,7 @@ def _past_block(run_fraction: float, feel: int | None = None):
 def test_two_block_cycle_well_run_block_builds():
     _seed_runs(40)
     _past_block(1.0, feel=7)
-    r = client.post("/api/plans/1/generate")
+    r = _preview_and_approve()
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["assessment"]["decision"] == "build"
