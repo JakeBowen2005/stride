@@ -292,13 +292,56 @@ INTERVAL_LADDER_5K = [
 ]
 
 
-def get_ladder(category: str, distance: str = "5k") -> list[dict]:
-    """Return the progression ladder for a given category and goal distance."""
-    if category == "threshold":
-        return THRESHOLD_LADDER_5K
-    elif category == "intervals":
-        return INTERVAL_LADDER_5K
-    return []
+def program_key(distance: str | None = "5k") -> str:
+    """Levels are comparable only inside the same versioned distance program."""
+    return f"ladder-v2:{distance or 'general'}"
+
+
+def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> list[dict]:
+    """Stride templates, not validated physiological dose equivalences.
+
+    Level orders the local program's work volume. Phase reduces that envelope or
+    changes rep length; it never changes the athlete's stored level or pace.
+    """
+    if category not in ("threshold", "intervals"):
+        return []
+    if distance == "5k" and phase in ("build", "general"):
+        return THRESHOLD_LADDER_5K if category == "threshold" else INTERVAL_LADDER_5K
+    # Threshold duration grows more gradually for mileage/general/ultra programs.
+    aerobic = distance in ("mileage", "general", "comeback", "50k", "50mi", "100k", "100mi")
+    duration = 6 if aerobic else 8 if distance in ("10k", "5k") else 10
+    result = []
+    for level in range(1, 13):
+        reps = 2 + (level - 1) // 4
+        rep_minutes = duration + (level - 1) % 4
+        if phase == "base":
+            reps, rep_minutes = 2, max(5, rep_minutes - 3)
+        elif phase in ("taper", "race_week", "recovery"):
+            reps, rep_minutes = 2, 4 if phase == "taper" else 3
+        if category == "threshold":
+            name = f"{reps}x{rep_minutes}min Threshold"
+            structure = f"{reps}x{rep_minutes}min at {{tp_fast}}/mi with 2min jog rest."
+            quality_minutes = reps * rep_minutes
+            total = round((3 + quality_minutes / 7 + (reps - 1) * 0.2) * 2) / 2
+        else:
+            # Longer-race intervals emphasize controlled aerobic repetitions;
+            # never substitute an aspirational goal race pace for demonstrated pace.
+            meters = 400 if phase in ("base", "taper", "race_week", "recovery") else (800 if distance == "5k" else 1200 if phase == "peak" else 1000 if distance == "10k" else 1200)
+            reps = (4 if phase == "base" else 3) if phase in ("base", "taper", "race_week", "recovery") else 3 + (level - 1) // 3
+            pace = "{ip_range}" if distance in ("5k", "10k") else "{tp_fast}"
+            name = f"{reps}x{meters}m {'Intervals' if distance in ('5k', '10k') else 'Aerobic Repeats'}"
+            structure = f"{reps}x{meters}m at {pace}/mi with 2min jog rest."
+            quality_minutes = 0
+            total = round((3 + reps * meters / 1609.34 + (reps - 1) * 0.2) * 2) / 2
+        # Peak half/marathon sessions sustain the same minutes in fewer pieces.
+        if category == "threshold" and phase == "peak" and distance in ("half", "marathon"):
+            reps, rep_minutes = 2, quality_minutes // 2
+            name = f"2x{rep_minutes}min Threshold"
+            structure = f"2x{rep_minutes}min at {{tp_fast}}/mi with 2min jog rest."
+        result.append({"level": level, "name": name, "format": "time_intervals" if category == "threshold" else "track_intervals",
+                       "structure_template": structure, "purpose": f"{distance} {phase}: controlled {category} work within the weekly budget.",
+                       "warmup": "1.5mi easy", "cooldown": "1.5mi easy", "total_miles": total})
+    return result
 
 
 REP_MILES = {"200m": 0.124274, "400m": 0.248548, "600m": 0.372823, "800m": 0.497097,
@@ -333,13 +376,14 @@ def get_workout_at_level(
     level: int,
     paces: dict,
     distance: str = "5k",
+    phase: str = "build",
 ) -> dict:
     """Build a concrete workout from a ladder level with injected paces.
 
     Returns a dict compatible with what plan_engine expects from the old
     workout library (name, structure, purpose, warmup, cooldown, total_miles).
     """
-    ladder = get_ladder(category, distance)
+    ladder = get_ladder(category, distance, phase)
     if not ladder:
         return _fallback_workout(category, paces)
 
@@ -374,6 +418,10 @@ def get_workout_at_level(
         "name": template["name"],
         "structure": structure,
         "purpose": template["purpose"],
+        "program_key": program_key(distance),
+        "category": category,
+        "phase": phase,
+        "level": level,
         "warmup": template.get("warmup", "1.5mi easy"),
         "cooldown": template.get("cooldown", "1.5mi easy"),
         "total_miles": template.get("total_miles", 6.0),
@@ -385,11 +433,12 @@ def get_deload_workout(
     current_level: int,
     paces: dict,
     distance: str = "5k",
+    phase: str = "build",
 ) -> dict:
     """Pick a deload workout: lower half of current level, reduced volume."""
     # Drop to roughly level/2, minimum level 1
     deload_level = max(1, current_level // 2)
-    return get_workout_at_level(category, deload_level, paces, distance)
+    return get_workout_at_level(category, deload_level, paces, distance, phase)
 
 
 def get_week2_variant(
@@ -397,6 +446,7 @@ def get_week2_variant(
     level: int,
     paces: dict,
     distance: str = "5k",
+    phase: str = "build",
 ) -> dict:
     """Return a week-2 variant for within-block micro-progression.
 
@@ -404,12 +454,12 @@ def get_week2_variant(
     (which is often a format change). If current level is at the top,
     stay at the same level.
     """
-    ladder = get_ladder(category, distance)
+    ladder = get_ladder(category, distance, phase)
     if not ladder or level >= len(ladder):
-        return get_workout_at_level(category, level, paces, distance)
+        return get_workout_at_level(category, level, paces, distance, phase)
 
     # Week 2 gets the next level as a "taste" of what's coming
-    return get_workout_at_level(category, level + 1, paces, distance)
+    return get_workout_at_level(category, level + 1, paces, distance, phase)
 
 
 def _fallback_workout(category: str, paces: dict) -> dict:

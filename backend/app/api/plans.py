@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.core.plan_engine import calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
     evaluate_workout,
-    determine_starting_level,
 )
 from app.database import get_db
 from app.models.activity import Activity
@@ -128,7 +127,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         block_number = 1
 
     # Load or initialize workout progression state
-    progression_state = _load_progression_state(user_id, db, goal.race_distance or "5k")
+    progression_state = _load_progression_state(user_id, db, goal.race_distance or goal.goal_type)
 
     plan_data = generate_plan(
         goal_type=goal.goal_type,
@@ -682,6 +681,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
             _update_progression_from_evaluation(
                 user_id=user_id, category=category, evaluation_decision=ev.decision,
                 workout_name=pw.title, workout_date=feedback_date, new_pace_sec=ev.new_pace_sec, db=db,
+                program=_plan_program(db_plan),
             )
 
     # 2. Swapped a hard workout: only an explicit choice reschedules
@@ -1013,44 +1013,28 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
             "threshold": {"current_level": 1, "current_pace_sec": 410, ...},
         }
     """
+    from app.core.workout_ladders import program_key
+    key = program_key(goal_distance)
     result = {}
-
     for category in ("intervals", "threshold"):
-        prog = db.query(WorkoutProgression).filter(
-            WorkoutProgression.user_id == user_id,
-            WorkoutProgression.category == category,
-        ).first()
-
-        if prog:
-            result[category] = {
-                "current_level": prog.current_level,
-                "current_pace_sec": prog.current_pace_sec,
-                "format_rotation": prog.format_rotation,
-                "last_execution": prog.last_execution,
-                "sessions_at_level": prog.sessions_at_level,
-            }
-        else:
-            # Initialize from recent Strava workout history
-            recent_descriptions = _get_recent_workout_descriptions(user_id, db)
-            starting_level = determine_starting_level(category, recent_descriptions, None)
-
-            prog = WorkoutProgression(
-                user_id=user_id,
-                category=category,
-                current_level=starting_level,
-                sessions_at_level=0,
-                format_rotation=0,
-            )
-            db.add(prog)
-            db.flush()
-
-            result[category] = {
-                "current_level": starting_level,
-                "current_pace_sec": None,
-                "format_rotation": 0,
-                "last_execution": None,
-                "sessions_at_level": 0,
-            }
+        prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=key).first()
+        if not prog:
+            legacy = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=None).first()
+            if legacy and goal_distance == "5k":
+                # The old program was explicitly the 5K ladder.
+                prog = legacy
+                prog.program_key = key
+            else:
+                prior = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category).order_by(WorkoutProgression.updated_at.desc()).first()
+                cutoff = date.today() - timedelta(days=84)
+                pace = prior.current_pace_sec if prior and prior.last_workout_date and prior.last_workout_date >= cutoff else None
+                prog = WorkoutProgression(user_id=user_id, category=category, program_key=key,
+                                          current_level=1, current_pace_sec=pace, sessions_at_level=0, format_rotation=0)
+                db.add(prog)
+        db.flush()
+        result[category] = {"current_level": prog.current_level, "current_pace_sec": prog.current_pace_sec,
+                            "format_rotation": prog.format_rotation, "last_execution": prog.last_execution,
+                            "sessions_at_level": prog.sessions_at_level, "program_key": key}
 
     # No commit here: the caller's transaction (plan generation) owns it
     db.flush()
@@ -1079,12 +1063,10 @@ def _update_progression_from_evaluation(
     workout_date: str,
     new_pace_sec: float | None,
     db: Session,
+    program: str | None = None,
 ):
     """Update the WorkoutProgression record based on an evaluation decision."""
-    prog = db.query(WorkoutProgression).filter(
-        WorkoutProgression.user_id == user_id,
-        WorkoutProgression.category == category,
-    ).first()
+    prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=program).first()
 
     if not prog:
         return
@@ -1119,16 +1101,18 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
     category_map = {"tempo": "threshold", "threshold": "threshold", "intervals": "intervals"}
     category = category_map.get(desired_type, "threshold")
 
-    prog = db.query(WorkoutProgression).filter(
-        WorkoutProgression.user_id == user_id,
-        WorkoutProgression.category == category,
-    ).first()
-    level = prog.current_level if prog else 1
-
-    calibrated = _calibrate(user_id, db)
-    paces = calibrated if "interval_pace" in calibrated else {}
-
     goal_snapshot = json.loads(db_plan.goal_snapshot) if db_plan.goal_snapshot else {}
-    goal_distance = goal_snapshot.get("distance", "5k")
+    goal_distance = goal_snapshot.get("distance") or goal_snapshot.get("type") or "general"
+    prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
+    level = prog.current_level if prog else 1
+    paces = _calibrate(user_id, db)
+    phases = json.loads(db_plan.phases or "[]")
+    phase = phases[0].get("phase", "general") if phases else "general"
 
-    return get_workout_at_level(category, level, paces, goal_distance)
+    return get_workout_at_level(category, level, paces, goal_distance, phase)
+
+
+def _plan_program(plan: Plan) -> str | None:
+    from app.core.workout_ladders import program_key
+    goal = json.loads(plan.goal_snapshot or "{}")
+    return program_key(goal.get("distance") or goal.get("type")) if goal else None

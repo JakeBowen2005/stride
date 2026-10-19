@@ -608,7 +608,7 @@ def _build_week(
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,
@@ -622,7 +622,7 @@ def _build_week(
                     day_assignments[wd] = "workout_speed"
                     workout1 = _pick_workout_progressive(
                         workout_lib, "intervals", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,
@@ -632,7 +632,7 @@ def _build_week(
                     day_assignments[wd] = "workout_threshold"
                     workout2 = _pick_workout_progressive(
                         workout_lib, "threshold", week_num, block_start,
-                        current_paces, goal_distance or "5k",
+                        current_paces, goal_distance or "general",
                         is_deload, progression_state,
                         max_miles=max_workout_miles, allow_preview=allow_preview,
                         current_mileage=current_mileage, phase_name=phase.phase,
@@ -835,15 +835,8 @@ def _pick_workout_progressive(
     budget can hold: a high ladder level on a low-mileage week steps down the ladder
     for this prescription (the athlete's stored level is unchanged).
     """
-    # If no progression state, fall back to old system
     if not progression_state or category not in progression_state:
-        wo = _pick_workout(workout_lib, category, week_num, block_start, deload=is_deload,
-                           current_mileage=current_mileage, goal_distance=goal_distance, phase_name=phase_name)
-        if max_miles and (wo.get("total_miles") or 0) > max_miles:
-            fits = [w for w in workout_lib.get(category, []) if (w.get("total_miles") or 99) <= max_miles]
-            if fits:
-                wo = min(fits, key=lambda w: abs((w.get("total_miles") or 0) - max_miles))
-        return wo
+        progression_state = {category: {"current_level": 1, "last_execution": "insufficient"}}
 
     state = progression_state[category]
     level = state.get("current_level", 1)
@@ -851,14 +844,14 @@ def _pick_workout_progressive(
     paces = effective_paces(current_paces, progression_state)
 
     def at(lvl: int) -> dict:
-        return get_workout_at_level(category, lvl, paces, goal_distance)
+        return get_workout_at_level(category, lvl, paces, goal_distance, phase_name or "general")
 
     if is_deload:
-        return get_deload_workout(category, level, paces, goal_distance)
+        return get_deload_workout(category, level, paces, goal_distance, phase_name or "general")
 
     # Week 2 previews the next level only when the athlete's last result allows it
     preview = allow_preview and week_num % 2 == 0 and state.get("last_execution") not in ("hold", "regress", "insufficient")
-    wo = get_week2_variant(category, level, paces, goal_distance) if preview else at(level)
+    wo = get_week2_variant(category, level, paces, goal_distance, phase_name or "general") if preview else at(level)
     if max_miles:
         lvl = level + (1 if preview else 0)
         while (wo.get("total_miles") or 0) > max_miles and lvl > 1:
