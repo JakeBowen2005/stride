@@ -30,6 +30,7 @@ interface PlanResponse {
 }
 
 export default function TodayPage() {
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState<Activity[]>([]);
   const [weeklyMileage, setWeeklyMileage] = useState<WeeklyMileage[]>([]);
@@ -41,11 +42,13 @@ export default function TodayPage() {
   const [firstName, setFirstName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    try {
+    setError(null);
     const [acts, mileage, goalData, planData, wellnessData, prList, user] = await Promise.all([
       getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
       getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
       getJson<GoalData>(`/plans/${USER_ID}/goal`),
-      getJson<PlanResponse>(`/plans/${USER_ID}/current`),
+      getJson<PlanResponse>(`/plans/${USER_ID}/current`, { allowNotFound: true }),
       getJson<WellnessResponse>(`/wellness/${USER_ID}?days=28`),
       getJson<{ distance: string; time_seconds: number }[]>(`/analysis/${USER_ID}/prs`),
       getJson<{ name: string | null }>(`/users/${USER_ID}`),
@@ -57,13 +60,16 @@ export default function TodayPage() {
     setPlan(planData);
     setWellness(wellnessData);
     setPrs(Object.fromEntries((prList ?? []).map((p) => [p.distance, p.time_seconds])));
-    setLoading(false);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not load your dashboard"); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
     const id = setTimeout(load, 0);
     return () => clearTimeout(id);
   }, [load]);
+
+  if (error) return <div role="alert" className="space-y-3"><p>{error}</p><button className="underline" onClick={load}>Retry</button></div>;
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";

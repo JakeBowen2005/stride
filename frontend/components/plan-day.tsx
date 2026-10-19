@@ -19,6 +19,7 @@ interface PlanDayProps {
   expanded: boolean;
   onToggle: () => void;
   onPlanChanged?: () => void;
+  readOnly?: boolean;
 }
 
 function ComparisonBadge({ diffMiles }: { diffMiles: number }) {
@@ -73,7 +74,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, readOnly }: PlanDayProps) {
   const today = localDateStr();
   const isPast = workout.date < today;
   const hasActual = !!workout.actual;
@@ -93,7 +94,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
   const label = sessionLabel(workout.type, workout.title);
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
-  const showFeedbackForm = hasActual && !hasFeedback && workout.type !== "rest";
+  const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
 
   return (
     <div
@@ -345,7 +346,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
           {workout.session_status && !hasActual && workout.session_status !== "not_logged" && (
             <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
           )}
-          {!hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
+          {!readOnly && !hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
             <SessionControls workout={workout} onChanged={onPlanChanged} />
           )}
           {/* Feedback form for completed days without feedback */}

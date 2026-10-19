@@ -61,6 +61,7 @@ interface ApiWeek {
 
 interface ApiPlan {
   id: number;
+  preview?: boolean;
   start_date: string;
   end_date: string;
   block_number: number;
@@ -184,6 +185,11 @@ export default function PlanPage() {
 
   const fetchPlan = useCallback(async () => {
     try {
+      setError(null);
+      const draftRes = await fetch(apiUrl(`/plans/${USER_ID}/draft`));
+      if (!draftRes.ok) throw new Error("Could not load pending preview");
+      const draft = await draftRes.json();
+      if (draft) { setPlan(draft); setNoPlan(false); return; }
       const res = await fetch(apiUrl(`/plans/${USER_ID}/current`));
       if (res.status === 404) {
         setNoPlan(true);
@@ -203,14 +209,14 @@ export default function PlanPage() {
     }
   }, []);
 
-  const generatePlan = useCallback(async () => {
+  const generatePlan = useCallback(async (lighter = false) => {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/generate`), {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ lighter }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -226,6 +232,18 @@ export default function PlanPage() {
       setGenerating(false);
     }
   }, [fetchPlan]);
+
+  async function finishPreview(action: "approve" | "discard") {
+    if (!plan) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(apiUrl(`/plans/${USER_ID}/drafts/${plan.id}/${action}`), { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save your choice");
+      await fetchPlan();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not reach Stride"); }
+    finally { setGenerating(false); }
+  }
 
   useEffect(() => {
     const id = setTimeout(fetchPlan, 0);
@@ -250,7 +268,7 @@ export default function PlanPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No plan yet. Generate your first training plan.</p>
-            <Button onClick={generatePlan} disabled={generating}>
+            <Button onClick={() => generatePlan()} disabled={generating}>
               {generating ? "Generating..." : "Generate Your First Plan"}
             </Button>
             {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
@@ -260,7 +278,7 @@ export default function PlanPage() {
     );
   }
 
-  if (error || !plan) {
+  if (!plan) {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Current Plan</h1>
@@ -294,7 +312,7 @@ export default function PlanPage() {
               Generate a fresh 2-week block. It&apos;s built from your latest Garmin runs, current fitness and{" "}
               {plan.goal.race_date ? "where you are relative to race day" : "your goal"}.
             </p>
-            <Button onClick={generatePlan} disabled={generating}>
+            <Button onClick={() => generatePlan()} disabled={generating}>
               {generating ? "Building your plan…" : "Generate this week's plan"}
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -350,6 +368,17 @@ export default function PlanPage() {
         </div>
       </div>
 
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {plan.preview && <Card><CardContent className="space-y-3 pt-4">
+        <h2 className="font-semibold">Review this block before starting</h2>
+        <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={generating} onClick={() => finishPreview("approve")}>Approve</Button>
+          <Button variant="outline" disabled={generating} onClick={() => generatePlan(true)}>Make it lighter</Button>
+          <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Discard preview</Button>
+        </div>
+      </CardContent></Card>}
+      {!plan.preview && <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Preview next block</Button>}
       {plan.load && <BlockSummary load={plan.load} assessment={plan.assessment ?? null} />}
 
       {/* Pacing Guide — the same numbers the workouts below use */}
@@ -386,6 +415,7 @@ export default function PlanPage() {
         <PlanWeek
           key={week.week_number}
           week={week}
+          readOnly={!!plan.preview}
           isCurrent={i === 0 && currentWeekIndex >= 0}
           onPlanChanged={() => {
             setLoading(true);

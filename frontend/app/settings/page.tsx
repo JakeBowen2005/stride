@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [goal, setGoal] = useState<GoalData | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -89,6 +90,7 @@ export default function SettingsPage() {
           fetch(apiUrl(`/users/${USER_ID}`)),
         ]);
 
+        if (![prRes, analysisRes, goalRes, userRes].every((r) => r.ok)) throw new Error("Could not load settings. Reload to retry.");
         if (prRes.ok) setPrs(await prRes.json());
         if (userRes.ok) setUser(await userRes.json());
         if (analysisRes.ok) setAnalysis(await analysisRes.json());
@@ -97,6 +99,7 @@ export default function SettingsPage() {
           if (data) setGoal(data);
         }
       } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not load data");
         console.error("Failed to load settings data:", e);
       } finally {
         setLoading(false);
@@ -104,6 +107,8 @@ export default function SettingsPage() {
     }
     load();
   }, []);
+
+  if (error) return <p role="alert" className="text-destructive">{error}</p>;
 
   if (loading) {
     return (

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from datetime import date, datetime, timedelta
@@ -26,6 +27,8 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 class PlanRequest(BaseModel):
     start_date: str | None = None  # ISO date, defaults to smart calculation
+    preview: bool = False  # legacy generate remains available; UI uses /preview
+    lighter: bool = False
 
 
 class FeedbackRequest(BaseModel):
@@ -113,7 +116,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
 
     # Determine block number — reuse on overlapping regeneration, increment on new block
-    last_plan = db.query(Plan).filter(Plan.user_id == user_id).order_by(Plan.id.desc()).first()
+    last_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.preview_state.is_(None)).order_by(Plan.id.desc()).first()
     if last_plan:
         new_start = params["start_date"]
         old_end = date.fromisoformat(last_plan.end_date)
@@ -148,7 +151,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
         terrain=goal.terrain,
         target_weekly_mileage=goal.target_weekly_mileage,
-        assessment=assessment.decision if assessment else None,
+        assessment="recovery" if req and req.lighter else assessment.decision if assessment else None,
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
         reported_mileage=user.current_weekly_mileage,
@@ -179,14 +182,18 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     # Persist atomically: the previous plan is only deactivated in the same commit
     # that saves its replacement, so a failure above leaves the old plan usable.
-    db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update({"is_active": False})
+    preview = bool(req and req.preview)
+    if not preview:
+        db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).update({"is_active": False})
+    else:
+        db.query(Plan).filter_by(user_id=user_id, preview_state="draft").update({"preview_state": "superseded"})
     db_plan = Plan(
         user_id=user_id,
         start_date=plan_data["start_date"],
         end_date=plan_data["end_date"],
         block_number=plan_data["block_number"],
         is_deload=plan_data["is_deload"],
-        is_active=True,
+        is_active=not preview,
         pacing_guide=json.dumps(plan_data["pacing_guide"]),
         notes=json.dumps(plan_data["notes"]),
         goal_snapshot=json.dumps(goal_snapshot),
@@ -216,6 +223,15 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
             )
             db.add(pw)
 
+    plan_data["goal"] = goal_snapshot
+    plan_data["athlete"] = athlete_snapshot
+    plan_data["assessment"] = assessment.to_dict() if assessment else None
+    if preview:
+        plan_data["id"] = db_plan.id
+        plan_data["preview"] = True
+        db_plan.preview_data = json.dumps(plan_data)
+        db_plan.preview_state = "draft"
+        db_plan.preview_context = _preview_fingerprint(user_id, db)
     try:
         db.commit()
     except Exception:
@@ -229,6 +245,71 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     return plan_data
+
+
+def _preview_fingerprint(user_id: int, db: Session) -> str:
+    """Reject approval after training, goal, preferences or active schedule changes."""
+    user = db.get(User, user_id)
+    goals = db.query(Goal).filter_by(user_id=user_id, active=True).all()
+    active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    data = {
+        "today": date.today().isoformat(),
+        "user": {c.name: getattr(user, c.name) for c in User.__table__.columns},
+        "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
+        "active": active.id if active else None,
+        "schedule": [_snapshot(w) + str(w.feel_rating) + str(w.evaluation) for w in active.planned_workouts] if active else [],
+        "activities": [(a.id, a.date, a.distance_meters, a.duration_seconds, a.description, a.splits, a.feel_rating)
+                       for a in db.query(Activity).filter_by(user_id=user_id).order_by(Activity.id)],
+        "progression": [(p.id, p.current_level, p.current_pace_sec, p.updated_at)
+                        for p in db.query(WorkoutProgression).filter_by(user_id=user_id).order_by(WorkoutProgression.id)],
+    }
+    return hashlib.sha256(json.dumps(data, default=str, sort_keys=True).encode()).hexdigest()
+
+
+@router.post("/{user_id}/preview")
+def preview_plan(user_id: int, req: PlanRequest | None = None, db: Session = Depends(get_db)):
+    request = req or PlanRequest()
+    request.preview = True
+    return generate_training_plan(user_id, request, db)
+
+
+@router.get("/{user_id}/draft")
+def pending_draft(user_id: int, db: Session = Depends(get_db)):
+    draft = db.query(Plan).filter_by(user_id=user_id, preview_state="draft").order_by(Plan.id.desc()).first()
+    return json.loads(draft.preview_data) if draft else None
+
+
+@router.post("/{user_id}/drafts/{plan_id}/approve")
+def approve_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
+    # Serialize approvals before reading their context; two approvals cannot both win.
+    from sqlalchemy import text
+    if db.bind.dialect.name == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))
+    try:
+        draft = db.query(Plan).filter_by(id=plan_id, user_id=user_id).first()
+        if not draft or draft.preview_state != "draft":
+            raise HTTPException(409, "This preview is no longer awaiting approval")
+        if draft.preview_context != _preview_fingerprint(user_id, db):
+            raise HTTPException(409, "Your training or settings changed. Generate a fresh preview before approving.")
+        data = json.loads(draft.preview_data)
+        if data.get("violations"):
+            raise HTTPException(409, "This preview has unresolved schedule constraints")
+        _validate_schedule(draft, db)
+        db.query(Plan).filter_by(user_id=user_id, is_active=True).update({"is_active": False})
+        draft.is_active = True
+        draft.preview_state = None
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"id": draft.id, "approved": True}
+
+
+@router.post("/{user_id}/drafts/{plan_id}/discard")
+def discard_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
+    changed = db.query(Plan).filter_by(id=plan_id, user_id=user_id, preview_state="draft").update({"preview_state": "discarded"})
+    db.commit()
+    return {"discarded": bool(changed)}
 
 
 @router.get("/{user_id}/current")

@@ -29,6 +29,10 @@ class Plan(Base):
     load: Mapped[str | None] = mapped_column(Text)  # JSON LoadPlan: baseline, destination, budgets, reasons
     assessment: Mapped[str | None] = mapped_column(Text)  # JSON BlockAssessment of the previous block
 
+    preview_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_context: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preview_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(
         "PlannedWorkout", back_populates="plan", cascade="all, delete-orphan"

@@ -90,7 +90,7 @@ export default function OnboardingPage() {
       age: number | null; units: string; workout_format?: string; years_running: number | null;
       current_weekly_mileage: number | null; peak_weekly_mileage: number | null;
       days_per_week: number; rest_days: string | null; long_run_day?: string | null;
-    }>(`/users/${USER_ID}`).then((u) => {
+    }>(`/users/${USER_ID}`, { allowNotFound: true }).then((u) => {
       if (!u) return;
       if (u.age) setAge(String(u.age));
       setUnits(u.units === "km" ? "kilometers" : "miles");
@@ -101,7 +101,7 @@ export default function OnboardingPage() {
       if (u.days_per_week) setDaysPerWeek([u.days_per_week]);
       if (u.rest_days) setRestDays(u.rest_days.split(",").map((d) => PICKER_DAYS.indexOf(d.trim())).filter((i) => i >= 0));
       if (u.long_run_day) setLongRunDay([PICKER_DAYS.indexOf(u.long_run_day)].filter((i) => i >= 0));
-    });
+    }).catch((e) => setSaveError(e instanceof Error ? e.message : "Could not load your profile"));
   }, []);
 
   async function send(path: string, method: string, body?: unknown) {
@@ -154,7 +154,7 @@ export default function OnboardingPage() {
       }
       if (!goal.res.ok) throw new Error(typeof goal.data.detail === "string" ? goal.data.detail : "Couldn't save your goal");
 
-      const plan = await send(`/plans/${USER_ID}/generate`, "POST", {});
+      const plan = await send(`/plans/${USER_ID}/preview`, "POST", {});
       if (!plan.res.ok) {
         throw new Error(
           typeof plan.data.detail === "string" ? plan.data.detail : "Saved your profile and goal, but the plan couldn't be generated",
