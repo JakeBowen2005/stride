@@ -11,8 +11,8 @@ class Activity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    source: Mapped[str] = mapped_column(String(20))  # "strava", "garmin", "manual"
-    external_id: Mapped[str | None] = mapped_column(String(50))  # Strava/Garmin activity ID
+    source: Mapped[str] = mapped_column(String(20))  # "garmin", "manual" ("strava" = legacy imports)
+    external_id: Mapped[str | None] = mapped_column(String(50))  # Garmin activity ID (Strava ID on legacy rows)
 
     # Core run data
     name: Mapped[str | None] = mapped_column(String(200))
@@ -34,15 +34,27 @@ class Activity(Base):
     # Cadence
     average_cadence: Mapped[float | None] = mapped_column(Float)  # steps per minute
 
-    # Strava metadata
-    description: Mapped[str | None] = mapped_column(Text)  # user's notes from Strava
-    strava_workout_type: Mapped[int | None] = mapped_column(Integer)  # 0=default, 1=race, 2=long run, 3=workout
+    # Notes + legacy Strava metadata (kept for historical imports)
+    description: Mapped[str | None] = mapped_column(Text)  # user's notes, or a workout summary built from Garmin laps
+    strava_workout_type: Mapped[int | None] = mapped_column(Integer)  # legacy: 0=default, 1=race, 2=long run, 3=workout
     suffer_score: Mapped[float | None] = mapped_column(Float)  # Strava relative effort
     pr_count: Mapped[int | None] = mapped_column(Integer)  # PRs hit on this activity
     has_workout_description: Mapped[bool] = mapped_column(Boolean, default=False)  # flagged as containing workout details
 
-    # Splits (stored as JSON string)
+    # Splits / laps (stored as JSON string). Garmin rows store laps, which may not be 1 mile each.
     splits: Mapped[str | None] = mapped_column(Text)  # JSON array of split data
+
+    # Garmin metrics
+    event_type: Mapped[str | None] = mapped_column(String(30))  # "race", "training", ...
+    activity_subtype: Mapped[str | None] = mapped_column(String(40))  # running, trail_running, treadmill_running...
+    aerobic_training_effect: Mapped[float | None] = mapped_column(Float)
+    anaerobic_training_effect: Mapped[float | None] = mapped_column(Float)
+    training_effect_label: Mapped[str | None] = mapped_column(String(40))
+    training_load: Mapped[float | None] = mapped_column(Float)
+    vo2max: Mapped[float | None] = mapped_column(Float)
+    avg_ground_contact_time: Mapped[float | None] = mapped_column(Float)  # ms
+    avg_vertical_oscillation: Mapped[float | None] = mapped_column(Float)  # cm
+    calories: Mapped[float | None] = mapped_column(Float)
 
     # User feedback (post-run)
     feel_rating: Mapped[int | None] = mapped_column(Integer)  # 1-10

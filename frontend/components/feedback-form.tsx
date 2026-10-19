@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { DayFeedback } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 const FEEL_OPTIONS = [
   { value: 1, label: "1" },

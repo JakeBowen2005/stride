@@ -32,7 +32,7 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
         interval_pace, tempo_pace, threshold_pace, race_pace, steady_pace, strides_pace
     All values in seconds per mile.
     """
-    cutoff = datetime.utcnow() - timedelta(weeks=weeks_back)
+    cutoff = datetime.now() - timedelta(weeks=weeks_back)
 
     activities = (
         db.query(Activity)

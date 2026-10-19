@@ -51,7 +51,7 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background sm:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background pb-[env(safe-area-inset-bottom)] sm:hidden">
       <div className="flex h-14 items-center justify-around">
         {links.map((link) => {
           const active =

@@ -19,19 +19,30 @@ export function PlanWeek({ week, isCurrent, onPlanChanged }: PlanWeekProps) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-medium">
-          Week {week.week_number}
-          {isCurrent && (
-            <span className="ml-2 text-xs text-muted-foreground">(current)</span>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium">
+            Week {week.week_number}
+            {isCurrent && (
+              <span className="ml-2 text-xs text-muted-foreground">(current)</span>
+            )}
+          </h3>
+          {week.phase && week.phase.phase !== "general" && (
+            <p className="text-xs text-muted-foreground">
+              {week.phase.label}
+              {week.phase.back_to_back && " · back-to-back weekend"}
+            </p>
           )}
-        </h3>
-        <span className="font-mono text-sm text-muted-foreground">
-          {formatDistance(week.total_miles)} mi planned
+        </div>
+        <div className="flex shrink-0 flex-col items-end font-mono text-xs text-muted-foreground sm:flex-row sm:gap-1 sm:text-sm">
+          <span>{formatDistance(week.total_miles)} mi planned</span>
           {hasActuals && (
-            <> / {formatDistance(week.actual_miles!)} mi actual</>
+            <span>
+              <span className="hidden sm:inline">/ </span>
+              {formatDistance(week.actual_miles!)} mi actual
+            </span>
           )}
-        </span>
+        </div>
       </div>
       <div className="space-y-1.5">
         {week.workouts.map((w) => (

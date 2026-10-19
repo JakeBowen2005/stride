@@ -41,7 +41,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     df["year"] = df["date"].dt.year
     df["year_week"] = df["year"].astype(str) + "-W" + df["week"].astype(str).str.zfill(2)
 
-    now = datetime.utcnow()
+    now = datetime.now()
 
     # --- Overall Stats ---
     total_runs = len(df)
@@ -64,15 +64,20 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     recent_8w = df[df["date"] >= now - timedelta(weeks=8)]
     recent_12w = df[df["date"] >= now - timedelta(weeks=12)]
 
-    def weekly_avg(subset):
+    history_weeks = max((now - df["date"].min()).days / 7, 1)
+
+    def weekly_avg(subset, window_weeks):
+        # Divide by the whole window (not the span between the first and last run in it):
+        # 30mi over the last 8 days after a break is ~7.5 mpw over 4 weeks, not ~26.
+        # Brand-new athletes with less history than the window use their actual history length.
         if subset.empty:
             return 0
-        weeks = max((subset["date"].max() - subset["date"].min()).days / 7, 1)
+        weeks = min(window_weeks, history_weeks)
         return round(subset["distance_miles"].sum() / weeks, 1)
 
-    current_weekly_avg = weekly_avg(recent_4w)
-    eight_week_avg = weekly_avg(recent_8w)
-    twelve_week_avg = weekly_avg(recent_12w)
+    current_weekly_avg = weekly_avg(recent_4w, 4)
+    eight_week_avg = weekly_avg(recent_8w, 8)
+    twelve_week_avg = weekly_avg(recent_12w, 12)
 
     # Peak mileage week ever
     peak_week = weekly.loc[weekly["miles"].idxmax()]
@@ -337,35 +342,55 @@ def detect_prs(user_id: int, db: Session) -> list[dict]:
 
 
 def _extract_segment_time(activity: Activity, target_miles: float) -> float | None:
-    """Extract fastest consecutive segment of target_miles from splits."""
+    """Fastest contiguous stretch of splits covering target_miles, scaled to exactly target_miles.
+
+    Legacy Strava splits are 1 mile each (pace_seconds = time for that mile).
+    Garmin laps carry their own distance_miles/duration_seconds and can be any
+    length (400m reps, recovery jogs), so each split's real distance is used —
+    otherwise a single fast 400m lap would look like a mile PR.
+    """
     if not activity.splits:
         return None
     try:
         splits = json.loads(activity.splits)
     except (json.JSONDecodeError, TypeError):
         return None
-
     if not splits:
         return None
 
-    n_miles = max(1, int(round(target_miles)))
-    if len(splits) < n_miles:
-        return None
+    segments = []
+    for s in splits:
+        dist = s.get("distance_miles", 1.0) or 0
+        if "duration_seconds" in s:
+            secs = s.get("duration_seconds") or 0
+        else:
+            secs = (s.get("pace_seconds") or 600) * dist
+        if dist > 0 and secs > 0:
+            segments.append((dist, secs))
 
     best = None
-    for start in range(len(splits) - n_miles + 1):
-        segment = splits[start : start + n_miles]
-        total = sum(s.get("pace_seconds", 600) for s in segment)
-        if best is None or total < best:
-            best = total
-
-    if best and n_miles > 0:
-        return best * (target_miles / n_miles)
+    for start in range(len(segments)):
+        dist = secs = 0.0
+        for d, t in segments[start:]:
+            dist += d
+            secs += t
+            if dist >= target_miles * 0.95:
+                break
+        if dist < target_miles * 0.95 or dist > target_miles * 1.25:
+            continue
+        estimate = secs * (target_miles / dist)
+        if best is None or estimate < best:
+            best = estimate
     return best
 
 
+# Garmin training-effect labels that reliably mean a quality session
+# ("TEMPO" is left out: hot or hilly easy runs often get it)
+HARD_TRAINING_EFFECT_LABELS = {"VO2MAX", "LACTATE_THRESHOLD", "THRESHOLD", "ANAEROBIC_CAPACITY", "SPRINT"}
+
+
 def classify_activities(user_id: int, db: Session) -> dict:
-    """Classify all activities by workout type based on Strava data."""
+    """Classify all activities by workout type (Garmin data + legacy Strava flags)."""
     activities = (
         db.query(Activity)
         .filter(Activity.user_id == user_id)
@@ -377,10 +402,17 @@ def classify_activities(user_id: int, db: Session) -> dict:
     for act in activities:
         dist_miles = act.distance_meters / 1609.34 if act.distance_meters else 0
 
-        # Use Strava's workout_type if available
-        if act.strava_workout_type == 1:
+        # Explicit race / workout flags first (Garmin event type, legacy Strava workout_type)
+        if act.strava_workout_type == 1 or act.event_type == "race":
             act.workout_type = "race"
         elif act.has_workout_description:
+            act.workout_type = "workout"
+        elif (
+            (act.training_effect_label or "").upper() in HARD_TRAINING_EFFECT_LABELS
+            and (act.anaerobic_training_effect or 0) >= 2.0
+        ):
+            # Garmin's label alone over-fires on hot/hilly easy runs; real quality
+            # sessions also carry meaningful anaerobic load.
             act.workout_type = "workout"
         elif act.strava_workout_type == 3:
             act.workout_type = "workout"
@@ -402,7 +434,7 @@ def classify_activities(user_id: int, db: Session) -> dict:
 
 def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[dict]:
     """Compute weekly mileage for the last N weeks."""
-    now = datetime.utcnow()
+    now = datetime.now()
     start = now - timedelta(weeks=weeks)
 
     activities = (

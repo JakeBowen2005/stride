@@ -171,12 +171,38 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
             </div>
           )}
 
-          {/* Strava Description */}
+          {/* Garmin metrics */}
+          {(activity.aerobic_training_effect || activity.vo2max || activity.avg_ground_contact_time) && (
+            <div className="grid grid-cols-3 gap-4 text-center">
+              {activity.aerobic_training_effect != null && (
+                <div>
+                  <div className="font-mono text-sm font-medium">
+                    {activity.aerobic_training_effect.toFixed(1)} / {(activity.anaerobic_training_effect ?? 0).toFixed(1)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">training effect</div>
+                </div>
+              )}
+              {activity.vo2max != null && (
+                <div>
+                  <div className="font-mono text-sm font-medium">{Math.round(activity.vo2max)}</div>
+                  <div className="text-xs text-muted-foreground">VO2max</div>
+                </div>
+              )}
+              {activity.avg_ground_contact_time != null && (
+                <div>
+                  <div className="font-mono text-sm font-medium">{Math.round(activity.avg_ground_contact_time)} ms</div>
+                  <div className="text-xs text-muted-foreground">ground contact</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Notes / Garmin lap summary */}
           {activity.description && (
             <>
               <Separator />
               <div>
-                <h4 className="text-sm font-medium">Description</h4>
+                <h4 className="text-sm font-medium">Notes</h4>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
                   {activity.description}
                 </p>

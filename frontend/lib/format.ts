@@ -74,6 +74,7 @@ export function workoutTypeLabel(type: string): string {
     time_trial: "Time Trial",
     rest: "Rest",
     strides: "Strides",
+    race: "Race",
   };
   return labels[type] || type;
 }
@@ -93,10 +94,11 @@ export function workoutTypeShort(type: string): string {
     time_trial: "TT",
     rest: "Rest",
     strides: "Strides",
+    race: "RACE",
   };
   return labels[type] || type;
 }
 
 export function isHardWorkout(type: string): boolean {
-  return ["tempo", "intervals", "threshold", "hill_repeats", "time_trial", "workout"].includes(type);
+  return ["tempo", "intervals", "threshold", "hill_repeats", "time_trial", "workout", "race"].includes(type);
 }

@@ -7,7 +7,7 @@ import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 type FilterType = "all" | "workouts" | "long_runs" | "easy";
 

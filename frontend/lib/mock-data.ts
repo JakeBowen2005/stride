@@ -20,7 +20,6 @@ export const mockUser: User = {
   current_weekly_mileage: 42,
   peak_weekly_mileage: 65,
   years_running: 2,
-  strava_connected: true,
   garmin_connected: false,
   onboarded: true,
 };
@@ -262,7 +261,7 @@ export const mockTodayWorkout: Workout =
 
 export const mockLastActivity: Activity = {
   id: 101,
-  strava_id: 12345678,
+  external_id: "12345678",
   date: dayStr(todayOffset > 0 ? todayOffset - 1 : 0),
   type: todayOffset > 1 ? "intervals" : "easy",
   title: todayOffset > 1 ? "800m Repeats" : "Easy Run",

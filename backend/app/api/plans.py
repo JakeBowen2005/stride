@@ -113,6 +113,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         first_prescribe_date=params.get("first_prescribe_date"),
         block_number=block_number,
         progression_state=progression_state,
+        race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
+        terrain=goal.terrain,
     )
 
     goal_snapshot = {
@@ -121,6 +123,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "target_time": goal.target_time_seconds,
         "race_date": goal.race_date,
         "description": goal.description,
+        "terrain": goal.terrain,
     }
     athlete_snapshot = {
         "name": user.name,
@@ -142,6 +145,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         notes=json.dumps(plan_data["notes"]),
         goal_snapshot=json.dumps(goal_snapshot),
         athlete_snapshot=json.dumps(athlete_snapshot),
+        phases=json.dumps(plan_data.get("phases", [])),
     )
     db.add(db_plan)
     db.flush()  # get the plan ID
@@ -253,9 +257,11 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         }
         weeks_map[pw.week_number]["days"].append(day_data)
 
+    phases = json.loads(db_plan.phases) if db_plan.phases else []
     weeks = []
     for wk_num in sorted(weeks_map.keys()):
         wk = weeks_map[wk_num]
+        wk["phase"] = phases[wk_num - 1] if 0 < wk_num <= len(phases) else None
         wk["target_mileage"] = round(sum(d["distance_miles"] for d in wk["days"]), 1)
         # Calculate actual mileage from matched activities
         actual_mileage = 0
@@ -271,6 +277,9 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         "end_date": db_plan.end_date,
         "block_number": db_plan.block_number,
         "is_deload": db_plan.is_deload,
+        # A plan whose last day is behind us shouldn't be shown as "current"
+        "is_stale": db_plan.end_date < today,
+        "phase": _current_phase(weeks, today),
         "weeks": weeks,
         "pacing_guide": json.loads(db_plan.pacing_guide) if db_plan.pacing_guide else {},
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
@@ -292,6 +301,9 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
         "target_time": goal.target_time_seconds,
         "race_date": goal.race_date,
         "description": goal.description,
+        "terrain": goal.terrain,
+        "elevation_gain_ft": goal.elevation_gain_ft,
+        "target_weekly_mileage": goal.target_weekly_mileage,
     }
 
 
@@ -447,6 +459,15 @@ async def submit_feedback(
         "plan_adjusted": True,
         "progression_decision": evaluation_decision,
     }
+
+
+def _current_phase(weeks: list[dict], today: str) -> dict | None:
+    """Phase of the week containing today (or the first week if the plan starts later)."""
+    for wk in weeks:
+        dates = [d["date"] for d in wk["days"]]
+        if dates and dates[0] <= today <= dates[-1]:
+            return wk.get("phase")
+    return weeks[0].get("phase") if weeks else None
 
 
 def _get_activities_for_date(date_str: str, user_id: int, db: Session) -> list[Activity]:

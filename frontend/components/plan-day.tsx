@@ -31,7 +31,7 @@ function ComparisonBadge({ diffMiles }: { diffMiles: number }) {
 }
 
 /**
- * Extract a workout title from a Strava activity description.
+ * Extract a workout title from an activity description (user notes or Garmin lap summary).
  * Looks for patterns like "6x800", "3x10min", "4x200", "2x1mile" etc.
  * Returns null if no workout pattern found (plain easy run).
  */
@@ -49,7 +49,7 @@ function extractWorkoutTitle(description: string | null): string | null {
 
 /**
  * Determine whether the actual run was a workout or an easy/recovery run.
- * Uses the Strava description to check for workout patterns.
+ * Uses the activity description to check for workout patterns.
  */
 function actualIsWorkout(description: string | null): boolean {
   if (!description) return false;
@@ -176,7 +176,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged }:
                   )}
                 </div>
 
-                {/* Strava description */}
+                {/* Activity notes / Garmin lap summary */}
                 {workout.actual.description && (
                   <p className="text-xs text-muted-foreground italic whitespace-pre-line">
                     {workout.actual.description}

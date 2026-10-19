@@ -1,5 +1,7 @@
 """Pacing calculations based on goal times and current fitness."""
 
+ULTRA_MILES = {"50k": 31.0686, "50mi": 50.0, "100k": 62.1371, "100mi": 100.0}
+
 
 def goal_paces(distance: str, target_time_seconds: float) -> dict:
     """Calculate training paces from a goal race time.
@@ -52,6 +54,10 @@ def goal_paces(distance: str, target_time_seconds: float) -> dict:
             "mp_long_run_pace": race_pace * 1.0,
             "strides_pace": race_pace * 0.75,
         }
+    elif distance in ULTRA_MILES:
+        # Ultra race pace includes aid stations and hiking — far too slow to derive
+        # training paces from. Training paces come from current fitness instead.
+        return {"race_pace": target_time_seconds / ULTRA_MILES[distance], "is_ultra": True}
     return {}
 
 

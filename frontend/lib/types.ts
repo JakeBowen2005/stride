@@ -11,13 +11,23 @@ export type WorkoutType =
   | "recovery"
   | "time_trial"
   | "rest"
-  | "strides";
+  | "strides"
+  | "race";
 
 export type GoalType = "race" | "mileage" | "general_fitness" | "return_from_injury";
 
 export type RaceDistance = "5k" | "10k" | "half_marathon" | "marathon";
 
-export type TrainingPhase = "base" | "build" | "peak" | "taper";
+export type TrainingPhase = "general" | "base" | "build" | "peak" | "taper" | "race_week" | "recovery";
+
+export interface WeekPhaseInfo {
+  phase: TrainingPhase;
+  label: string;
+  weeks_to_race: number | null;
+  back_to_back: boolean;
+  fueling_g_per_hr: number | null;
+  notes: string[];
+}
 
 export interface User {
   id: number;
@@ -30,7 +40,6 @@ export interface User {
   current_weekly_mileage: number;
   peak_weekly_mileage: number;
   years_running: number;
-  strava_connected: boolean;
   garmin_connected: boolean;
   onboarded: boolean;
 }
@@ -107,6 +116,7 @@ export interface PlanWeek {
   week_number: number;
   total_miles: number;
   actual_miles?: number;
+  phase?: WeekPhaseInfo | null;
   workouts: Workout[];
 }
 
@@ -123,7 +133,8 @@ export interface Plan {
 
 export interface Activity {
   id: number;
-  strava_id?: number;
+  external_id?: string;
+  source?: "garmin" | "strava" | "manual";
   date: string;
   type: WorkoutType;
   title: string;
@@ -141,12 +152,26 @@ export interface Activity {
   max_heart_rate?: number;
   suffer_score?: number;
   strava_workout_type?: number;
+  event_type?: string | null;
+  activity_subtype?: string | null;
+  aerobic_training_effect?: number | null;
+  anaerobic_training_effect?: number | null;
+  training_effect_label?: string | null;
+  training_load?: number | null;
+  vo2max?: number | null;
+  avg_ground_contact_time?: number | null;
+  avg_vertical_oscillation?: number | null;
+  calories?: number | null;
 }
 
 export interface Split {
-  mile: number;
+  mile: number; // split/lap number
   pace: string;
   heart_rate?: number;
+  // Garmin laps
+  distance_miles?: number;
+  duration_seconds?: number;
+  intensity?: string | null;
 }
 
 export interface WeeklyMileage {

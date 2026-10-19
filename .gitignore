@@ -27,3 +27,6 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+
+# Garmin session tokens (created by backend/garmin_login.py)
+.garmin/

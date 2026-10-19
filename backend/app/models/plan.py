@@ -23,6 +23,7 @@ class Plan(Base):
     notes: Mapped[str | None] = mapped_column(Text)  # JSON array
     goal_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
     athlete_snapshot: Mapped[str | None] = mapped_column(Text)  # JSON
+    phases: Mapped[str | None] = mapped_column(Text)  # JSON list, one periodization phase per week
 
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(

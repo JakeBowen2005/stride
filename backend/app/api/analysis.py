@@ -9,7 +9,6 @@ from app.models.activity import Activity, PersonalRecord
 from app.models.user import User
 from app.services.analyzer import analyze_athlete, detect_prs, compute_weekly_mileage, classify_activities
 from app.services.pace_calibrator import calibrate_paces
-from app.services.strava import sync_all_to_db, fetch_all_descriptions
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -37,36 +36,27 @@ def get_calibrated_paces(user_id: int, weeks: int = Query(default=12), db: Sessi
     return calibrate_paces(user_id, db, weeks_back=weeks)
 
 
-@router.post("/{user_id}/fetch-descriptions")
-async def fetch_descriptions(user_id: int, db: Session = Depends(get_db)):
-    """Fetch descriptions from Strava for all activities missing them."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.strava_connected:
-        raise HTTPException(status_code=404, detail="User not found or Strava not connected")
-    result = await fetch_all_descriptions(user, db)
-    return result
-
-
 @router.post("/{user_id}/full-sync")
 async def full_sync_and_analyze(user_id: int, db: Session = Depends(get_db)):
-    """Full pipeline: sync all Strava data, detect PRs, classify workouts, analyze."""
+    """Full pipeline: re-sync all Garmin history, classify, detect PRs, analyze."""
+    import asyncio
+
+    from app.api.garmin import _sync_in_new_session
+    from app.services.garmin import GarminNotConnected
+
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.strava_connected:
-        raise HTTPException(status_code=404, detail="User not found or Strava not connected")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        sync_result = await asyncio.to_thread(_sync_in_new_session, user_id, True)
+    except GarminNotConnected as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
-    # Step 1: Sync all activities from Strava
-    sync_result = await sync_all_to_db(user, db)
-
-    # Step 2: Detect PRs
-    prs = detect_prs(user_id, db)
-
-    # Step 3: Full analysis
-    analysis = analyze_athlete(user_id, db)
-
+    db.expire_all()
     return {
         "sync": sync_result,
-        "personal_records": prs,
-        "analysis": analysis,
+        "personal_records": get_prs(user_id, db),
+        "analysis": analyze_athlete(user_id, db),
     }
 
 
@@ -193,7 +183,8 @@ def _format_activity(a: Activity) -> dict:
 
     return {
         "id": a.id,
-        "strava_id": a.external_id,
+        "external_id": a.external_id,
+        "source": a.source,
         "date": a.date.isoformat() if a.date else None,
         "type": a.workout_type or "easy",
         "title": a.name or "Run",
@@ -211,6 +202,16 @@ def _format_activity(a: Activity) -> dict:
         "coach_analysis": None,  # TODO: wire up LLM analysis
         "suffer_score": a.suffer_score,
         "strava_workout_type": a.strava_workout_type,
+        "event_type": a.event_type,
+        "activity_subtype": a.activity_subtype,
+        "aerobic_training_effect": a.aerobic_training_effect,
+        "anaerobic_training_effect": a.anaerobic_training_effect,
+        "training_effect_label": a.training_effect_label,
+        "training_load": a.training_load,
+        "vo2max": a.vo2max,
+        "avg_ground_contact_time": a.avg_ground_contact_time,
+        "avg_vertical_oscillation": a.avg_vertical_oscillation,
+        "calories": a.calories,
     }
 
 
