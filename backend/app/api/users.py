@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -51,9 +53,58 @@ class GoalData(BaseModel):
     override_readiness: bool = False  # athlete chose to set it despite readiness warnings
 
 
+DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+class ProfileUpdate(BaseModel):
+    """Onboarding / settings update for an existing athlete. Every field optional:
+    only provided fields change, so re-running setup is safe and repeatable."""
+    name: str | None = None
+    age: int | None = Field(default=None, ge=10, le=100)
+    units: Literal["miles", "km"] | None = None
+    workout_format: Literal["distance", "time"] | None = None
+    years_running: float | None = Field(default=None, ge=0, le=80)
+    current_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
+    peak_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
+    days_per_week: int | None = Field(default=None, ge=1, le=7)
+    rest_days: list[str] | None = None  # day names, e.g. ["friday"]
+    long_run_day: str | None = None
+    pr_5k_seconds: float | None = Field(default=None, gt=0)
+    pr_10k_seconds: float | None = Field(default=None, gt=0)
+    pr_half_seconds: float | None = Field(default=None, gt=0)
+    pr_marathon_seconds: float | None = Field(default=None, gt=0)
+
+
+@router.put("/{user_id}/profile")
+def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_db)):
+    """Update the athlete's profile and schedule preferences (idempotent)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    for day in (data.rest_days or []) + ([data.long_run_day] if data.long_run_day else []):
+        if day.lower() not in DAY_NAMES:
+            raise HTTPException(status_code=422, detail=f"Unknown day: {day}")
+    if data.long_run_day and data.rest_days and data.long_run_day.lower() in [d.lower() for d in data.rest_days]:
+        raise HTTPException(status_code=422, detail="Long run day can't also be a rest day.")
+    if data.days_per_week and data.rest_days is not None and data.days_per_week > 7 - len(data.rest_days):
+        raise HTTPException(status_code=422, detail=f"{data.days_per_week} run days don't fit with {len(data.rest_days)} rest days.")
+
+    fields = data.model_dump(exclude_unset=True)
+    mapping = {"pr_5k_seconds": "pr_5k", "pr_10k_seconds": "pr_10k", "pr_half_seconds": "pr_half", "pr_marathon_seconds": "pr_marathon"}
+    for key, value in fields.items():
+        if key == "rest_days":
+            value = ",".join(d.lower() for d in value)
+        if key == "long_run_day" and value:
+            value = value.lower()
+        setattr(user, mapping.get(key, key), value)
+    db.commit()
+    return {"user_id": user.id, "updated": sorted(fields)}
+
+
 @router.post("/onboard")
 def onboard_user(data: OnboardingData, db: Session = Depends(get_db)):
-    """Create or update user with onboarding data."""
+    """Create a NEW athlete (future multi-user use). The single-athlete app uses
+    PUT /api/users/{id}/profile instead, which updates the existing athlete."""
     user = User(
         name=data.name,
         age=data.age,

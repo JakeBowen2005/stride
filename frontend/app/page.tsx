@@ -38,16 +38,19 @@ export default function TodayPage() {
   const [wellness, setWellness] = useState<WellnessResponse | null>(null);
   const [prs, setPrs] = useState<Record<string, number>>({});
   const [selectedRun, setSelectedRun] = useState<Activity | null>(null);
+  const [firstName, setFirstName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [acts, mileage, goalData, planData, wellnessData, prList] = await Promise.all([
+    const [acts, mileage, goalData, planData, wellnessData, prList, user] = await Promise.all([
       getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
       getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
       getJson<GoalData>(`/plans/${USER_ID}/goal`),
       getJson<PlanResponse>(`/plans/${USER_ID}/current`),
       getJson<WellnessResponse>(`/wellness/${USER_ID}?days=28`),
       getJson<{ distance: string; time_seconds: number }[]>(`/analysis/${USER_ID}/prs`),
+      getJson<{ name: string | null }>(`/users/${USER_ID}`),
     ]);
+    setFirstName(user?.name?.split(" ")[0] ?? null);
     setRecentRuns((acts ?? []).map((a) => ({ ...a, splits: a.splits || [] })));
     setWeeklyMileage((mileage ?? []).map((d) => ({ ...d, planned: 0 })));
     setGoal(goalData);
@@ -73,7 +76,7 @@ export default function TodayPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{greeting}, Jake</h1>
+          <h1 className="text-xl font-semibold">{firstName ? `${greeting}, ${firstName}` : greeting}</h1>
           <p className="text-sm text-muted-foreground">
             {now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
             {goal?.description && ` · ${goal.description}`}

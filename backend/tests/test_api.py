@@ -11,7 +11,7 @@ from app.models.activity import Activity
 from app.models.garmin import GarminConnection
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
-from app.models.user import Goal
+from app.models.user import Goal, User
 from app.services import garmin
 
 client = TestClient(app)
@@ -240,3 +240,31 @@ def test_mileage_goal_flows_into_plan():
     assert body["load"]["destination"] == 75
     assert body["goal"]["target_weekly_mileage"] == 75
     assert max(body["load"]["weekly_budgets"]) < 75
+
+
+def test_profile_update_is_idempotent_and_validated():
+    body = {"age": 21, "units": "miles", "days_per_week": 6, "rest_days": ["friday"], "long_run_day": "saturday",
+            "current_weekly_mileage": 31, "pr_5k_seconds": 1106}
+    for _ in range(2):  # re-running setup updates the same athlete, no duplicates
+        r = client.put("/api/users/1/profile", json=body)
+        assert r.status_code == 200, r.text
+    db = SessionLocal()
+    assert db.query(User).count() == 1
+    u = db.query(User).one()
+    assert u.rest_days == "friday" and u.pr_5k == 1106 and u.current_weekly_mileage == 31
+    db.close()
+    assert client.put("/api/users/1/profile", json={"rest_days": ["saturday"], "long_run_day": "saturday"}).status_code == 422
+    assert client.put("/api/users/1/profile", json={"days_per_week": 7, "rest_days": ["sunday"]}).status_code == 422
+    assert client.put("/api/users/1/profile", json={"units": "kilometers"}).status_code == 422
+
+
+def test_long_finished_block_is_not_assessed():
+    _seed_runs(40)
+    db = SessionLocal()
+    old = date.today() - timedelta(days=120)
+    db.add(Plan(user_id=1, start_date=old.isoformat(), end_date=(old + timedelta(days=13)).isoformat(),
+                is_active=True, prescribed_from=old.isoformat()))
+    db.commit()
+    db.close()
+    body = client.post("/api/plans/1/generate").json()
+    assert body["assessment"] is None  # months-old block is history, not evidence

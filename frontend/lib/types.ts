@@ -14,9 +14,10 @@ export type WorkoutType =
   | "strides"
   | "race";
 
-export type GoalType = "race" | "mileage" | "general_fitness" | "return_from_injury";
+// Same values the backend stores (users.GoalData / RACE_DISTANCES)
+export type GoalType = "race" | "mileage" | "general" | "comeback";
 
-export type RaceDistance = "5k" | "10k" | "half_marathon" | "marathon";
+export type RaceDistance = "5k" | "10k" | "half" | "marathon" | "50k" | "50mi" | "100k" | "100mi";
 
 export type TrainingPhase = "general" | "base" | "build" | "peak" | "taper" | "race_week" | "recovery";
 

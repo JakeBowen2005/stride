@@ -47,6 +47,25 @@ app, and the plan for scaling to many athletes.
 - **One source of paces.** `plan_engine.effective_paces()` feeds both the workouts
   and the pacing guide, so the numbers on screen can't disagree.
 
+### The coaching loop (set goal → block → sessions → evaluation → next block)
+
+| Step | Rule | Code |
+|---|---|---|
+| Load | Baseline (4-week average of completed runs, idle days included) → per-week budgets → long-term destination (e.g. a 75 mpw goal sets the direction and a cap; it is never prescribed all at once). Historical peak sets the ramp rate, not a ceiling. Reaching the destination holds; a lower destination comes down 10%/week. | `core/load_policy.py` |
+| Fit | Easy days absorb whatever budget is left after the sessions actually placed. When a week can't hold its sessions it gives way in this order: long run → second quality day → easy-day length → number of easy days. Weeks are never padded to beat last week. 4 run days allow 1 workout; 3 allow none. Mileage and general goals get 1 threshold session. | `core/plan_validator.py`, `core/plan_engine.py` |
+| Validate | One validator for generation and every later change: budget, rest days, no hard-after-hard across weeks or against real hard runs just before the plan. The only allowed pair is a flagged ultra back-to-back. | `plan_validator.validate_plan` / `enforce_no_back_to_back_hard` |
+| Partial weeks | Days before the plan carry real miles (or 0); only the remainder is prescribed. | `generate_plan(completed_by_date, prior_hard_dates)` |
+| Evaluate | Policy `eval-v2`. Per-rep evidence plus every prescribed rep are required to advance or recalibrate. Whole-run averages are weak evidence. Fade is checked before speed. One lever per decision. Decisions are persisted with their evidence. | `core/workout_evaluator.py`, `api/plans._apply_feedback_effects` |
+| Adjust | Explicit actions only ("skip" never reschedules). Reschedules go to future, unrun, non-adjacent easy days, within the weekly budget, or get an explanation. Side effects are claimed atomically, so retries and duplicate submissions apply once. The original prescription is kept. | `api/plans.submit_feedback` |
+| Next block | The previous block (if it ended within a week) is assessed on completed vs planned miles, quality sessions done and feel, giving build / hold / reduce / recovery. Missing feedback isn't a bad rating, and missed miles aren't repaid. Deloads come from completed history (3 or 5 loaded weeks). Activation is atomic. | `core/block_assessment.py`, `load_policy.deload_due`, `api/plans.generate_training_plan` |
+| Explain | The coach runs after the deterministic decision and is given it, so its wording can't contradict what was applied. | `services/coach.py` |
+
+These numbers (ramp rates, 85%/60% completion thresholds, deload cadence, quality
+budget) are conservative Stride policy drawn from `docs/training-principles.md`.
+They are not universal science. `training-principles.md` allows advanced runners
+15–20% per week, while `CLAUDE.md` asks for "slightly faster than 10%". The engine
+uses 10–20% depending on how far below a prior peak the athlete is.
+
 ### Known shortcuts (deliberate for one athlete)
 
 - `user_id` is part of the URL and is `1` in the frontend (`lib/api.ts`). There's no per-user auth;

@@ -231,7 +231,9 @@ def generate_plan(
                 d.update({
                     "prescribed": False,
                     "type": "easy" if actual > 0 else "rest",
-                    "title": d["title"] if actual > 0 else "No run logged",
+                    # Never present a hypothetical prescription for a day that already happened
+                    "title": "Run (before this plan)" if actual > 0 else "No run logged",
+                    "description": None, "purpose": None,
                     "distance_miles": actual,
                     "warmup": None, "cooldown": None,
                 })

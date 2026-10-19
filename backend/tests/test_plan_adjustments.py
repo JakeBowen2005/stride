@@ -155,3 +155,18 @@ def test_failed_side_effects_release_the_claim(monkeypatch):
     monkeypatch.setattr(plans_api, "_apply_feedback_effects", real)
     r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8}).json()
     assert r["side_effects_applied"] is True  # retry applies exactly once
+
+
+def test_reschedule_respects_weekly_budget():
+    _plan([(0, "workout", "6x800m", 7), (2, "easy", "Easy Run", 3), (3, "easy", "Easy Run", 3),
+           (4, "easy", "Easy Run", 3), (6, "long_run", "Long", 8)])
+    db = SessionLocal()
+    p = db.query(Plan).filter(Plan.is_active == True).one()  # noqa: E712
+    p.load = json.dumps({"weekly_budgets": [25.0, 25.0]})  # 7+3+3+3+8=24; swapping a 3-mi easy for a 6.5-mi workout = 27.5 > 25.5, and easy days are already at 3 mi
+    db.commit()
+    db.close()
+    _run(0, 4)
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+        "feel_rating": 6, "swapped": True, "actual_workout_type": "easy", "desired_reschedule_type": "intervals",
+    }).json()
+    assert r["changes"][0]["change"] == "not_rescheduled" and "budget" in r["changes"][0]["reason"]

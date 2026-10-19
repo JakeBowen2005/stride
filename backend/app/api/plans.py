@@ -105,8 +105,11 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     # Assess the previous block (what was prescribed and actually run) — drives
     # build / hold / reduce / recovery for the next block's volume.
+    # Only a block that ended recently says anything about the coming one — a plan
+    # that ran out months ago is history, not evidence (the baseline already reflects it).
     prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
-    assessment = _assess_previous_block(prev_plan, db) if prev_plan else None
+    recent_cutoff = (params["start_date"] - timedelta(days=ASSESSMENT_MAX_GAP_DAYS)).isoformat()
+    assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
 
     # Determine block number — reuse on overlapping regeneration, increment on new block
     last_plan = db.query(Plan).filter(Plan.user_id == user_id).order_by(Plan.id.desc()).first()
@@ -502,8 +505,13 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
         choice = req.desired_reschedule_type
         if choice in {"tempo", "intervals", "threshold"}:
             slot, why_not = _find_safe_slot(db_plan, feedback_date, db)
+            workout = _generate_swap_workout(user_id, choice, db_plan, db) if slot else None
+            if slot and not _fits_week_budget(db_plan, slot, workout.get("total_miles", pw.distance_miles), db):
+                slot, why_not = None, (
+                    "The extra workout doesn't fit that week's mileage budget without overloading it, "
+                    "so it was dropped rather than added on top."
+                )
             if slot:
-                workout = _generate_swap_workout(user_id, choice, db_plan, db)
                 _mark_changed(slot, f"Rescheduled {choice} workout after {feedback_date} was swapped.")
                 slot.type = "workout"
                 slot.title = workout["name"]
@@ -555,6 +563,38 @@ def _decision_summary(evaluation: dict | None, changes: list[dict]) -> str | Non
     return "\n".join(parts) or None
 
 
+def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db: Session) -> bool:
+    """Would putting new_miles on slot keep its week within budget? Unrun easy days in
+    that week may shrink (down to 3 mi) to make room; the week's total never grows."""
+    from app.core.plan_validator import BUDGET_OVER_TOLERANCE, MIN_EASY
+
+    budgets = (json.loads(db_plan.load) or {}).get("weekly_budgets", []) if db_plan.load else []
+    if not (0 < slot.week_number <= len(budgets)):
+        return True  # legacy plan without budgets: neighbours were still checked
+    budget = budgets[slot.week_number - 1]
+    week = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == db_plan.id, PlannedWorkout.week_number == slot.week_number
+    ).all()
+    total = sum(d.distance_miles for d in week) - slot.distance_miles + new_miles
+    over = total - (budget + BUDGET_OVER_TOLERANCE)
+    if over <= 0:
+        return True
+    today = date.today().isoformat()
+    flexible = [d for d in week if d is not slot and d.type == "easy" and d.date > today and not d.activity_id]
+    room = sum(max(0.0, d.distance_miles - MIN_EASY) for d in flexible)
+    if room < over:
+        return False
+    for d in flexible:  # take the excess from the longest easy days first
+        if over <= 0:
+            break
+        cut = min(over, max(0.0, d.distance_miles - MIN_EASY))
+        if cut > 0:
+            _mark_changed(d, "Shortened to make room for a rescheduled workout within the weekly budget.")
+            d.distance_miles = round((d.distance_miles - cut) * 2) / 2
+            over -= cut
+    return True
+
+
 def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[PlannedWorkout | None, str | None]:
     """A future easy day with no run yet, on a non-rest day, with no hard day (planned
     workout, long run or race — or a real hard run) on either side. Never falls back
@@ -579,6 +619,7 @@ def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[Planne
 
 
 HARD_ACTIVITY_TYPES = {"workout", "race", "long_run"}
+ASSESSMENT_MAX_GAP_DAYS = 7  # assess the previous block only if it ended within a week of the new one
 
 
 def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
