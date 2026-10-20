@@ -13,11 +13,12 @@ import sys
 import time
 
 ROOT=Path(__file__).resolve().parents[1]
+SCENARIOS=sorted(p.stem for p in (ROOT/'demo/scenarios').glob('*.json'))
 
 def main():
     default=json.loads((ROOT/'demo/default-scenario.json').read_text())['scenario']
     parser=argparse.ArgumentParser()
-    parser.add_argument('scenario',nargs='?',default=default,choices=['sub3-marathon','sub17-5k','trail-100k'])
+    parser.add_argument('scenario',nargs='?',default=default,choices=SCENARIOS)
     args=parser.parse_args()
     for port in (3100,8100):
         with socket.socket() as sock:

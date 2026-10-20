@@ -126,6 +126,20 @@ def fit_week_to_budget(
                 total -= 0.5
             else:
                 i -= 1
+        # Low-volume weeks (easy floors vs a 28% long run): the long run is never
+        # shorter than an easy day. Half miles move from the longest easy day, so the
+        # week's total and its longest single run never grow.
+        if longs and longs[0]["type"] == "long_run" and longs[0]["distance_miles"] < max(d["distance_miles"] for d in e):
+            lr = longs[0]
+            while lr["distance_miles"] < max(d["distance_miles"] for d in e):
+                d = max(e, key=lambda x: x["distance_miles"])
+                if d["distance_miles"] - 0.5 < MIN_EASY_FLOOR:
+                    break
+                d["distance_miles"] -= 0.5
+                lr["distance_miles"] += 0.5
+            if restructure_long:
+                lr.update(restructure_long(lr["distance_miles"]))
+            notes.append(f"Long run set to {lr['distance_miles']:g} mi so it is not shorter than the easy days (same weekly total).")
 
     total = locked + sum(d["distance_miles"] for d in live)
     if total > budget + BUDGET_OVER_TOLERANCE:
@@ -209,7 +223,8 @@ def validate_plan(
         scheduled = sum(d["distance_miles"] for d in w["days"])
         if budget is not None and not has_race and scheduled > budget + BUDGET_OVER_TOLERANCE:
             problems.append({"code": "over_budget", "date": w["days"][0]["date"],
-                             "message": f"Week {w.get('week_number')}: {scheduled:.1f} mi scheduled vs {budget:.1f} mi budget"})
+                             "message": f"That would put week {w.get('week_number')} at {scheduled:.1f} mi, over its {budget:.1f} mi budget. "
+                                        "Pick a shorter option or shorten another day that week."})
 
     for d in all_days:
         if not d.get("prescribed", True):

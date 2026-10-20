@@ -1,9 +1,9 @@
 "use client";
 
 import { CoachingReview } from "@/components/coaching-review";
+import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
-import { TrainingProgression, type QualityProgression } from "@/components/training-progression";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
 import { useState, useEffect, useCallback } from "react";
@@ -16,7 +16,8 @@ import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
 import { SYNC_EVENT } from "@/components/garmin-sync";
 import { formatDateShort, localDateStr } from "@/lib/format";
-import type { PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { ExecutedWorkout, PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
 
 interface ApiPlanDay {
@@ -35,6 +36,7 @@ interface ApiPlanDay {
   adjustment_note?: string | null;
   prescription?: Workout["prescription"];
   actual?: {
+    workout?: ExecutedWorkout | null;
     distance_miles: number;
     avg_pace: string | null;
     duration_seconds: number;
@@ -72,7 +74,7 @@ interface ApiWeek {
 interface ApiPlan {
   id: number;
   preview?: boolean;
-  quality_policy?: QualityProgression | null;
+  quality_policy?: { stage: string } | null;
   start_date: string;
   end_date: string;
   block_number: number;
@@ -167,9 +169,13 @@ export default function PlanPage() {
   const [noPlan, setNoPlan] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [coachRequest, setCoachRequest] = useState<{ concern: string; nonce: number } | null>(null);
+  const [coachOpen, setCoachOpen] = useState(true);
 
   useEffect(() => {
     getJson<{ units: Units }>(`/users/${USER_ID}`).then((u) => { if (u) setUnits(u.units); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
+    getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`).then((s) => setAiConfigured(s?.configured ?? false)).catch(() => setAiConfigured(false));
   }, []);
 
   const fetchPlan = useCallback(async () => {
@@ -338,6 +344,21 @@ export default function PlanPage() {
             <span>{plan.preview ? "Draft for review" : "Approved block · log runs and feel ratings to adjust it as you go"}</span>
           </div>
         </div>
+        {!plan.preview && (
+          <PlanOptionsDialog
+            aiConfigured={aiConfigured}
+            busy={generating}
+            nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
+            onAskCoach={(concern) => {
+              setCoachRequest({ concern, nonce: Date.now() });
+              setCoachOpen(true);
+              requestAnimationFrame(() => document.getElementById("plan-coach")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
+            onLighter={() => generatePlan(true)}
+            onRevise={() => generatePlan()}
+            onNextBlock={() => generatePlan(false, "next")}
+          />
+        )}
       </div>
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
@@ -351,15 +372,13 @@ export default function PlanPage() {
         </div>
       </Panel>}
 
-      <div className="panel grid grid-cols-2 divide-x divide-y divide-[#2a2a2a]/15 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-        <StatCell label="Last full wk" value={distance(plan.load?.recent_week_miles)} sub={unit} />
-        <StatCell label="4-wk avg" value={distance(plan.load?.baseline)} sub={`${unit}/week`} />
+      <div className="panel grid grid-cols-2 divide-x divide-[#2a2a2a]/15 sm:grid-cols-4">
         {weekTotals.slice(0, 2).map((t, i) => (
-          <StatCell key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
+          <StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
             sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} />
         ))}
-        <StatCell label="Experience" value={plan.athlete?.experience_level ? plan.athlete.experience_level[0].toUpperCase() + plan.athlete.experience_level.slice(1) : undefined} sub={plan.quality_policy ? `${plan.quality_policy.stage} quality stage` : undefined} />
-        <StatCell label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
+        <StatCell size="sm" label="4-wk avg" value={distance(plan.load?.baseline)} sub={`${unit}/week`} />
+        <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
           sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} tone="var(--type-easy)" />
       </div>
 
@@ -371,20 +390,52 @@ export default function PlanPage() {
               if (!window.matchMedia("(min-width: 1024px)").matches) requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ block: "start" }));
             }} />
           </Panel>
-          <div className="order-3 min-w-0 space-y-3 lg:order-none">
-          {plan.quality_policy && <TrainingProgression key={`${plan.id}-${plan.quality_policy.stage}`} policy={plan.quality_policy} experience={plan.athlete?.experience_level} />}
-          <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} />
-          {plan.notes.length > 0 && (
-            <Panel label="Plan notes">
-              <div className="space-y-1">
-                {plan.notes.map((note, i) => <p key={i} className="text-sm leading-relaxed text-muted-foreground">{note}</p>)}
+          <div id="plan-coach" className="panel order-3 min-w-0 scroll-mt-16 lg:order-none">
+            <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
+              className="panel-head w-full text-left hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
+              <span>Coach perspective</span>
+              <span aria-hidden="true" className="meta inline-flex items-center gap-1">
+                {coachOpen ? "Hide" : "Show"}<span className={cn("inline-block transition-transform", coachOpen && "rotate-180")}>▾</span>
+              </span>
+            </button>
+            {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
+            <div id="plan-coach-body" hidden={!coachOpen} className="px-3 py-2.5">
+              <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
+            </div>
+          </div>
+          {/* Reference panels sit under the coach so both columns end near the same height. */}
+          <div className="order-4 grid min-w-0 items-stretch gap-3 sm:grid-cols-2 lg:order-none [&>section]:h-full">
+            {changes.length === 0 && !plan.assessment?.reasons?.length ? (
+              <Panel label="Change log" meta="No changes yet" bodyClassName="hidden">{null}</Panel>
+            ) : <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined} bodyClassName="px-3 py-2">
+              <ul className="space-y-1.5 text-sm">
+                {changes.map((w) => (
+                  <li key={w.date}>
+                    <button type="button" className="text-left hover:underline" onClick={() => setSelectedDate(w.date)}>
+                      <span className="font-mono text-xs font-semibold">{formatDateShort(w.date)}</span>{" "}
+                      <span className="text-muted-foreground">{w.adjustment_note}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
+            </Panel>}
+            <Panel label="Pacing guide" meta={`per ${unit}`} bodyClassName="px-3 py-2">
+              <div className="space-y-0.5 text-[13px]">
+                {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+                  <div key={label} className="flex items-baseline justify-between gap-3">
+                    <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
+                    <span className="num shrink-0">{paceInUnits(value, units)}/{unit}</span>
+                  </div>
+                ))}
               </div>
             </Panel>
-          )}
           </div>
         </div>
 
-        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:order-none">
+        {/* On desktop the inspector stays in view and scrolls on its own, so an open Replace menu
+            never stretches the page and leaves the calendar column empty. */}
+        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:sticky lg:top-3 lg:order-none lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:overscroll-contain">
           {selected && (
             <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">
               <PlanDay
@@ -399,40 +450,6 @@ export default function PlanPage() {
               />
             </Panel>
           )}
-          <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined}>
-            {changes.length === 0 && !plan.assessment?.reasons?.length && <p className="text-sm text-muted-foreground">No changes yet. Skips, swaps and feedback adjustments appear here.</p>}
-            <ul className="space-y-1.5 text-sm">
-              {changes.map((w) => (
-                <li key={w.date}>
-                  <button type="button" className="text-left hover:underline" onClick={() => setSelectedDate(w.date)}>
-                    <span className="font-mono text-xs font-semibold">{formatDateShort(w.date)}</span>{" "}
-                    <span className="text-muted-foreground">{w.adjustment_note}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {plan.assessment?.reasons?.map((reason) => <p key={reason} className="mt-2 border-t pt-2 text-xs text-muted-foreground">{reason}</p>)}
-          </Panel>
-          <Panel label="Pacing guide" meta={`per ${unit}`}>
-            <div className="space-y-1 text-sm">
-              {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
-                <div key={label} className="flex items-baseline justify-between gap-3">
-                  <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
-                  <span className="num shrink-0">{paceInUnits(value, units)}/{unit}</span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-          {!plan.preview && <Panel label="Plan options">
-            <div className="space-y-3 text-sm">
-              <p className="text-muted-foreground">Need to revise this block? Review a replacement using your latest training. Your approved sessions stay active until you approve the revision.</p>
-              <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Review revised current block</Button>
-              {nextBlockAvailable(plan.end_date, today) ? <div>
-                <p className="mb-2 text-muted-foreground">Your next block starts after {formatDateShort(plan.end_date)}.</p>
-                <Button disabled={generating} onClick={() => generatePlan(false, "next")}>Preview next block</Button>
-              </div> : <p className="text-muted-foreground">When this block ends, review the next one using your latest runs and feedback.</p>}
-            </div>
-          </Panel>}
         </div>
       </div>
     </div>
