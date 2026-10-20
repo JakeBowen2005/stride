@@ -648,7 +648,7 @@ def _build_week(
                     )
                 elif light_second:
                     day_assignments[wd] = "workout_speed"
-                    workout1 = light_speed_support(current_paces, workout_format)
+                    workout1 = light_speed_support(current_paces, workout_format, week_start=start_date, terrain=terrain)
                 else:
                     # Threshold later in the week
                     day_assignments[wd] = "workout_threshold"

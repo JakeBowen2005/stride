@@ -43,7 +43,7 @@ export function sessionLabel(type: string, title: string): string | null {
   if (type === "long_run") return "Long run";
   if (type !== "workout") return null;
   const t = title.toLowerCase();
-  if (/light fartlek|relaxed repetitions/.test(t)) return "Speed support";
+  if (/light (fartlek|pickups|steady)|relaxed (repetitions|strides)|controlled short hills/.test(t)) return "Speed support";
   if (/hill|climb/.test(t)) return "Hills";
   if (/\d+x(200|300|400|600|800|1k|1200|1mi|1 mile)|\d+x1mi/.test(t) || /sharpener/.test(t)) return "Intervals";
   if (/tempo|threshold|hard|sandwich|mp|pace run/.test(t)) return "Threshold";

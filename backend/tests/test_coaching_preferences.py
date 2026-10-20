@@ -33,8 +33,8 @@ def test_advanced_rebuild_allows_threshold_and_light_second_within_budget():
     for week, quality in zip(plan['weeks'], workouts(plan)):
         assert len(quality) == 2
         assert [d['prescription']['category'] for d in quality] == ['threshold', 'speed_support']
-        assert quality[1]['title'] == '8x1min Light Fartlek'
-        assert quality[1]['prescription']['segments'][0]['reps'] == 8
+        assert quality[1]['prescription']['template_id'] in {'fartlek_60','pickups_30'}
+        assert quality[1]['prescription']['segments'][0]['reps'] in {8,10}
         assert quality[1]['prescription']['segments'][0]['pace_range_sec_per_mile'] is None
         assert 'min easy' in quality[0]['warmup']
         assert week['target_mileage'] <= week['budget_miles'] + .5
@@ -166,3 +166,90 @@ def test_replacing_workout_honors_time_bookends_without_changing_intensity():
     changed=plan['weeks'][0]['days'][0]
     assert 'min easy' in changed['warmup']
     assert changed['prescription']['warmup']['duration_seconds']>0
+
+
+def test_support_catalog_rotates_stably_and_keeps_work_bounded():
+    from app.core.plan_engine import _build_current_paces
+    from app.core.quality_policy import light_speed_support
+    paces = _build_current_paces(540,None)
+    for fmt,expected in [('time',5),('distance',4)]:
+        chosen=[]
+        for n in range(expected):
+            start=date(2026,10,19)+timedelta(weeks=n)
+            wo=light_speed_support(paces,fmt,week_start=start)
+            assert wo == light_speed_support(paces,fmt,week_start=start)
+            data=wo['prescription']
+            chosen.append(data['template_id'])
+            assert data['category']=='speed_support' and data['pace_is_estimate_only']
+            assert data['segments'][0]['pace_range_sec_per_mile'] is None
+            spec=data['segments'][0]
+            estimate=paces['steady_pace'] if data['stimulus']=='aerobic_rhythm' else paces['interval_pace']
+            work_seconds=spec['reps']*(spec['duration_seconds'] or spec['distance_meters']/1609.34*estimate)
+            assert 0 < work_seconds <= 600
+            assert wo['total_miles']*1609.34 >= data['total_distance_meters']
+        assert len(set(chosen))==expected
+
+
+def test_hill_support_requires_explicit_terrain_and_has_flat_alternative():
+    from app.core.plan_engine import _build_current_paces
+    from app.core.quality_policy import light_speed_support
+    paces=_build_current_paces(540,None)
+    flat=[light_speed_support(paces,'time',week_start=date(2026,10,19)+timedelta(weeks=n)) for n in range(12)]
+    assert all(w['prescription']['stimulus']!='hills' for w in flat)
+    trail=[light_speed_support(paces,'time',week_start=date(2026,10,19)+timedelta(weeks=n),terrain='trail') for n in range(6)]
+    hills=[w for w in trail if w['prescription']['stimulus']=='hills']
+    assert hills and 'flat relaxed strides' in hills[0]['structure']
+
+
+def test_variety_survives_full_plan_fitting_across_calendar_weeks():
+    seen=set()
+    for fmt in ['time','distance']:
+        for n in range(6):
+            start=date(2026,10,19)+timedelta(weeks=n)
+            plan=build(workout_format=fmt,start_date=start,first_prescribe_date=start)
+            assert plan['violations']==[]
+            for week,work in zip(plan['weeks'],workouts(plan)):
+                assert len(work)==2
+                seen.add(work[1]['prescription']['template_id'])
+                assert week['target_mileage']<=week['budget_miles']+.5
+    assert len(seen)>=9
+
+
+def test_slow_distance_reference_falls_back_to_short_strides():
+    from app.core.plan_engine import _build_current_paces
+    from app.core.quality_policy import light_speed_support
+    paces=_build_current_paces(540,None)
+    paces['interval_pace']=1000
+    wo=light_speed_support(paces,'distance')
+    assert wo['prescription']['template_id']=='strides_20'
+
+
+@pytest.mark.parametrize('preview_state,swapped,excluded', [(None,False,True),('draft',False,False),
+    ('superseded',False,False),(None,True,False),('historical_revision',False,True)])
+def test_support_prose_cannot_recalibrate_an_unrelated_quality_pace(preview_state,swapped,excluded):
+    import json
+    from app.models.plan import Plan, PlannedWorkout
+    from app.core.workout_data import prescription, segment
+    from app.services.pace_calibrator import calibrate_paces
+    with SessionLocal() as db:
+        plan=Plan(user_id=1,start_date=(date.today()-timedelta(days=10)).isoformat(),end_date=date.today().isoformat(),
+                  is_active=preview_state in {None,'historical_revision'},preview_state=None if preview_state=='historical_revision' else preview_state)
+        db.add(plan);db.flush()
+        for n in [2,9]:
+            day=date.today()-timedelta(days=n)
+            db.add(Activity(user_id=1,source='manual',date=datetime.combine(day,datetime.min.time()),
+                distance_meters=8000,duration_seconds=2700,description='20min tempo @ 7:30/mi',average_pace_per_km=337.5))
+            db.add(PlannedWorkout(plan_id=plan.id,date=day.isoformat(),week_number=1,day_name='x',type='workout',
+                title='10min Light Steady Finish',distance_miles=5,swapped=swapped,
+                prescription=json.dumps(prescription('speed_support','continuous',[segment(seconds=600)]))))
+        db.commit()
+        if preview_state == 'historical_revision':
+            revised=Plan(user_id=1,start_date=plan.start_date,end_date=plan.end_date,
+                         prescribed_from=date.today().isoformat(),is_active=True)
+            db.add(revised);db.flush()
+            for n in [2,9]:
+                db.add(PlannedWorkout(plan_id=revised.id,date=(date.today()-timedelta(days=n)).isoformat(),
+                    week_number=1,day_name='x',type='easy',title='Run (before this plan)',distance_miles=5))
+            db.commit()
+        calibrated=calibrate_paces(1,db)
+        assert ('tempo_pace' not in calibrated) == excluded

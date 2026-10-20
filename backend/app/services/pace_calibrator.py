@@ -10,6 +10,7 @@ import statistics
 import math
 from datetime import datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity
@@ -40,6 +41,20 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
     cutoff = datetime.now() - timedelta(days=window)
     samples = {key: [] for key in ("interval_pace", "tempo_pace", "threshold_pace", "strides_pace")}
     seen = set()
+    activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff).order_by(Activity.date.desc()).all()
+    # Effort-based support is not evidence for threshold/VO2/flat sprint pace.
+    # Use the latest APPROVED prescription per date, including historical blocks;
+    # an unapproved/superseded draft must never suppress completed evidence.
+    latest_days = {}
+    prescribed_days = db.query(PlannedWorkout).join(Plan).filter(
+        Plan.user_id == user_id, Plan.preview_state.is_(None),
+        PlannedWorkout.date >= func.coalesce(Plan.prescribed_from, Plan.start_date),
+        PlannedWorkout.date >= cutoff.date().isoformat()).order_by(PlannedWorkout.id.desc()).all()
+    for row in prescribed_days:
+        latest_days.setdefault(row.date, row)
+    support_dates = {day for day, row in latest_days.items()
+                     if not row.swapped and (loads(row.prescription) or {}).get('category') == 'speed_support'}
+    seen.update(a.id for a in activities if a.date.date().isoformat() in support_dates)
     rows = db.query(PlannedWorkout).join(Plan).filter(Plan.user_id == user_id, PlannedWorkout.execution.isnot(None), PlannedWorkout.date >= cutoff.date().isoformat()).order_by(PlannedWorkout.id.desc()).all()
     for row in rows:
         execution, prescribed = loads(row.execution), loads(row.prescription)
@@ -68,7 +83,6 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
         for key, paces in by_category.items():
             samples[key].append((age, statistics.median(paces), ids))
 
-    activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff).order_by(Activity.date.desc()).all()
     for act in activities:
         if act.id in seen or not act.description:
             continue
