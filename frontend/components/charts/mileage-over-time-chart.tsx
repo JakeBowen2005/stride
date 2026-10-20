@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,7 +14,9 @@ import type { WeeklyMileage } from "@/lib/types";
 export function MileageOverTimeChart({ data }: { data: WeeklyMileage[] }) {
   const formatted = data.map((d) => ({
     ...d,
-    label: new Date(d.week_start).toLocaleDateString("en-US", {
+    actual: d.actual ?? 0,
+    // Noon local time so a YYYY-MM-DD week start doesn't shift a day west of UTC
+    label: new Date(`${d.week_start.slice(0, 10)}T12:00:00`).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     }),
@@ -22,31 +24,49 @@ export function MileageOverTimeChart({ data }: { data: WeeklyMileage[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={formatted}>
-        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+      <LineChart data={formatted} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
         <XAxis
           dataKey="label"
           tick={{ fontSize: 11 }}
           className="fill-muted-foreground"
+          interval="preserveStartEnd"
+          minTickGap={24}
         />
-        <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+        <YAxis
+          tick={{ fontSize: 11 }}
+          className="fill-muted-foreground"
+          domain={[0, "auto"]}
+          allowDecimals={false}
+          width={40}
+        />
         <Tooltip
+          cursor={{ stroke: "var(--color-border)" }}
           contentStyle={{
             backgroundColor: "var(--color-card)",
             border: "1px solid var(--color-border)",
             borderRadius: "var(--radius-md)",
             fontSize: 12,
           }}
+          separator=""
+          labelFormatter={() => ""}
+          labelStyle={{ display: "none" }}
+          formatter={(v, _name, item) => [
+            `${item.payload.label} · ${typeof v === "number" ? v.toFixed(1) : v} mi`,
+            "",
+          ]}
         />
-        <Area
-          type="monotone"
+        <Line
+          type="linear"
           dataKey="actual"
-          stroke="var(--color-foreground)"
-          fill="var(--color-foreground)"
-          fillOpacity={0.1}
+          stroke="var(--viz-series-1)"
           strokeWidth={2}
+          fill="none"
+          dot={{ r: 3, fill: "var(--viz-series-1)", strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+          isAnimationActive={false}
         />
-      </AreaChart>
+      </LineChart>
     </ResponsiveContainer>
   );
 }
