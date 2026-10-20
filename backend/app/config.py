@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openai_coach_model: str = "gpt-5.4-mini"
     openai_coach_daily_limit: int = 12
     openai_coach_timeout_seconds: float = 35
+    openai_auto_reviews: bool = True
     coach_model: str = "claude-haiku-5-5"
     athlete_profile_doc: str = "athlete-profile-jake.md"  # hand-written profile for default_user_id
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"

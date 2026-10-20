@@ -509,7 +509,8 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
 class SessionAction(BaseModel):
     action: Literal["skip", "replace", "move"]
     target_date: date | None = None
-    replacement: Literal["easy", "rest", "threshold", "intervals"] | None = None
+    replacement: Literal["easy", "rest", "threshold", "intervals", "long_run"] | None = None
+    option_id: str | None = Field(default=None, max_length=64)
     distance_miles: float | None = Field(default=None, gt=0, le=30, allow_inf_nan=False)
     reason: str = Field(default="Changed by athlete", max_length=500)
 
@@ -525,7 +526,13 @@ def _validate_schedule(plan: Plan, db: Session):
     rest = [names.index(d.strip()) for d in rest_days if d.strip() in names]
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
     acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=1)).isoformat(), plan.end_date, db)
-    budgets = (json.loads(plan.load) if plan.load else {}).get("weekly_budgets", [])
+    load = json.loads(plan.load or "{}")
+    budgets = load.get("weekly_budgets", [])
+    baseline = load.get("baseline")
+    if baseline is None:
+        baseline = json.loads(plan.athlete_snapshot or "{}").get("current_weekly_mileage")
+    if baseline is None:
+        baseline = analyze_athlete(plan.user_id, db).get("current_fitness", {}).get("weekly_mileage_4w_avg", 0)
     weeks = {}
     if not budgets:
         # Old blocks have no saved load policy. Their original weekly total is the
@@ -541,14 +548,24 @@ def _validate_schedule(plan: Plan, db: Session):
             w["budget_miles"] = budgets[row.week_number - 1]
         actuals = acts.get(row.date, [])
         # Completed work cannot be altered to make a proposed change fit.
-        w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, 0) for a in actuals) else row.type,
+        w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, baseline) for a in actuals) else row.type,
                            "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
                            "b2b": bool(row.b2b),
                            "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
-    prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, 0) for a in runs)}
+    prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
     errors = validate_plan(list(weeks.values()), rest, prior)
     if errors:
         raise HTTPException(409, detail="; ".join(e["message"] for e in errors))
+
+
+@router.get("/{user_id}/sessions/{session_date}/options")
+def session_options(user_id: int, session_date: date, category: Literal["threshold", "intervals", "long_run"], db: Session = Depends(get_db)):
+    from app.services.session_options import build_session_options
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if not plan: raise HTTPException(404, "No active plan")
+    row = db.query(PlannedWorkout).filter_by(plan_id=plan.id,date=session_date.isoformat()).first()
+    if not row: raise HTTPException(404, "Session not found")
+    return build_session_options(plan,row,category,db)
 
 
 @router.post("/{user_id}/sessions/{session_date}")
@@ -569,6 +586,16 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
     if req.action != "skip" and source.date < date.today().isoformat():
         raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
     try:
+        if req.action == 'replace' and req.replacement in {'threshold','intervals','long_run'}:
+            from app.services.session_options import apply_option, build_session_options
+            option_id = req.option_id
+            if not option_id:
+                menu = build_session_options(plan,source,req.replacement,db)
+                if not menu['options']: raise HTTPException(409, '; '.join(menu['reasons']))
+                option_id = menu['options'][0]['id']  # legacy clients still get a policy-validated option
+            apply_option(plan,source,req.replacement,option_id,req.reason,db)
+            db.commit()
+            return {'date':source.date,'session_status':source.session_status,'moved_to':source.moved_to}
         if req.action == "move":
             target = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=req.target_date.isoformat() if req.target_date else "").first()
             if not target or target.date <= source.date or target.date < date.today().isoformat():
@@ -588,23 +615,13 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             if not req.replacement:
                 raise HTTPException(422, "Choose a replacement")
             _mark_changed(source, req.reason)
-            if req.replacement in {"threshold", "intervals"}:
-                workout = _generate_swap_workout(user_id, req.replacement, plan, db, source.date)
-                if not _fits_week_budget(plan, source, workout['total_miles'], db):
-                    raise HTTPException(409, "This interval/threshold session cannot fit the week's budget without cutting protected training. Choose a shorter or easy session.")
-                source.type, source.title = "workout", workout["name"]
-                source.description, source.purpose = workout["structure"], workout["purpose"]
-                source.distance_miles = workout["total_miles"]
-                source.warmup, source.cooldown = workout.get("warmup"), workout.get("cooldown")
-                source.prescription = json.dumps(workout.get("prescription"))
-            else:
-                source.type = req.replacement
-                source.title = "Rest Day" if source.type == "rest" else "Easy Run"
-                source.description = "Rest and recover." if source.type == "rest" else "Conversational effort, truly easy."
-                source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, 6)
-                source.warmup = source.cooldown = None
-                source.prescription = json.dumps(day_prescription({"type": source.type, "distance_miles": source.distance_miles, "description": source.description}))
-                source.b2b = False
+            source.type = req.replacement
+            source.title = "Rest Day" if source.type == "rest" else "Easy Run"
+            source.description = "Rest and recover." if source.type == "rest" else "Conversational effort, truly easy."
+            source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, 6)
+            source.warmup = source.cooldown = None
+            source.prescription = json.dumps(day_prescription({"type": source.type, "distance_miles": source.distance_miles, "description": source.description}))
+            source.b2b = False
             source.b2b = False
             source.session_status = "replaced"
         if req.action in {"skip", "move"}:

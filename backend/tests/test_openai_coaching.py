@@ -69,6 +69,7 @@ def test_review_options_are_bounded_and_dry_runs_do_not_mutate(monkeypatch):
         pw=db.query(PlannedWorkout).filter_by(plan_id=plan,date=day.isoformat()).one()
         assert pw.title=='2x6min Threshold' and pw.original_prescription is None and pw.session_status is None
         for option in calls[0]['candidates']:
+            if option.get('session_option_id'): continue  # expanded menus have independently tested dose limits
             new=option['replacement'];assert new['distance_miles']<=6
             if new['type']=='workout':
                 p=json.loads(new['prescription']);assert p['category']=='threshold' and p['progression_eligible'] is False
@@ -339,3 +340,17 @@ def test_feedback_reviews_work_activity_not_larger_warmup(monkeypatch):
     r=client.post(f'/api/plans/1/feedback/{date.today()}',json={'feel_rating':7,'feel_notes':'Controlled reps'})
     assert r.status_code==200 and calls[0]['run']['id']==work_id
     assert calls[0]['run']['feel']==7
+
+
+def test_opening_plan_does_not_stale_automatic_review(monkeypatch):
+    plan,act,_=seed();fake(monkeypatch)
+    with SessionLocal() as db:
+        p=db.get(Plan,plan);p.start_date=date.today().isoformat();p.prescribed_from=date.today().isoformat()
+        db.add(PlannedWorkout(plan_id=plan,date=date.today().isoformat(),day_name='x',week_number=1,type='easy',title='Easy',distance_miles=5))
+        p.load=json.dumps({'weekly_budgets':[40]});db.commit()
+    initial=review(plan,act).json();assert initial['status']=='ready'
+    assert client.get('/api/plans/1/current').status_code==200
+    latest=client.get(f'/api/coaching/1/latest?activity_id={act}').json()
+    assert latest['id']==initial['id'] and latest['stale'] is False
+    with SessionLocal() as db:db.get(Activity,act).feel_rating=2;db.commit()
+    assert client.get(f'/api/coaching/1/latest?activity_id={act}').json()['stale'] is True

@@ -69,6 +69,7 @@ class WeekPhase:
     def to_dict(self) -> dict:
         return {
             "phase": self.phase,
+            "max_workouts": self.max_workouts,
             "label": self.label,
             "weeks_to_race": self.weeks_to_race,
             "back_to_back": self.back_to_back,

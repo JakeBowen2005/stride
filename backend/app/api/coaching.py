@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.coaching import CoachingReview
+from app.models.coaching import CoachingReview, CoachingJob
 from app.models.plan import Plan, PlannedWorkout
 from app.services.coaching import build_context, review_training, serialize_review
 
@@ -40,6 +40,13 @@ def status(user_id: int, db: Session = Depends(get_db)):
 @router.post('/{user_id}/review')
 def create_review(user_id: int, req: ReviewRequest, db: Session = Depends(get_db)):
     return review_training(user_id, db, req.activity_id, req.plan_id)
+
+
+@router.get('/{user_id}/jobs/{activity_id}')
+def job_status(user_id: int, activity_id: int, db: Session = Depends(get_db)):
+    row = db.query(CoachingJob).filter_by(user_id=user_id,activity_id=activity_id).order_by(CoachingJob.id.desc()).first()
+    return {'enabled':settings.openai_auto_reviews, 'status':row.status if row else None,
+            'attempts':row.attempts if row else 0, 'message':row.last_error if row else None}
 
 
 @router.get('/{user_id}/latest')
@@ -84,10 +91,16 @@ def accept(user_id: int, review_id: int, req: AcceptRequest, db: Session = Depen
         raise HTTPException(422, 'Unknown suggestion')
     row = db.query(PlannedWorkout).filter_by(id=candidate['session_id'], plan_id=plan.id).first()
     if (not row or row.date < max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
-            or row.type != 'workout' or row.activity_id or row.moved_to
+            or (row.type != 'workout' and not candidate.get('session_option_id')) or row.activity_id or row.moved_to
             or _get_activities_for_date(row.date, user_id, db)):
         raise HTTPException(409, 'This session is no longer editable')
     try:
+        if candidate.get('session_option_id'):
+            from app.services.session_options import apply_option
+            apply_option(plan,row,candidate['category'],candidate['session_option_id'],f'Athlete accepted AI review #{review.id}',db)
+            review.applied_candidate_id=req.candidate_id
+            db.commit()
+            return {'applied':True,'date':row.date,'already_applied':False}
         _mark_changed(row, f'Athlete accepted AI review #{review.id}, option {candidate["id"]}.')
         for key, value in candidate['replacement'].items():
             setattr(row, key, value)

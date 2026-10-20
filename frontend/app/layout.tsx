@@ -39,6 +39,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        {process.env.STRIDE_DEMO_SCENARIO && <div role="status" className="bg-primary px-4 py-2 text-center text-xs text-primary-foreground">Synthetic demo: {process.env.STRIDE_DEMO_SCENARIO} · Garmin and AI calls disabled · Your personal database is separate</div>}
         <Nav />
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-6">
           {children}

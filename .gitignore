@@ -33,3 +33,6 @@ Thumbs.db
 
 # Garmin session tokens (created by backend/garmin_login.py)
 .garmin/
+
+# Isolated synthetic demo data and copied frontend/build output
+.demo/

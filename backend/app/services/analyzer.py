@@ -28,6 +28,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
             "date": a.date,
             "distance_miles": a.distance_meters / 1609.34,
             "distance_km": a.distance_meters / 1000,
+            "workout_type": a.workout_type,
             "duration_seconds": a.duration_seconds,
             "pace_per_mile_seconds": (a.average_pace_per_km * 1.60934) if a.average_pace_per_km else None,
             "pace_per_km_seconds": a.average_pace_per_km,
@@ -90,8 +91,10 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     # --- Pace Analysis ---
     valid_pace = df[df["pace_per_mile_seconds"].notna() & (df["pace_per_mile_seconds"] > 300)]  # faster than 5:00/mi sanity check
 
-    # Easy pace estimate (runs between 3-8 miles, slower half of paces)
-    easy_runs = valid_pace[(valid_pace["distance_miles"] >= 3) & (valid_pace["distance_miles"] <= 8)]
+    # High-volume athletes often run 9+ mile EASY days. A 3–8 mile-only
+    # heuristic can otherwise select their shorter threshold/interval workouts.
+    explicit_easy = valid_pace[valid_pace["workout_type"].isin(["easy", "recovery"])]
+    easy_runs = explicit_easy if not explicit_easy.empty else valid_pace[(valid_pace["distance_miles"] >= 3) & (valid_pace["distance_miles"] <= 8)]
     if not easy_runs.empty:
         easy_pace_seconds = easy_runs["pace_per_mile_seconds"].quantile(0.6)  # 60th percentile = typical easy
     else:
@@ -102,7 +105,8 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     workout_pace_seconds = valid_pace["pace_per_mile_seconds"].quantile(0.15)  # top 15%
 
     # Recent easy pace (last 4 weeks)
-    recent_easy = recent_4w[
+    recent_explicit = recent_4w[recent_4w["workout_type"].isin(["easy", "recovery"]) & recent_4w["pace_per_mile_seconds"].notna()]
+    recent_easy = recent_explicit if not recent_explicit.empty else recent_4w[
         (recent_4w["pace_per_mile_seconds"].notna()) &
         (recent_4w["distance_miles"] >= 3) &
         (recent_4w["distance_miles"] <= 8)
@@ -241,8 +245,7 @@ def _format_pace(seconds_per_mile: float | None) -> str | None:
     """Convert seconds per mile to mm:ss format."""
     if seconds_per_mile is None or not math.isfinite(seconds_per_mile):
         return None
-    minutes = int(seconds_per_mile // 60)
-    secs = int(seconds_per_mile % 60)
+    minutes, secs = divmod(round(seconds_per_mile), 60)
     return f"{minutes}:{secs:02d}"
 
 

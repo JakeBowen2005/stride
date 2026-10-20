@@ -82,8 +82,10 @@ def build_context(user_id, db, activity_id=None, plan_id=None):
         Activity.date >= datetime.combine(today-timedelta(days=56), datetime.min.time()),
         Activity.date < datetime.combine(today+timedelta(days=1), datetime.min.time())).order_by(Activity.date, Activity.id).all()
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all() if plan else []
-    row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'status': r.session_status,
-                 'moved_to': r.moved_to, 'moved_from': r.moved_from, 'activity_id': r.activity_id,
+    actuals_by_day = {}
+    for run in runs:actuals_by_day.setdefault(run.date.date().isoformat(),[]).append(run)
+    row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'status': 'completed' if actuals_by_day.get(r.date) else r.session_status,
+                 'moved_to': r.moved_to, 'moved_from': r.moved_from, 'activity_id': max(actuals_by_day[r.date],key=lambda a:a.distance_meters).id if actuals_by_day.get(r.date) else r.activity_id,
                  'feel': r.feel_rating, 'notes': r.feel_notes, 'evaluation': loads_json(r.evaluation)} for r in rows]
     matched = None
     if activity:
@@ -98,6 +100,11 @@ def build_context(user_id, db, activity_id=None, plan_id=None):
         evaluation = loads_json(matched.evaluation)
         if contract:
             execution = execution_from_activities(_get_activities_for_date(matched.date, user_id, db), contract)
+            if evaluation is None and contract['category'] in {'threshold', 'intervals'}:
+                from app.core.workout_evaluator import evaluate_workout
+                evaluation = evaluate_workout(None, None, None, matched.type, None, matched.title,
+                    matched.feel_rating if matched.feel_rating is not None else activity.feel_rating, contract, execution).to_dict()
+                evaluation['provisional'] = True  # explanation only; no progression or feedback effects applied
     wellness = db.query(DailyWellness).filter(DailyWellness.user_id == user_id,
         DailyWellness.date >= (today-timedelta(days=6)).isoformat(), DailyWellness.date <= today.isoformat()).order_by(DailyWellness.date).all()
     wellness_data = [{key: getattr(w, key) for key in ('date','sleep_seconds','sleep_score','hrv_last_night',

@@ -25,3 +25,19 @@ class CoachingReview(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     applied_candidate_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class CoachingJob(Base):
+    __tablename__ = 'coaching_jobs'
+    __table_args__ = (UniqueConstraint('user_id', 'activity_id', 'version'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    activity_id: Mapped[int] = mapped_column(ForeignKey('activities.id'))
+    version: Mapped[str] = mapped_column(String(30), default='sync-v1')
+    status: Mapped[str] = mapped_column(String(20), default='queued', index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    review_id: Mapped[int | None] = mapped_column(ForeignKey('coaching_reviews.id'), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
