@@ -26,7 +26,7 @@ class User(Base):
     years_running: Mapped[float | None] = mapped_column(Float)
     current_weekly_mileage: Mapped[float | None] = mapped_column(Float)
     peak_weekly_mileage: Mapped[float | None] = mapped_column(Float)
-    experience_level: Mapped[str | None] = mapped_column(String(20))  # beginner, intermediate, advanced
+    experience_level: Mapped[str | None] = mapped_column(String(20))  # beginner, intermediate, advanced, expert
 
     # PRs (stored in seconds)
     pr_5k: Mapped[float | None] = mapped_column(Float)

@@ -17,6 +17,7 @@ CLAUDE.md (≤10% for beginners and comebacks, faster only while well below a
 previous peak). They are conservative defaults, not universal science.
 """
 
+from app.core.experience import experienced, experience_policy
 from dataclasses import dataclass, field
 import math
 
@@ -73,13 +74,13 @@ def _finite(x) -> float:
 def ramp_rate(baseline: float, peak: float, experience: str, goal_type: str) -> float:
     if goal_type == "comeback":
         return RATE_COMEBACK
-    if experience == "advanced" and peak > 0:
+    if experienced(experience) and peak > 0:
         headroom = baseline / peak
         if headroom < 0.5:
             return RATE_ADVANCED_FAR_BELOW_PEAK
         if headroom < 0.75:
-            return RATE_ADVANCED_BELOW_PEAK
-        return RATE_ADVANCED_NEAR_PEAK
+            return .18 if experience == "expert" else RATE_ADVANCED_BELOW_PEAK
+        return .12 if experience == "expert" else RATE_ADVANCED_NEAR_PEAK
     if experience == "intermediate":
         return RATE_INTERMEDIATE
     return RATE_BEGINNER
@@ -95,7 +96,7 @@ def default_destination(goal_type: str, target_weekly_mileage: float | None) -> 
 
 # Consecutive loaded weeks before considering a deload. Novice defaults retained;
 # advanced uses the longer end of the existing 5-7-week guidance, per athlete preference.
-DELOAD_AFTER_WEEKS = {"beginner": 3, "intermediate": 3, "advanced": 7}
+DELOAD_AFTER_WEEKS = {level: experience_policy(level).deload_after for level in ("beginner","intermediate","advanced","expert")}
 DOWN_WEEK_RATIO = 0.85  # a lighter week versus the recent high resets accumulated load
 
 
@@ -156,7 +157,7 @@ def plan_load(
     # that the rolling average can lag current training. Do not chase one spike.
     history = (completed_weeks or [])[-4:]
     repeatable = sum(_finite(w) >= (recent or 0) * .8 for w in history) >= 2
-    if (experience == "advanced" and goal_type == "mileage" and assessment not in {"hold", "reduce", "recovery"}
+    if (experienced(experience) and goal_type == "mileage" and assessment not in {"hold", "reduce", "recovery"}
             and deload_week is None and recent and len(history) == 4 and all(_finite(w) > 0 for w in history)
             and baseline < recent <= baseline * 1.35 and repeatable):
         anchor = recent

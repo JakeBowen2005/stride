@@ -263,7 +263,9 @@ def test_mileage_goal_gets_one_threshold_session_not_5k_intervals():
 
 
 def test_5k_goal_still_gets_two_sessions_with_intervals():
-    p = plan(goal_type="race", goal_distance="5k", current_weekly_mileage=45)
+    from tests.test_quality_transition import READY
+    p = plan(goal_type="race", goal_distance="5k", current_weekly_mileage=45,
+             completed_weeks=[45]*8, weekly_run_days=[6]*4, recent_long_run_miles=10, quality_evidence=READY)
     titles = [d["title"] for d in p["weeks"][0]["days"] if d["type"] == "workout"]
     assert len(titles) == 2 and any("800" in t or "1K" in t or "mi" in t for t in titles)
 

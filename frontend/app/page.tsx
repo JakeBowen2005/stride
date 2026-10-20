@@ -82,7 +82,8 @@ export default function TodayPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{firstName ? `${greeting}, ${firstName}` : greeting}</h1>
+          <p className="eyebrow">Your daily training log</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{firstName ? `${greeting}, ${firstName}` : greeting}</h1>
           <p className="text-sm text-muted-foreground">
             {now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
             {goal?.description && ` · ${goal.description}`}

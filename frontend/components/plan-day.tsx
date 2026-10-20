@@ -1,12 +1,12 @@
 "use client";
 
+import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
-  formatDistance,
   formatDate,
   secondsToTime,
   localDateStr,
@@ -15,6 +15,7 @@ import type { Workout, DayFeedback } from "@/lib/types";
 
 interface PlanDayProps {
   workout: Workout;
+  units?: Units;
   isToday: boolean;
   expanded: boolean;
   onToggle: () => void;
@@ -22,14 +23,14 @@ interface PlanDayProps {
   readOnly?: boolean;
 }
 
-function ComparisonBadge({ diffMiles }: { diffMiles: number }) {
+function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units }) {
   const diff = Math.abs(diffMiles);
   if (diff <= 0.3) {
     return <Badge variant="secondary" className="text-xs">On distance</Badge>;
   }
   return (
     <Badge variant="secondary" className="text-xs">
-      Ran {diff.toFixed(1)} mi {diffMiles > 0 ? "long" : "short"}
+      Ran {distanceInUnits(diff, units)} {unitLabel(units)} {diffMiles > 0 ? "long" : "short"}
     </Badge>
   );
 }
@@ -42,6 +43,7 @@ export function sessionLabel(type: string, title: string): string | null {
   if (type === "long_run") return "Long run";
   if (type !== "workout") return null;
   const t = title.toLowerCase();
+  if (/light (fartlek|pickups|steady)|relaxed (repetitions|strides)|controlled short hills/.test(t)) return "Speed support";
   if (/hill|climb/.test(t)) return "Hills";
   if (/\d+x(200|300|400|600|800|1k|1200|1mi|1 mile)|\d+x1mi/.test(t) || /sharpener/.test(t)) return "Intervals";
   if (/tempo|threshold|hard|sandwich|mp|pace run/.test(t)) return "Threshold";
@@ -74,7 +76,9 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, readOnly }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, readOnly, units = "miles" }: PlanDayProps) {
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
+  const unit = unitLabel(units);
   const today = localDateStr();
   const isPast = workout.date < today;
   const hasActual = !!workout.actual;
@@ -87,7 +91,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
   // actually run shows underneath — Garmin's auto-names ("Fullerton Running") say little.
   const displayTitle = workout.title;
   const actualLine = hasActual
-    ? [actualWasWorkout ? actualWorkoutTitle : null, workout.actual?.name, workout.actual?.avg_pace ? `${workout.actual.avg_pace}/mi` : null]
+    ? [actualWasWorkout ? actualWorkoutTitle : null, workout.actual?.name, workout.actual?.avg_pace ? `${paceInUnits(workout.actual.avg_pace, units)}/${unit}` : null]
         .filter(Boolean)
         .join(" · ")
     : null;
@@ -98,9 +102,10 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
 
   return (
     <div
+      id={`session-${workout.id}`}
       className={cn(
-        "cursor-pointer rounded-md border p-3 transition-colors hover:bg-secondary/50",
-        isToday && "border-foreground",
+        "cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 hover:bg-secondary/50",
+        isToday && "border-primary bg-primary/5",
         hasActual && "bg-secondary/30",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
@@ -108,7 +113,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
       onClick={onToggle}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onToggle()}
+      aria-expanded={expanded}
+      onKeyDown={(e) => { if (e.target===e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onToggle(); } }}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -144,7 +150,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
               {hasActual && workout.actual
                 ? formatDistance(workout.actual.distance_miles)
                 : formatDistance(workout.distance_miles)}{" "}
-              mi
+              {unit}
             </span>
           )}
           {hasActual && (
@@ -178,7 +184,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What you did</span>
                   {workout.comparison && (
-                    <ComparisonBadge diffMiles={workout.comparison.distance_diff_miles} />
+                    <ComparisonBadge units={units} diffMiles={workout.comparison.distance_diff_miles} />
                   )}
                 </div>
 
@@ -186,12 +192,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Distance</span>
-                    <span className="font-mono">{formatDistance(workout.actual.distance_miles)} mi</span>
+                    <span className="font-mono">{formatDistance(workout.actual.distance_miles)} {unit}</span>
                   </div>
                   {workout.actual.avg_pace && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Pace</span>
-                      <span className="font-mono">{workout.actual.avg_pace}/mi</span>
+                      <span className="font-mono">{paceInUnits(workout.actual.avg_pace, units)}/{unit}</span>
                     </div>
                   )}
                   {workout.actual.average_heartrate && (
@@ -229,8 +235,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
                     {workout.actual.activities.map((a, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground pl-2">
                         <span>{a.name}</span>
-                        <span className="font-mono">{formatDistance(a.distance_miles)} mi</span>
-                        {a.avg_pace && <span className="font-mono">{a.avg_pace}/mi</span>}
+                        <span className="font-mono">{formatDistance(a.distance_miles)} {unit}</span>
+                        {a.avg_pace && <span className="font-mono">{paceInUnits(a.avg_pace, units)}/{unit}</span>}
                       </div>
                     ))}
                   </div>
@@ -251,7 +257,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Planned</span>
                   <div className="text-xs text-muted-foreground">
                     <span className="font-medium">{workout.title}</span>
-                    <span> — {formatDistance(workout.distance_miles)} mi</span>
+                    <span> — {formatDistance(workout.distance_miles)} {unit}</span>
                   </div>
                   {workout.description && (
                     <p className="text-xs text-muted-foreground">{workout.description}</p>

@@ -2,6 +2,7 @@
 
 import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect } from "react";
+import { ProfilePreferences } from "@/components/profile-preferences";
 import { GoalEditor } from "@/components/goal-editor";
 import { GarminConnectionCard } from "@/components/garmin-connection-card";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,6 +52,7 @@ interface AnalysisData {
 interface UserData {
   name: string | null;
   age: number | null;
+  experience_level?: string | null;
   units: string;
   workout_format?: string;
   days_per_week: number;
@@ -119,6 +121,8 @@ export default function SettingsPage() {
     );
   }
 
+  const unit = user?.units === 'km' ? 'km' : 'mi';
+  const distance = (miles: number) => (miles * (unit === 'km' ? 1.60934 : 1)).toFixed(1);
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Settings</h1>
@@ -126,13 +130,7 @@ export default function SettingsPage() {
       {/* Profile */}
       <Card>
         <CardContent className="space-y-4 pt-4">
-          <h2 className="text-sm font-medium">Profile</h2>
-          <div className="space-y-2 text-sm">
-            <Row label="Name" value={user?.name || "—"} />
-            <Row label="Age" value={user?.age ? String(user.age) : "Not set"} />
-            <Row label="Units" value={user?.units === "km" ? "Kilometers" : "Miles"} />
-            <Row label="Workout format" value={user?.workout_format === "time" ? "Time-based" : "Distance-based"} />
-          </div>
+          {user && <ProfilePreferences user={user} onSaved={setUser} />}
         </CardContent>
       </Card>
 
@@ -141,24 +139,21 @@ export default function SettingsPage() {
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Training</h2>
           <div className="space-y-2 text-sm">
-            <Row label="Days per week" value={user ? String(user.days_per_week) : "—"} />
-            <Row label="Rest day" value={titleList(user?.rest_days) || "None"} />
-            <Row label="Long run day" value={titleList(user?.long_run_day) || "—"} />
             <Row
               label="Current mileage (4wk avg)"
-              value={analysis ? `${analysis.current_fitness.weekly_mileage_4w_avg} mi/week` : "—"}
+              value={analysis ? `${distance(analysis.current_fitness.weekly_mileage_4w_avg)} ${unit}/week` : "—"}
             />
             <Row
               label="Peak mileage"
               value={
                 analysis
-                  ? `${analysis.current_fitness.peak_weekly_mileage} mi/week (${analysis.current_fitness.peak_week_date})`
+                  ? `${distance(analysis.current_fitness.peak_weekly_mileage)} ${unit}/week (${analysis.current_fitness.peak_week_date})`
                   : "—"
               }
             />
             <Row
               label="Experience"
-              value={analysis?.overview.experience_level || "—"}
+              value={user?.experience_level || analysis?.overview.experience_level || "—"}
             />
           </div>
         </CardContent>
@@ -249,13 +244,13 @@ export default function SettingsPage() {
             <h2 className="text-sm font-medium">Running Stats</h2>
             <div className="space-y-2 text-sm">
               <Row label="Total runs" value={String(analysis.overview.total_runs)} />
-              <Row label="Total miles" value={`${analysis.overview.total_miles} mi`} />
+              <Row label="Total distance" value={`${distance(analysis.overview.total_miles)} ${unit}`} />
               <Row label="Total hours" value={`${analysis.overview.total_hours} hrs`} />
               <Row label="Running since" value={analysis.overview.running_since} />
               <Row label="Runs per week" value={String(analysis.current_fitness.runs_per_week)} />
               <Row
                 label="Longest run"
-                value={`${analysis.long_runs.longest_run_miles} mi (${analysis.long_runs.longest_run_date})`}
+                value={`${distance(analysis.long_runs.longest_run_miles)} ${unit} (${analysis.long_runs.longest_run_date})`}
               />
               <Row
                 label="10+ mile runs"
@@ -292,15 +287,6 @@ export default function SettingsPage() {
 
     </div>
   );
-}
-
-function titleList(csv?: string | null): string {
-  return (csv || "")
-    .split(",")
-    .map((d) => d.trim())
-    .filter(Boolean)
-    .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
-    .join(", ");
 }
 
 function Row({ label, value }: { label: string; value: string }) {
