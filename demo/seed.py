@@ -8,10 +8,11 @@ import sys
 import tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
+SCENARIOS=sorted(p.stem for p in (ROOT/'demo/scenarios').glob('*.json'))
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--scenario',choices=['sub3-marathon','sub17-5k','trail-100k'],required=True)
+    parser.add_argument('--scenario',choices=SCENARIOS,required=True)
     parser.add_argument('--database',type=Path,required=True)
     args=parser.parse_args();target=args.database.resolve()
     if target==(ROOT/'backend/stride.db').resolve() or target.exists():

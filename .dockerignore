@@ -1,0 +1,14 @@
+# Never ship personal data, tokens, secrets or local build output into the image.
+**/*.db
+**/*.db-*
+**/*.sqlite3
+**/.garmin
+**/venv
+**/.venv
+**/node_modules
+**/.next
+**/.env*
+**/.demo
+**/__pycache__
+.claude
+.git

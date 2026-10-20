@@ -398,6 +398,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
     )
 
     weeks_map: dict[int, dict] = {}
+    easy_cache: dict = {}
     for pw in planned_workouts:
         if pw.week_number not in weeks_map:
             weeks_map[pw.week_number] = {
@@ -415,6 +416,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             activities = by_date.get(pw.date)
             if activities:
                 actual = _build_actual_aggregated(activities)
+                actual["workout"] = _executed_summary(pw, activities, user_id, db, easy_cache)
                 if is_prescribed:
                     comparison = _build_comparison_aggregated(pw, activities)
 
@@ -446,7 +448,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
                 "swap_reason": pw.swap_reason,
                 "actual_workout_type": pw.actual_workout_type,
                 "coach_response": pw.coach_response,
-                "evaluation": json.loads(pw.evaluation) if pw.evaluation else None,
+                "evaluation": _displayed_evaluation(pw, actual),
             } if pw.feel_rating or pw.swapped else None,
         }
         weeks_map[pw.week_number]["days"].append(day_data)
@@ -544,14 +546,23 @@ def _validate_schedule(plan: Plan, db: Session):
             budgets[row.week_number - 1] += original.get("distance_miles", row.distance_miles)
     for row in rows:
         w = weeks.setdefault(row.week_number, {"week_number": row.week_number, "days": []})
-        if row.week_number <= len(budgets):
+        if row.week_number <= len(budgets) and "budget_miles" not in w:
             w["budget_miles"] = budgets[row.week_number - 1]
         actuals = acts.get(row.date, [])
+        if actuals:
+            # Miles already run beyond the plan are history, not a proposal. The NET overrun of
+            # completed days widens the week's ceiling so it never blocks an unrelated edit; a short
+            # day offsets a long one, so no new room is created.
+            w["overrun"] = w.get("overrun", 0.0) + sum(a.distance_meters for a in actuals) / 1609.34 - row.distance_miles
         # Completed work cannot be altered to make a proposed change fit.
         w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, baseline) for a in actuals) else row.type,
                            "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
                            "b2b": bool(row.b2b),
                            "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
+    for w in weeks.values():
+        if "budget_miles" in w:
+            w["budget_miles"] += max(0.0, w.pop("overrun", 0.0))
+        w.pop("overrun", None)
     prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
     errors = validate_plan(list(weeks.values()), rest, prior)
     if errors:
@@ -751,8 +762,14 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
     evaluation = None
     feedback_date = pw.date
 
-    # 1. Evaluate the workout and move ONE progression lever
-    if pw.type == "workout" and not req.swapped:
+    # 1. Evaluate the workout and move ONE progression lever. A clearly different quality
+    #    session (3x8min threshold on a 3x1200m day) is logged as off-plan instead.
+    off_plan_eval = _off_plan_evaluation(user_id, pw, activities, db) if pw.type == "workout" and not req.swapped else None
+    if off_plan_eval:
+        evaluation = off_plan_eval | {"feel": req.feel_rating, "activity_ids": [a.id for a in activities]}
+        pw.evaluation = json.dumps(evaluation)
+        pw.actual_workout_type = req.actual_workout_type or evaluation["executed"]["category"]
+    elif pw.type == "workout" and not req.swapped:
         prescribed = loads(pw.prescription)
         category = (prescribed["category"] if prescribed["category"] in {"threshold", "intervals"} else None) if prescribed else _detect_workout_category(pw.title)
         if category:
@@ -874,6 +891,23 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
     return evaluation, changes
 
 
+def easy_pace_for(prescribed: dict | None, user_id: int, db: Session) -> float | None:
+    """The easy-pace reference lap detection uses: the prescription's, else recent runs'."""
+    if prescribed and prescribed.get("easy_pace_sec_per_mile"):
+        return prescribed["easy_pace_sec_per_mile"]
+    from app.services.garmin import recent_easy_pace
+    return recent_easy_pace(user_id, db)
+
+
+def _off_plan_evaluation(user_id: int, pw: PlannedWorkout, activities: list[Activity], db: Session) -> dict | None:
+    from app.core.session_match import executed_session, off_plan, off_plan_evaluation
+    prescribed = loads(pw.prescription)
+    if not prescribed or not activities:
+        return None
+    executed = executed_session(activities, easy_pace_for(prescribed, user_id, db))
+    return off_plan_evaluation(pw.title, executed) if off_plan(prescribed, executed) else None
+
+
 def _decision_summary(evaluation: dict | None, changes: list[dict]) -> str | None:
     parts = []
     if evaluation:
@@ -896,6 +930,8 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     acts = _activities_by_date(db_plan.user_id, min(d.date for d in week), max(d.date for d in week), db)
     actual_miles = lambda row: sum(a.distance_meters for a in acts.get(row.date, [])) / 1609.34 if acts.get(row.date) else row.distance_miles
     total = sum(actual_miles(row) for row in week if row.id != slot.id) + new_miles
+    # Extra miles already run on completed days are history; they never block this change.
+    budget += max(0.0, sum(actual_miles(row) - row.distance_miles for row in week if row.id != slot.id and acts.get(row.date)))
     # Trim to the budget itself. Half-mile rounding tolerance isn't free training.
     over = total - budget
     if over <= BUDGET_OVER_TOLERANCE:
@@ -1007,6 +1043,35 @@ def _format_pace(pace_seconds_per_mile: float) -> str:
     mins = int(pace_seconds_per_mile // 60)
     secs = int(pace_seconds_per_mile % 60)
     return f"{mins}:{secs:02d}"
+
+
+def _executed_summary(pw: PlannedWorkout, activities: list[Activity], user_id: int, db: Session, easy_cache: dict) -> dict | None:
+    """What was actually run, from Garmin laps: title, reps and whether it differs from the plan."""
+    from app.core.session_match import executed_session, off_plan, session_title
+    prescribed = loads(pw.prescription)
+    if prescribed and prescribed.get("easy_pace_sec_per_mile"):
+        easy = prescribed["easy_pace_sec_per_mile"]
+    else:
+        if "easy" not in easy_cache:
+            easy_cache["easy"] = easy_pace_for(None, user_id, db)
+        easy = easy_cache["easy"]
+    executed = executed_session(activities, easy)
+    if not executed:
+        return None
+    return {"title": session_title(executed), "label": executed["label"], "category": executed["category"],
+            "kind": executed["kind"], "reps": executed["reps"], "recovery_seconds": executed["recovery_seconds"],
+            "work_miles": executed["work_miles"], "off_plan": pw.type == "workout" and off_plan(prescribed, executed)}
+
+
+def _displayed_evaluation(pw: PlannedWorkout, actual: dict | None) -> dict | None:
+    """Stored verdict, unless the laps show an off-plan session it was judged against wrongly."""
+    stored = json.loads(pw.evaluation) if pw.evaluation else None
+    workout = (actual or {}).get("workout")
+    # Only re-read verdicts that left the ladder alone; an applied regress/advance stays visible.
+    if workout and workout["off_plan"] and (stored or {}).get("decision") in {None, "insufficient", "hold"}:
+        from app.core.session_match import off_plan_evaluation
+        return off_plan_evaluation(pw.title, workout) | {"feel": pw.feel_rating}
+    return stored
 
 
 def _build_actual_aggregated(activities: list[Activity]) -> dict:
