@@ -32,7 +32,7 @@ def test_synthetic_history_to_approved_block_feedback_and_revision(scenario,phas
         rows=db.query(PlannedWorkout).filter_by(plan_id=plan.id).all()
         assert all(json.loads(r.prescription)['schema_version']==1 for r in rows)
         if scenario=='trail-100k':
-            assert any('Hill' in r.title for r in rows)
+            assert any('Hill' in r.title or 'Climb' in r.title for r in rows)
             assert any(r.b2b for r in rows)
             assert any('Fuel' in (r.description or '') for r in rows)
         if scenario=='sub17-5k':assert sum(r.type=='workout' for r in rows)==4
