@@ -1,13 +1,14 @@
 "use client";
 
-import { apiUrl, USER_ID } from "@/lib/api";
+import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
+import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
-import { formatDateShort, formatDistance, localDateStr } from "@/lib/format";
+import { formatDateShort, localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
 
@@ -132,7 +133,9 @@ const MODE_LABEL: Record<string, string> = {
   deload: "Deload included", start: "Getting started",
 };
 
-function BlockSummary({ plan }: { plan: ApiPlan }) {
+function BlockSummary({ plan, units }: { plan: ApiPlan; units: Units }) {
+  const distance = (miles: number) => distanceInUnits(miles, units);
+  const unit = unitLabel(units);
   const load = plan.load!;
   return (
     <Card><CardContent className="space-y-3 pt-4 text-sm">
@@ -143,15 +146,15 @@ function BlockSummary({ plan }: { plan: ApiPlan }) {
           const remaining = week.days.filter((d) => d.prescribed !== false && !d.actual).reduce((sum, d) => sum + d.distance_miles, 0);
           return <div key={week.week_number} className="rounded-md bg-muted/50 p-3">
             <p className="text-xs text-muted-foreground">Week {week.week_number} · {formatDateShort(week.days[0].date)}–{formatDateShort(week.days[week.days.length - 1].date)}</p>
-            <p className="font-mono">{formatDistance(logged + remaining)} mi {logged > 0 ? "total" : "planned"}</p>
-            {logged > 0 && <p className="text-xs text-muted-foreground">{formatDistance(logged)} logged · {formatDistance(remaining)} remaining</p>}
+            <p className="font-mono">{distance(logged + remaining)} {unit} {logged > 0 ? "total" : "planned"}</p>
+            {logged > 0 && <p className="text-xs text-muted-foreground">{distance(logged)} logged · {distance(remaining)} remaining</p>}
           </div>;
         })}
       </div>
       <p className="text-muted-foreground">
-        {load.recent_week_miles != null && `Last full week ${formatDistance(load.recent_week_miles)} mi · `}
-        Four-week average {formatDistance(load.baseline)} mi/week
-        {load.destination ? ` · goal ${formatDistance(load.destination)} mi/week` : ""}
+        {load.recent_week_miles != null && `Last full week ${distance(load.recent_week_miles)} ${unit} · `}
+        Four-week average {distance(load.baseline)} {unit}/week
+        {load.destination ? ` · goal ${distance(load.destination)} ${unit}/week` : ""}
       </p>
       {plan.assessment?.reasons?.map((reason) => <p key={reason} className="text-muted-foreground">{reason}</p>)}
     </CardContent></Card>
@@ -172,6 +175,7 @@ function pacingRows(g: Record<string, string>): [string, string, string][] {
 }
 
 export default function PlanPage() {
+  const [units, setUnits] = useState<Units>("miles");
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [activePlan, setActivePlan] = useState<ApiPlan | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -180,6 +184,10 @@ export default function PlanPage() {
   const [error, setError] = useState<string | null>(null);
   const [noPlan, setNoPlan] = useState(false);
   const [showPast, setShowPast] = useState(false);
+
+  useEffect(() => {
+    getJson<{ units: Units }>(`/users/${USER_ID}`).then((u) => { if (u) setUnits(u.units); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
+  }, []);
 
   const fetchPlan = useCallback(async () => {
     try {
@@ -313,7 +321,7 @@ export default function PlanPage() {
           </CardContent>
         </Card>
         {showPast &&
-          weeks.map((week) => <PlanWeek key={week.week_number} week={week} isCurrent={false} />)}
+          weeks.map((week) => <PlanWeek units={units} key={week.week_number} week={week} isCurrent={false} />)}
       </div>
     );
   }
@@ -368,7 +376,7 @@ export default function PlanPage() {
         </div>
       </CardContent></Card>}
       {!plan.preview && <p className="text-sm text-muted-foreground">Approved block · log your runs and feel ratings to adjust it as you go.</p>}
-      {plan.load && <BlockSummary plan={plan} />}
+      {plan.load && <BlockSummary plan={plan} units={units} />}
 
       {pastWeeks.length > 0 && (
         <button
@@ -380,11 +388,12 @@ export default function PlanPage() {
       )}
       {showPast &&
         pastWeeks.map((week) => (
-          <PlanWeek key={week.week_number} week={week} isCurrent={false} onPlanChanged={() => fetchPlan()} />
+          <PlanWeek units={units} key={week.week_number} week={week} isCurrent={false} onPlanChanged={() => fetchPlan()} />
         ))}
 
       {visibleWeeks.map((week, i) => (
         <PlanWeek
+          units={units}
           key={week.week_number}
           week={week}
           readOnly={!!plan.preview}
@@ -431,7 +440,7 @@ export default function PlanPage() {
                 <span className="text-muted-foreground">
                   {label} <span className="text-xs">· {hint}</span>
                 </span>
-                <span className="shrink-0 font-mono">{value}/mi</span>
+                <span className="shrink-0 font-mono">{paceInUnits(value, units)}/{unitLabel(units)}</span>
               </div>
             ))}
           </div>

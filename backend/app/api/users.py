@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Literal
 
@@ -6,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.activity import Activity
+from app.models.plan import Plan
 from app.models.user import Goal, User
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -78,18 +81,44 @@ class ProfileUpdate(BaseModel):
 @router.put("/{user_id}/profile")
 def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_db)):
     """Update the athlete's profile and schedule preferences (idempotent)."""
+    from sqlalchemy import text
+    if db.bind.dialect.name == 'sqlite':
+        db.execute(text('BEGIN IMMEDIATE'))
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    for day in (data.rest_days or []) + ([data.long_run_day] if data.long_run_day else []):
-        if day.lower() not in DAY_NAMES:
-            raise HTTPException(status_code=422, detail=f"Unknown day: {day}")
-    if data.long_run_day and data.rest_days and data.long_run_day.lower() in [d.lower() for d in data.rest_days]:
-        raise HTTPException(status_code=422, detail="Long run day can't also be a rest day.")
-    if data.days_per_week and data.rest_days is not None and data.days_per_week > 7 - len(data.rest_days):
-        raise HTTPException(status_code=422, detail=f"{data.days_per_week} run days don't fit with {len(data.rest_days)} rest days.")
-
     fields = data.model_dump(exclude_unset=True)
+    # Validate the merged schedule: PATCH-like requests must not bypass constraints.
+    required = {'units', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
+    if any(key in required and value is None for key, value in fields.items()):
+        raise HTTPException(422, "Schedule and display preferences cannot be null.")
+    rest = fields.get('rest_days', (user.rest_days or '').split(','))
+    rest = [d.strip().lower() for d in rest if d.strip()]
+    long_day = (fields.get('long_run_day', user.long_run_day) or 'saturday').strip().lower()
+    days = fields.get('days_per_week', user.days_per_week or 6)
+    if any(day not in DAY_NAMES for day in rest + [long_day]):
+        raise HTTPException(422, "Choose valid weekdays.")
+    if len(rest) != len(set(rest)):
+        raise HTTPException(422, "Choose each rest day once.")
+    if long_day in rest:
+        raise HTTPException(422, "Long run day can't also be a rest day.")
+    if days > 7 - len(rest):
+        raise HTTPException(422, f"{days} run days don't fit with {len(rest)} rest days.")
+    # Preserve the approved block's original rules before changing preferences.
+    # Legacy blocks acquire the previously saved rules once, never the new rules.
+    if {'rest_days', 'days_per_week', 'long_run_day'} & fields.keys():
+        active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+        if active:
+            snapshot = json.loads(active.athlete_snapshot or '{}')
+            snapshot.setdefault('schedule_preferences', {
+                'rest_days': [d.strip().lower() for d in (user.rest_days or '').split(',') if d.strip()],
+                'days_per_week': user.days_per_week or 6, 'long_run_day': user.long_run_day or 'saturday',
+            })
+            active.athlete_snapshot = json.dumps(snapshot)
+    if 'rest_days' in fields:
+        fields['rest_days'] = rest
+    if 'long_run_day' in fields:
+        fields['long_run_day'] = long_day
     mapping = {"pr_5k_seconds": "pr_5k", "pr_10k_seconds": "pr_10k", "pr_half_seconds": "pr_half", "pr_marathon_seconds": "pr_marathon"}
     for key, value in fields.items():
         if key == "rest_days":

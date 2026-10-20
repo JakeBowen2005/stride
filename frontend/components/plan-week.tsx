@@ -1,18 +1,20 @@
 "use client";
 
+import { distanceInUnits, unitLabel, type Units } from "@/lib/units";
 import { useState } from "react";
 import { PlanDay } from "@/components/plan-day";
-import { formatDistance, localDateStr } from "@/lib/format";
+import { localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType } from "@/lib/types";
 
 interface PlanWeekProps {
   week: PlanWeekType;
+  units?: Units;
   isCurrent: boolean;
   onPlanChanged?: () => void;
   readOnly?: boolean;
 }
 
-export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly }: PlanWeekProps) {
+export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly, units = "miles" }: PlanWeekProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const today = localDateStr();
 
@@ -36,11 +38,11 @@ export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly }: PlanWeekP
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end font-mono text-xs text-muted-foreground sm:flex-row sm:gap-1 sm:text-sm">
-          <span>{formatDistance(week.total_miles)} mi planned</span>
+          <span>{distanceInUnits(week.total_miles, units)} {unitLabel(units)} planned</span>
           {hasActuals && (
             <span>
               <span className="hidden sm:inline">/ </span>
-              {formatDistance(week.actual_miles!)} mi actual
+              {distanceInUnits(week.actual_miles!, units)} {unitLabel(units)} actual
             </span>
           )}
         </div>
@@ -50,6 +52,7 @@ export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly }: PlanWeekP
           <PlanDay
             key={w.id}
             workout={w}
+            units={units}
             readOnly={readOnly}
             isToday={w.date === today}
             expanded={expandedId === w.id}

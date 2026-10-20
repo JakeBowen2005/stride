@@ -73,7 +73,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     rest_days = []
     if user.rest_days:
         rest_days = [d.strip().lower() for d in user.rest_days.split(",")]
-    if not rest_days:
+    if user.rest_days is None:
         rest_days = ["sunday"]
 
     # Current-block revision preserves its boundaries. A true next block is
@@ -158,6 +158,9 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Load or initialize workout progression state
     progression_state = _load_progression_state(user_id, db, goal.race_distance or goal.goal_type)
 
+    quality_activities = db.query(Activity).filter(Activity.user_id == user_id,
+        Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time()),
+        Activity.date < datetime.combine(date.today() + timedelta(days=1), datetime.min.time())).all()
     effective_assessment = "recovery" if req.lighter else assessment.decision if assessment else None
     plan_data = generate_plan(
         goal_type=goal.goal_type,
@@ -185,6 +188,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         prior_hard_dates=prior_hard_dates,
         reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks,
         fatigue_recovery=bool(fatigue),
+        workout_format=user.workout_format or 'distance',
+        weekly_run_days=[len({a.date.date() for a in quality_activities
+                             if monday - timedelta(weeks=i) <= a.date.date() < monday - timedelta(weeks=i-1)})
+                         for i in range(4, 0, -1)],
+        recent_long_run_miles=max((a.distance_meters / 1609.34 for a in quality_activities
+                                  if date.today() - timedelta(days=28) <= a.date.date() <= date.today()), default=0),
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
     )
@@ -208,6 +217,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
+        "schedule_preferences": {'rest_days': rest_days, 'days_per_week': user.days_per_week or 6,
+                                 'long_run_day': user.long_run_day or 'saturday'},
     }
 
     # Persist atomically: the previous plan is only deactivated in the same commit
@@ -503,7 +514,9 @@ def _validate_schedule(plan: Plan, db: Session):
 
     user = db.get(User, plan.user_id)
     names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    rest = [names.index(d.strip()) for d in (user.rest_days or "").split(",") if d.strip() in names]
+    schedule = json.loads(plan.athlete_snapshot or '{}').get('schedule_preferences')
+    rest_days = schedule['rest_days'] if schedule is not None else (user.rest_days or '').split(',')
+    rest = [names.index(d.strip()) for d in rest_days if d.strip() in names]
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
     acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=1)).isoformat(), plan.end_date, db)
     budgets = (json.loads(plan.load) if plan.load else {}).get("weekly_budgets", [])
@@ -718,7 +731,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
     # 1. Evaluate the workout and move ONE progression lever
     if pw.type == "workout" and not req.swapped:
         prescribed = loads(pw.prescription)
-        category = prescribed["category"] if prescribed and prescribed["category"] in {"threshold", "intervals"} else _detect_workout_category(pw.title)
+        category = (prescribed["category"] if prescribed["category"] in {"threshold", "intervals"} else None) if prescribed else _detect_workout_category(pw.title)
         if category:
             execution = execution_from_activities(activities, prescribed) if prescribed else None
             if execution:
@@ -1214,7 +1227,10 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
     week_index = max(0, (date.fromisoformat(session_date or db_plan.start_date) - date.fromisoformat(db_plan.start_date)).days // 7)
     phase = phases[week_index].get("phase", "general") if week_index < len(phases) else "general"
 
-    return get_workout_at_level(category, level, paces, goal_distance, phase)
+    from app.core.quality_policy import format_bookends
+    user = db.get(User, user_id)
+    return format_bookends(get_workout_at_level(category, level, paces, goal_distance, phase),
+                           paces, user.workout_format or 'distance')
 
 
 def _plan_program(plan: Plan) -> str | None:
