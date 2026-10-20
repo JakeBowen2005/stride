@@ -42,15 +42,27 @@ function Segmented<T extends string>({ label, value, options, onChange, disabled
   label: string; value: T; options: { value: T; label: string; kind?: Parameters<typeof kindColor>[0] }[];
   onChange: (v: T) => void; disabled?: boolean;
 }) {
+  // Radiogroup pattern: one tab stop, arrow keys move and select.
+  const index = options.findIndex((o) => o.value === value);
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step || disabled) return;
+    e.preventDefault();
+    const next = options[(index + step + options.length) % options.length];
+    onChange(next.value);
+    (e.currentTarget.querySelector(`[data-value="${next.value}"]`) as HTMLButtonElement | null)?.focus();
+  }
   return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1">
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5" onKeyDown={onKeyDown}>
       {options.map((o) => {
         const active = o.value === value;
-        const color = o.kind ? kindColor(o.kind).color : "#1f1f1f";
+        const color = o.kind ? kindColor(o.kind).color : "var(--ink)";
         return (
-          <button key={o.value} type="button" role="radio" aria-checked={active} disabled={disabled} onClick={() => onChange(o.value)}
-            className="rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+          <button key={o.value} data-value={o.value} type="button" role="radio" aria-checked={active} tabIndex={active ? 0 : -1}
+            disabled={disabled} onClick={() => onChange(o.value)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
             style={active ? { background: color, borderColor: color, color: "#fff" } : { borderColor: "var(--border)" }}>
+            {o.kind && !active && <span aria-hidden="true" className="size-2 rounded-full" style={{ background: color }} />}
             {o.label}
           </button>
         );
@@ -130,21 +142,22 @@ export function SessionControls({ workout, onChanged }: { workout: Workout; onCh
               const { color, tint } = kindColor(kind);
               const checked = optionId === option.id;
               return (
-                <label key={option.id}
+                <label key={option.id} htmlFor={`opt-${option.id}`}
                   className={cn("block cursor-pointer rounded-md border-[1.5px] p-3 transition-shadow hover:shadow-md", checked && "shadow-md")}
                   style={{ borderColor: checked ? color : "var(--border)", background: checked ? tint : "var(--card)" }}>
                   <span className="flex items-start gap-2">
-                    <input type="radio" className="mt-1 accent-current" style={{ color }} name={`session-${workout.id}`} value={option.id}
+                    <input type="radio" id={`opt-${option.id}`} aria-labelledby={`opt-${option.id}-t`} aria-describedby={`opt-${option.id}-d`}
+                      className="mt-1 accent-current" style={{ color }} name={`session-${workout.id}`} value={option.id}
                       checked={checked} disabled={busy} onChange={() => setOptionId(option.id)} />
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[10.5px] text-muted-foreground">{String.fromCharCode(65 + index)}</span>
-                        <span className="font-semibold">{option.title}</span>
+                        <span id={`opt-${option.id}-t`} className="font-semibold">{option.title}, {option.distance_miles} mi</span>
                         {shapeLabel(option.shape) && <KindPill kind={kind} label={shapeLabel(option.shape)!} />}
-                        <span className="num ml-auto text-sm font-semibold">{option.distance_miles} mi</span>
+                        
                       </span>
                       {option.prescription && <span className="mt-2 block"><StructureBar prescription={option.prescription} kind={kind} height={28} /></span>}
-                      <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{option.description}</span>
+                      <span id={`opt-${option.id}-d`} className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{option.description}</span>
                       {option.purpose && <span className="mt-1 block text-xs"><span className="font-medium" style={{ color }}>Why: </span>{option.purpose}</span>}
                       {(option.warmup || option.cooldown) && <span className="mt-1 block font-mono text-[11px] text-muted-foreground">WU {option.warmup ?? "—"} · CD {option.cooldown ?? "—"}</span>}
                       {option.changes.filter((c) => c.date !== workout.date).map((c) => (

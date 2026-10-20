@@ -21,7 +21,9 @@ interface PlanDayProps {
   units?: Units;
   isToday: boolean;
   expanded: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
+  /** Always expanded (e.g. the Plan inspector): no toggle affordance. */
+  pinned?: boolean;
   onPlanChanged?: () => void;
   readOnly?: boolean;
 }
@@ -66,7 +68,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, readOnly, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -94,17 +96,18 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
     <div
       id={`session-${workout.id}`}
       className={cn(
-        "cursor-pointer rounded-md border bg-card p-3 transition-colors hover:border-primary/30 hover:bg-secondary/50",
+        "rounded-md border bg-card p-3 transition-colors",
+        !pinned && "cursor-pointer hover:border-primary/30 hover:bg-secondary/50",
         isToday && "border-primary bg-primary/5",
         hasActual && "bg-secondary/30",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
       )}
-      onClick={onToggle}
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      onKeyDown={(e) => { if (e.target===e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onToggle(); } }}
+      onClick={pinned ? undefined : onToggle}
+      role={pinned ? undefined : "button"}
+      tabIndex={pinned ? undefined : 0}
+      aria-expanded={pinned ? undefined : expanded}
+      onKeyDown={pinned ? undefined : (e) => { if (e.target===e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onToggle?.(); } }}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
