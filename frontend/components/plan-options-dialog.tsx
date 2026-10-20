@@ -35,7 +35,7 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoa
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)} disabled={busy}>
+      <Button variant="outline" className="h-10 sm:h-8" onClick={() => setOpen(true)} disabled={busy}>
         <SlidersHorizontal aria-hidden="true" /> Plan options
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

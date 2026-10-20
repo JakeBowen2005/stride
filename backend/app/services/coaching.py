@@ -22,7 +22,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v2'
+VERSION = 'openai-coach-v3'
 
 
 def research_context(goal):
@@ -47,17 +47,75 @@ def research_context(goal):
     return result
 
 
-def _run(a):
+def _pace(seconds_per_mile):
+    if not seconds_per_mile:
+        return None
+    seconds = round(seconds_per_mile)
+    return f"{seconds // 60}:{seconds % 60:02d}/mi"
+
+
+def _brief_run(a, executed=None):
+    """One line of history: enough for trends without spending tokens on every lap."""
+    miles = a.distance_meters / 1609.34
+    return {'date': a.date.date().isoformat(), 'miles': round(miles, 1),
+            'pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
+            'avg_hr': round(a.average_heartrate) if a.average_heartrate else None,
+            'session': executed['label'] + f" {executed['category']}" if executed else None,
+            'feel': a.feel_rating}
+
+
+def _run(a, executed=None, planned=None):
+    """Everything Garmin and the athlete told us about the run under review."""
     raw_laps = loads_json(a.splits) or []
-    laps = [{k: lap[k] for k in ('intensity', 'distance_m', 'duration_s', 'average_hr') if k in lap}
-            for lap in raw_laps[:80] if isinstance(lap, dict)] if isinstance(raw_laps, list) else []
-    return {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(a.distance_meters / 1609.34, 2),
-            'seconds': a.duration_seconds, 'category': a.workout_type, 'laps': laps,
-            'average_hr': a.average_heartrate, 'max_hr': a.max_heartrate,
-            'feel': a.feel_rating, 'notes': (a.feel_notes or '')[:700],
-            'work_detail': (a.description or '')[:900],
-            'aerobic_training_effect': a.aerobic_training_effect,
-            'anaerobic_training_effect': a.anaerobic_training_effect}
+    laps = []
+    for lap in raw_laps[:60] if isinstance(raw_laps, list) else []:
+        if not isinstance(lap, dict) or not lap.get('distance_m') or not lap.get('duration_s'):
+            continue
+        hr = lap.get('average_hr', lap.get('heart_rate'))
+        laps.append({'miles': round(lap['distance_m'] / 1609.34, 2), 'time_s': round(lap['duration_s']),
+                     'pace': _pace(lap['duration_s'] / (lap['distance_m'] / 1609.34)),
+                     'hr': round(hr) if isinstance(hr, (int, float)) else None,
+                     'intensity': lap.get('intensity'), 'elev_ft': lap.get('elevation_diff_ft')})
+    miles = a.distance_meters / 1609.34
+    run = {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(miles, 2),
+           'duration': f"{int(a.duration_seconds // 60)}:{int(a.duration_seconds % 60):02d}" if a.duration_seconds else None,
+           'avg_pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
+           'average_hr': a.average_heartrate, 'max_hr': a.max_heartrate,
+           'elevation_gain_ft': round(a.elevation_gain * 3.281) if a.elevation_gain else None,
+           'aerobic_training_effect': a.aerobic_training_effect,
+           'anaerobic_training_effect': a.anaerobic_training_effect,
+           'laps': laps,
+           'detected_session': None,
+           'athlete_feedback': {'feel_1_to_10': planned.feel_rating if planned and planned.feel_rating is not None else a.feel_rating,
+                                'notes': ((planned.feel_notes if planned else None) or a.feel_notes or '')[:700] or None,
+                                'pace_vs_target': planned.pace_assessment if planned else None,
+                                'said_swapped': bool(planned.swapped) if planned else False}}
+    if executed:
+        run['detected_session'] = {'title': executed.get('title'), 'category': executed['category'],
+            'reps': [{'miles': round(r['distance_m'] / 1609.34, 2), 'time_s': round(r['duration_s']),
+                      'pace': _pace(r['pace_sec_per_mile']), 'avg_hr': r['average_hr']} for r in executed['reps']],
+            'recovery_s': executed['recovery_seconds'], 'work_miles': executed['work_miles']}
+    return run
+
+
+def _training_summary(user_id, runs, executed_by_id, today, plan_rows, goal):
+    """Deterministic athlete snapshot the coach reads first on every call."""
+    monday = today - timedelta(days=today.weekday())
+    weeks = []
+    for i in range(6, 0, -1):
+        start, end = monday - timedelta(weeks=i), monday - timedelta(weeks=i - 1)
+        week_runs = [r for r in runs if start <= r.date.date() < end]
+        weeks.append({'week_of': start.isoformat(), 'miles': round(sum(r.distance_meters for r in week_runs) / 1609.34, 1),
+                      'runs': len(week_runs), 'longest': round(max((r.distance_meters for r in week_runs), default=0) / 1609.34, 1)})
+    this_week = [r for r in runs if r.date.date() >= monday]
+    planned_week = [r for r in plan_rows if monday.isoformat() <= r.date < (monday + timedelta(days=7)).isoformat()]
+    quality = [{'date': r.date.date().isoformat(), 'session': executed_by_id[r.id].get('title'),
+                'paces': [_pace(x['pace_sec_per_mile']) for x in executed_by_id[r.id]['reps']]}
+               for r in runs if r.id in executed_by_id][-6:]
+    return {'goal': goal, 'last_6_weeks': weeks,
+            'this_week': {'done_miles': round(sum(r.distance_meters for r in this_week) / 1609.34, 1),
+                          'planned_miles': round(sum(r.distance_miles for r in planned_week), 1) if planned_week else None},
+            'recent_quality_sessions': quality}
 
 
 def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
@@ -82,9 +140,20 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         Activity.date >= datetime.combine(today-timedelta(days=56), datetime.min.time()),
         Activity.date < datetime.combine(today+timedelta(days=1), datetime.min.time())).order_by(Activity.date, Activity.id).all()
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all() if plan else []
+    from app.api.plans import easy_pace_for
+    from app.core.session_match import executed_session, off_plan, off_plan_evaluation, session_title, work_minutes
+    easy = easy_pace_for(None, user_id, db) or next(
+        (spec['easy_pace_sec_per_mile'] for r in rows if (spec := loads(r.prescription)) and spec.get('easy_pace_sec_per_mile')), None)
+    executed_by_id = {}
+    for run in runs:
+        found = executed_session([run], easy)
+        if found:
+            executed_by_id[run.id] = found | {'title': session_title(found)}
     actuals_by_day = {}
     for run in runs:actuals_by_day.setdefault(run.date.date().isoformat(),[]).append(run)
-    row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'status': 'completed' if actuals_by_day.get(r.date) else r.session_status,
+    row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'weekday': date.fromisoformat(r.date).strftime('%a'),
+                 'days_from_today': (date.fromisoformat(r.date) - today).days,
+                 'status': 'completed' if actuals_by_day.get(r.date) else r.session_status,
                  'moved_to': r.moved_to, 'moved_from': r.moved_from, 'activity_id': max(actuals_by_day[r.date],key=lambda a:a.distance_meters).id if actuals_by_day.get(r.date) else r.activity_id,
                  'feel': r.feel_rating, 'notes': r.feel_notes, 'evaluation': loads_json(r.evaluation)} for r in rows]
     matched = None
@@ -110,11 +179,38 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     wellness_data = [{key: getattr(w, key) for key in ('date','sleep_seconds','sleep_score','hrv_last_night',
         'hrv_baseline_low','hrv_baseline_high','resting_hr','readiness_score','acwr')} for w in wellness]
     options = build_options(plan, db) if plan and plan.is_active else []
-    goal_data = {key: getattr(goal, key) for key in ('id','goal_type','race_distance','race_date','target_time_seconds','target_weekly_mileage','terrain')} if goal else None
+    goal_data = {key: getattr(goal, key) for key in ('id','goal_type','race_distance','race_date','target_time_seconds','target_weekly_mileage','terrain','description')} if goal else None
+    executed_run = None
+    off_plan_note = None
+    if activity:
+        spec = loads(matched.prescription) if matched else None
+        executed_run = executed_session(_get_activities_for_date(activity.date.date().isoformat(), user_id, db),
+                                        easy_pace_for(spec, user_id, db))
+        if executed_run:
+            executed_run = executed_run | {'title': session_title(executed_run)}
+        if matched and matched.type == 'workout' and off_plan(spec, executed_run):
+            # Judge the run on what was actually run, never against the session it replaced.
+            evaluation = off_plan_evaluation(matched.title, executed_run)
+            execution = None
+            planned_min, done_min = work_minutes(spec, executed_run)
+            # Minutes at threshold and at interval pace are different loads; only compare like with like.
+            same_kind = executed_run['category'] == spec.get('category')
+            dose = ("DOSE ABOVE PLAN" if same_kind and planned_min and done_min and done_min >= 1.5 * planned_min
+                    else "similar dose" if same_kind else "different intensity, compare effort not minutes")
+            off_plan_note = (f"OFF-PLAN: prescribed {matched.title}, but laps show {executed_run['title']}. "
+                             "It REPLACED that day's planned quality session; it is not an extra session. "
+                             f"Work: {done_min} min of {executed_run['category']} run vs {planned_min} min of "
+                             f"{spec.get('category')} planned ({dose}).")
     context = {'version': VERSION, 'today': today.isoformat(), 'model': settings.openai_coach_model,
         'athlete': {key: getattr(user, key) for key in ('age','experience_level','days_per_week','rest_days','long_run_day','workout_format','units')},
-        'goal': goal_data, 'run': _run(activity) if activity else None,
-        'recent_runs': [_run(a) for a in runs[-80:]],
+        'goal': goal_data,
+        # Stride's calibrated paces for the athlete's CURRENT fitness: judge reps against these, not PRs.
+        'current_paces': {k: _pace(v) for k, v in (loads_json(plan.training_paces) or {}).items()
+                          if isinstance(v, (int, float)) and v} if plan else None,
+        'training_summary': _training_summary(user_id, runs, executed_by_id, today, rows, goal_data),
+        'run': _run(activity, executed_run, matched) if activity else None,
+        'run_vs_plan': off_plan_note or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
+        'recent_runs': [_brief_run(a, executed_by_id.get(a.id)) for a in runs[-60:]],
         'quality_evidence': quality_history(user_id, db), 'recovery': wellness_data,
         'matched_prescription': snapshot(matched) if matched else None,
         'execution': execution, 'deterministic_evaluation': evaluation,

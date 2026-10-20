@@ -6,13 +6,13 @@ import { PaceVsTargetChart } from "@/components/charts/pace-vs-target-chart";
 import { MileageOverTimeChart } from "@/components/charts/mileage-over-time-chart";
 import type { WeeklyMileage, PaceVsTarget } from "@/lib/types";
 
-export function WeeklyMileageChartWrapper({ data }: { data: WeeklyMileage[] }) {
+export function WeeklyMileageChartWrapper({ data, showTitle = true }: { data: WeeklyMileage[]; showTitle?: boolean }) {
   return (
     <Card>
-      <CardHeader className="pb-2">
+      {showTitle && <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Weekly Mileage</CardTitle>
-      </CardHeader>
-      <CardContent className="pl-0 pr-2">
+      </CardHeader>}
+      <CardContent className={showTitle ? "pl-0 pr-2" : "pl-0 pr-2 pt-3"}>
         <WeeklyMileageChart data={data} />
       </CardContent>
     </Card>

@@ -15,6 +15,7 @@ import { RacePredictions } from "@/components/home/race-predictions";
 import { TodayCard, type PlanDayLite } from "@/components/home/today-card";
 import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
+import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { formatDate, formatDistance, localDateStr, secondsToTime } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
@@ -128,79 +129,85 @@ export default function TodayPage() {
               Today&apos;s Garmin data hasn&apos;t synced yet. Showing {wellness.as_of}; readiness is hidden until it does.
             </p>
           )}
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)_minmax(0,300px)] lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-            <div className="space-y-3">
-              <Section label="Today's run" accent="var(--type-easy)" meta={todayPlan ? `${formatDistance(todayPlan.distance_miles)} mi planned` : undefined}>
+          {/* Phone: one column in priority order. Desktop: two columns sized to fit one screen. */}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start">
+            <div className="contents lg:block lg:min-w-0 lg:space-y-3">
+              <Section label="Today" accent="var(--type-easy)" className="order-1"
+                meta={todayPlan?.actual ? "done" : todayPlan && todayPlan.type !== "rest" ? `${formatDistance(todayPlan.distance_miles)} mi planned` : undefined}>
                 <TodayCard
                   // Remount when the day or its saved feedback changes, so local state follows the data
                   key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
                   onFeedbackSaved={load}
                   today={todayPlan}
-                  wellness={wellness?.today ?? null}
-                  statusLabel={wellness?.training_status_label ?? null}
-                  signals={wellness?.signals ?? []}
                   planStale={planStale || !plan}
-                  mileageRisk={planStale ? null : plan?.athlete?.injury_risk}
+                  recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
+                  coach={todayRun ? (
+                    <CoachingReview
+                      key={`coach-${todayRun.id}-${todayRun.feel_rating}-${todayRun.notes}`}
+                      activityId={todayRun.id} onPlanChanged={load} autoRefresh />
+                  ) : undefined}
                 />
               </Section>
-              {todayRun && <Section label="Coach review" accent="var(--type-intervals)">
-                <CoachingReview
-                  key={`coach-${todayRun.id}-${todayRun.feel_rating}-${todayRun.notes}`}
-                  activityId={todayRun.id} onPlanChanged={load} />
-              </Section>}
-            </div>
-
-            <div className="min-w-0 space-y-3">
-              <Section label="Recovery" accent="var(--type-support)" meta="Garmin · 28 days">
-                <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
-              </Section>
-              <Section label="Weekly mileage" accent="var(--type-long)" meta="12 weeks">
-                <WeeklyMileageChartWrapper data={weeklyMileage} />
-              </Section>
-            </div>
-
-            <div className="min-w-0 space-y-3 lg:col-span-2 xl:col-span-1">
-              <Section label="Race predictions" accent="var(--type-race)" meta="Garmin">
-                <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
-              </Section>
               {thisWeek && (
-                <Section label="This week" accent="var(--type-threshold)">
+                <Section label="This week" accent="var(--type-threshold)" className="order-2" meta="tap a day">
                   <Card>
-                    <CardContent className="pt-1">
-                      <WeekProgress days={thisWeek.days} plannedMiles={thisWeek.target_mileage} />
+                    <CardContent className="pt-2">
+                      <WeekProgress days={thisWeek.days} />
                     </CardContent>
                   </Card>
                 </Section>
               )}
+              <Panel label="Recent runs" className="order-6" meta={recentRuns.length ? `${Math.min(recentRuns.length, 6)} latest` : undefined} bodyClassName="p-0">
+                {recentRuns.length > 0 ? (
+                  <table className="data-table w-full table-fixed">
+                    <thead><tr>
+                      <th scope="col" className="w-[4.5rem]">Date</th><th scope="col">Run</th>
+                      <th scope="col" className="r w-12">Dist</th><th scope="col" className="r w-16">Pace</th>
+                      <th scope="col" className="r hidden w-16 xl:table-cell">Time</th>
+                    </tr></thead>
+                    <tbody>
+                      {recentRuns.slice(0, 6).map((run) => {
+                        const kind = activityKind(run.session?.category === "fartlek" || run.session?.category === "speed" ? "intervals" : run.session?.category ?? run.type, run.title);
+                        return (
+                          <tr key={run.id} className="cursor-pointer" onClick={() => setSelectedRun(run)}>
+                            <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date).replace(/^\w+, /, "")}</td>
+                            <td className="min-w-0">
+                              <button type="button" className="flex min-h-8 max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                                onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>
+                                <span className="truncate">{run.session?.title ?? run.title}</span>
+                                {kind !== "easy" && <KindPill kind={kind} />}
+                              </button>
+                            </td>
+                            <td className="r">{formatDistance(run.distance_miles)}</td>
+                            <td className="r">{run.avg_pace || "—"}</td>
+                            <td className="r hidden xl:table-cell">{secondsToTime(run.duration_seconds)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="py-6 text-center text-muted-foreground">No runs yet — sync Garmin.</p>
+                )}
+              </Panel>
+            </div>
+
+            <div className="contents lg:block lg:min-w-0 lg:space-y-3">
+              <Section label="Recovery" accent="var(--type-support)" className="order-3" meta="Garmin · tap a tile for its trend">
+                <div className="space-y-2">
+                  <ReadinessStrip wellness={wellness?.today ?? null} signals={wellness?.signals ?? []}
+                    mileageRisk={planStale ? null : plan?.athlete?.injury_risk} />
+                  <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
+                </div>
+              </Section>
+              <Section label="Weekly mileage" accent="var(--type-long)" className="order-4" meta="12 weeks">
+                <WeeklyMileageChartWrapper data={weeklyMileage} showTitle={false} />
+              </Section>
+              <Section label="Race predictions" accent="var(--type-race)" className="order-5" meta="Garmin · current fitness">
+                <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
+              </Section>
             </div>
           </div>
-
-          <Panel label="Recent runs" meta={recentRuns.length ? `${Math.min(recentRuns.length, 7)} latest` : undefined} bodyClassName="p-0">
-            {recentRuns.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="data-table">
-                  <thead><tr><th scope="col">Date</th><th scope="col">Run</th><th scope="col" className="r">Dist</th><th scope="col" className="r">Pace</th><th scope="col" className="r">Time</th><th scope="col">Type</th></tr></thead>
-                  <tbody>
-                    {recentRuns.slice(0, 7).map((run) => (
-                      <tr key={run.id} className="cursor-pointer" onClick={() => setSelectedRun(run)}>
-                        <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date)}</td>
-                        <td className="max-w-[16rem] truncate font-medium">
-                          <button type="button" className="max-w-full truncate text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-                            onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>{run.title}</button>
-                        </td>
-                        <td className="r">{formatDistance(run.distance_miles)}</td>
-                        <td className="r">{run.avg_pace || "—"}</td>
-                        <td className="r">{secondsToTime(run.duration_seconds)}</td>
-                        <td><KindPill kind={activityKind(run.type, run.title)} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="py-6 text-center text-muted-foreground">No runs yet — sync Garmin.</p>
-            )}
-          </Panel>
         </>
       )}
 

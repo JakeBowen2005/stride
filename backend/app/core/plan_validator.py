@@ -223,7 +223,8 @@ def validate_plan(
         scheduled = sum(d["distance_miles"] for d in w["days"])
         if budget is not None and not has_race and scheduled > budget + BUDGET_OVER_TOLERANCE:
             problems.append({"code": "over_budget", "date": w["days"][0]["date"],
-                             "message": f"Week {w.get('week_number')}: {scheduled:.1f} mi scheduled vs {budget:.1f} mi budget"})
+                             "message": f"That would put week {w.get('week_number')} at {scheduled:.1f} mi, over its {budget:.1f} mi budget. "
+                                        "Pick a shorter option or shorten another day that week."})
 
     for d in all_days:
         if not d.get("prescribed", True):

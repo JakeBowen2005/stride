@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatDateShort } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface Review {
   id: number;
@@ -30,8 +33,16 @@ async function post<T>(path: string, data: unknown): Promise<T> {
   return result;
 }
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request }: {
+const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
+
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, autoRefresh = false }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
+  /** Draw its own card border (when not already inside a card) */
+  bordered?: boolean;
+  /** The "Coach" label; off when a surrounding header already names it */
+  showLabel?: boolean;
+  /** Refresh once when stale. Only for today's run, so browsing old runs never spends AI calls. */
+  autoRefresh?: boolean;
   /** The athlete's "what isn't working" from Plan options; a new nonce asks the coach again. */
   request?: { concern: string; nonce: number } | null;
 }) {
@@ -40,6 +51,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request }: {
   const [busy, setBusy] = useState(false);
   const [autoJob, setAutoJob] = useState<{status:string|null;message:string|null} | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const query = activityId ? `activity_id=${activityId}` : `plan_id=${planId}`;
   const load = useCallback(async () => {
     try {
@@ -69,6 +81,15 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request }: {
     catch (e) { setError(e instanceof Error ? e.message : "Coach review failed. Your plan is unchanged."); }
     finally { setBusy(false); }
   }, [activityId, planId]);
+  // A run's review that predates newer training data refreshes itself once, so the athlete
+  // never reads advice about a stale picture of their run.
+  const autoRefreshed = useRef(false);
+  useEffect(() => {
+    if (!autoRefresh || !activityId || !review?.stale || configured !== true || busy || autoRefreshed.current || review.applied_candidate_id) return;
+    autoRefreshed.current = true;
+    const timer = setTimeout(() => generate(review.athlete_concern), 0);
+    return () => clearTimeout(timer);
+  }, [autoRefresh, activityId, review, configured, busy, generate]);
   const handled = useRef<number | null>(null);
   useEffect(() => {
     if (!request || handled.current === request.nonce) return;
@@ -86,42 +107,47 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request }: {
     } catch (e) { setError(e instanceof Error ? e.message : "Could not apply this suggestion."); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-xl border bg-card p-4" aria-label="AI coaching review" aria-busy={busy}>
-    <div>
-      <p className="eyebrow">Coach perspective</p>
-      <h3 className="mt-1 text-sm font-semibold">{activityId ? "This run and what comes next" : "Does this block fit?"}</h3>
-      <p className="mt-1 text-xs text-muted-foreground">Reviews training, recovery and your coaching research. Suggested changes need your approval.</p>
+  const when = review ? new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")) : null;
+  const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0);
+  const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
+  return <section className={cn("space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
+    <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
+      {showLabel && <span className="stat-label">Coach</span>}
+      <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
+        title={PRIVACY} onClick={() => generate(review?.athlete_concern)}>
+        <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden /> {refreshLabel}
+      </Button>
     </div>
-    {configured === false && <p className="text-sm text-muted-foreground">OpenAI isn&apos;t configured. Your training rules and saved feedback still work.</p>}
-    {busy && request && <p role="status" className="text-sm text-muted-foreground">Coach is reviewing your request against your training and the plan…</p>}
-    {autoPending && <p role="status" className="text-xs text-muted-foreground">New Garmin run received · {autoJob?.status === "running" ? "coach is reviewing it and your upcoming plan" : "automatic coach review queued"}. You can add how it felt afterward.</p>}
-    {autoJob?.status === "failed" && <p role="status" className="text-xs text-muted-foreground">Automatic review could not finish. You can request a review manually.</p>}
-    {review && <div className="space-y-3 text-sm">
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span>{review.status === "ready" ? "OpenAI review" : review.status === "pending" ? "Review in progress" : "Fallback · AI unavailable"}</span>
-        {review.model && <span>{review.model}</span>}
-        <span>{new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")).toLocaleString()}</span>
-      </div>
-      {review.stale && <p role="status" className="rounded-md bg-muted p-2">Training has changed since this review. Request an updated review before applying an option.</p>}
-      {review.athlete_concern && <p className="rounded-md bg-muted px-3 py-2 text-sm"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
-      <p className="leading-relaxed">{review.summary}</p>
-      {review.observations.length > 0 && <ul className="list-disc space-y-1 pl-4">{review.observations.map((text, i) => <li key={i}>{text}</li>)}</ul>}
-      {review.uncertainties.length > 0 && <details><summary className="cursor-pointer text-muted-foreground">What the coach couldn&apos;t establish</summary><ul className="mt-2 list-disc space-y-1 pl-4">{review.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul></details>}
-      {review.research.length > 0 && <p className="break-words text-xs text-muted-foreground">Research used: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
-      {review.suggestions.map(option => <div key={option.id} className="space-y-2 rounded-md border p-3">
-        <p className="font-medium">{option.date}: {option.replacement.title}</p>
-        <p className="text-xs text-muted-foreground">Replaces {option.before.title} ({option.before.distance_miles} mi) → {option.replacement.distance_miles} mi total</p>
-        <p>{option.replacement.description}</p>
-        {(option.replacement.warmup || option.replacement.cooldown) && <p className="text-xs text-muted-foreground">Warmup: {option.replacement.warmup ?? "none"} · Cooldown: {option.replacement.cooldown ?? "none"}</p>}
-        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also adjusts {change.date}: {change.before.distance_miles} → {change.replacement.distance_miles} mi to preserve the weekly budget.</p>)}
-        <p className="text-muted-foreground">{option.reason}</p>
-        <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply this change"}</Button>
+    {configured === false && !review && <p className="text-xs text-muted-foreground">AI coach isn&apos;t configured. Your training rules and feedback still work.</p>}
+    {busy && request && <p role="status" className="text-xs text-muted-foreground">Coach is reviewing your request…</p>}
+    {autoPending && <p role="status" className="text-xs text-muted-foreground">New run received · {autoJob?.status === "running" ? "coach is reviewing it" : "review queued"}.</p>}
+    {autoJob?.status === "failed" && !review && <p role="status" className="text-xs text-muted-foreground">Automatic review couldn&apos;t finish. Tap Refresh to try again.</p>}
+    {!review && configured === true && !busy && !autoPending && <p className="text-xs text-muted-foreground">No review yet.</p>}
+    {review && <>
+      {review.athlete_concern && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
+      <p className={cn("leading-relaxed", !expanded && "line-clamp-3", busy && review.stale && "opacity-50")}>{review.summary}</p>
+      {(hasDetails || review.summary.length > 220) && (
+        <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
+          className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          {expanded ? "Less" : "More"}
+        </button>
+      )}
+      {expanded && <div className="space-y-2 text-xs text-muted-foreground">
+        {review.observations.length > 0 && <ul className="list-disc space-y-1 pl-4 text-foreground">{review.observations.map((text, i) => <li key={i}>{text}</li>)}</ul>}
+        {review.uncertainties.length > 0 && <ul className="list-disc space-y-1 pl-4">{review.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul>}
+        {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
+        <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
+      </div>}
+      {review.stale && review.suggestions.length > 0 && !review.applied_candidate_id && <p role="status" className="text-xs text-muted-foreground">Training changed since this review. Refresh before applying a change.</p>}
+      {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
+        <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({option.replacement.distance_miles} mi)</span></p>
+        <p className="text-xs text-muted-foreground">{option.reason}</p>
+        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {change.before.distance_miles} → {change.replacement.distance_miles} mi to keep the weekly budget.</p>)}
+        <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply"}</Button>
       </div>)}
-      {review.applied_candidate_id && <p role="status" className="text-primary">Change saved. Stride rechecked the schedule and mileage budget.</p>}
-    </div>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
+    </>}
+    {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {error && configured === null && <Button size="sm" variant="outline" onClick={load}>Retry loading coach</Button>}
-    <Button size="sm" variant="outline" disabled={busy || configured !== true} onClick={() => generate(review?.athlete_concern)}>{busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Review with latest training" : activityId ? "Review run & upcoming plan" : "Ask coach to review this block"}</Button>
-    <p className="text-[11px] text-muted-foreground">Training summaries, feedback and research excerpts are sent to OpenAI when a new Garmin run syncs, you request a review, or submit run feedback. No GPS routes or account credentials are sent. Unchanged reviews are reused.</p>
   </section>;
 }

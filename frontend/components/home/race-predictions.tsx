@@ -24,20 +24,18 @@ export function RacePredictions({
     { key: "half", label: "Half", pred: wellness.predicted_half, pr: prs["Half Marathon"] },
     { key: "marathon", label: "Marathon", pred: wellness.predicted_marathon, pr: prs["Marathon"] },
   ];
+  // Only race goals have a time to compare; mileage goals leave the column empty.
+  const hasGoal = rows.some((r) => goal?.distance === r.key && goal?.target_time);
   return (
     <Card>
-      <CardContent className="pt-4">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium">Race Predictions</h3>
-          <span className="text-xs text-muted-foreground">Garmin, based on current fitness</span>
-        </div>
+      <CardContent className="pt-3">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="pb-1 font-medium">Distance</th>
               <th className="pb-1 text-right font-medium">Predicted</th>
               <th className="pb-1 text-right font-medium">PR</th>
-              <th className="pb-1 text-right font-medium">Goal</th>
+              {hasGoal && <th className="pb-1 text-right font-medium">Goal</th>}
             </tr>
           </thead>
           <tbody>
@@ -46,14 +44,11 @@ export function RacePredictions({
                 <td className="py-1.5">{r.label}</td>
                 <td className="py-1.5 text-right font-mono">{fmt(r.pred)}</td>
                 <td className="py-1.5 text-right font-mono text-muted-foreground">{fmt(r.pr)}</td>
-                <td className="py-1.5 text-right font-mono">{goal?.distance === r.key ? fmt(goal.target_time) : ""}</td>
+                {hasGoal && <td className="py-1.5 text-right font-mono">{goal?.distance === r.key ? fmt(goal.target_time) : ""}</td>}
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Predictions dip during a rebuild and climb as fitness returns. Use them to track the trend, not to set race pace.
-        </p>
       </CardContent>
     </Card>
   );

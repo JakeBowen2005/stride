@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { Wellness } from "@/components/home/types";
@@ -94,7 +94,7 @@ function Sparkline({ data }: { data: { v: number }[] }) {
     <ResponsiveContainer width="100%" height={32}>
       <LineChart data={data} margin={{ top: 4, bottom: 4, left: 0, right: 0 }}>
         <YAxis hide domain={["dataMin", "dataMax"]} />
-        <Line type="monotone" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line type="linear" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -167,11 +167,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
   const change = first != null && last != null && activeSeries.length > 6 ? last - first : null;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-medium">Recovery & Body</h3>
-        <span className="text-xs text-muted-foreground">from Garmin · tap a tile for its trend</span>
-      </div>
+    <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {tiles.map((m) => (
           <button
@@ -180,7 +176,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
             onClick={() => setSelected(active?.key === m.key ? null : m.key)}
             aria-pressed={active?.key === m.key}
             className={cn(
-              "rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "rounded-xl border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active?.key === m.key && "border-foreground/40 ring-1 ring-foreground/20",
             )}
           >
@@ -198,17 +194,17 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="text-sm text-muted-foreground underline underline-offset-2"
+          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
         >
-          {showAll ? "Show fewer" : `Show all ${available.length} (body battery, stress, steps, VO2max)`}
+          {showAll ? "Show fewer" : `+${available.length - tiles.length} more metrics`}
         </button>
       ) : null}
 
       {active && (
         <Card>
-          <CardContent className="space-y-2 pt-4">
+          <CardContent className="space-y-1 pt-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-sm font-medium">{active.label} · last {activeSeries.length} days</h4>
+              <h4 className="text-sm font-medium" title={active.help}>{active.label} · last {activeSeries.length} days</h4>
               <div className="flex items-center gap-2">
                 {change != null && (
                   <span className="text-xs text-muted-foreground">
@@ -227,10 +223,9 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
                 </button>
               </div>
             </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">{active.help}</p>
             {activeSeries.length > 1 ? (
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={activeSeries} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={activeSeries} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} className="fill-muted-foreground" interval="preserveStartEnd" minTickGap={24} />
                   <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" domain={["auto", "auto"]} width={40} />
@@ -247,13 +242,14 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
                     }}
                     formatter={(v) => [typeof v === "number" ? (v < 10 ? v.toFixed(2) : Math.round(v)) : v, active.label]}
                   />
-                  <Area type="monotone" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={2} fill={band ? "none" : "var(--viz-band)"} dot={false} activeDot={{ r: 4 }} />
-                </AreaChart>
+                  <Line type="linear" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={2}
+                    dot={{ r: 2.5, fill: "var(--viz-series-1)", strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false} />
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <p className="py-6 text-center text-sm text-muted-foreground">Not enough history yet.</p>
             )}
-            {band && <p className="text-xs text-muted-foreground">Shaded band = {active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}.</p>}
+            <p className="text-xs text-muted-foreground">{band ? `Shaded = ${active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}. ` : ""}{active.help}</p>
           </CardContent>
         </Card>
       )}
