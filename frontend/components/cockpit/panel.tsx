@@ -1,13 +1,15 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 
 /** Dark header bar over a white body: the cockpit's basic container. */
 export function Panel({ label, meta, accent, className, bodyClassName, children }: {
   label: string; meta?: React.ReactNode; accent?: string; className?: string; bodyClassName?: string; children: React.ReactNode;
 }) {
+  const id = useId();
   return (
-    <section className={cn("panel", className)} aria-label={label}>
+    <section className={cn("panel", className)} aria-labelledby={id}>
       <header className="panel-head" style={accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : undefined}>
-        <span>{label}</span>
+        <h2 id={id}>{label}</h2>
         {meta != null && <span className="meta">{meta}</span>}
       </header>
       <div className={cn("p-3", bodyClassName)}>{children}</div>
@@ -30,10 +32,11 @@ export function StatCell({ label, value, sub, tone }: { label: string; value?: R
 export function Section({ label, meta, accent, className, children }: {
   label: string; meta?: React.ReactNode; accent?: string; className?: string; children: React.ReactNode;
 }) {
+  const id = useId();
   return (
-    <section className={cn("section-stack", className)} aria-label={label}>
+    <section className={cn("section-stack", className)} aria-labelledby={id}>
       <header className="panel-head" style={accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : undefined}>
-        <span>{label}</span>
+        <h2 id={id}>{label}</h2>
         {meta != null && <span className="meta">{meta}</span>}
       </header>
       {children}

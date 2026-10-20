@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 
 
 function status(w: Workout, today: string): { text: string; color?: string } | null {
-  if (w.actual) return { text: "Done", color: "var(--type-easy)" };
-  if (w.session_status === "replaced") return { text: "Replaced", color: "var(--type-threshold)" };
+  if (w.actual) return { text: "✓ Done", color: "var(--type-easy)" };
+  if (w.session_status === "replaced") return { text: "Replaced" };
   if (w.session_status === "skipped") return { text: "Skipped" };
   if (w.session_status === "moved") return { text: w.moved_to ? `Moved → ${formatDateShort(w.moved_to)}` : "Moved here" };
   if (w.date < today && w.type !== "rest" && w.prescribed !== false) return { text: "Not logged", color: "var(--warn)" };
@@ -28,10 +28,10 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
         <thead>
-          <tr className="bg-[#1f1f1f] text-left font-mono text-[10.5px] uppercase tracking-[.08em] text-[#f5f5f2]">
-            <th className="w-[84px] px-2 py-1.5 font-medium">Wk</th>
-            {days.map((d) => <th key={d} className="px-2 py-1.5 font-medium">{d}</th>)}
-            <th className="w-24 px-2 py-1.5 text-right font-medium">Total</th>
+          <tr className="bg-[var(--ink)] text-left font-mono text-[10.5px] uppercase tracking-[.08em] text-[#f5f5f2]">
+            <th scope="col" className="w-[84px] px-2 py-1.5 font-medium">Wk</th>
+            {days.map((d) => <th scope="col" key={d} className="px-2 py-1.5 font-medium">{d}</th>)}
+            <th scope="col" className="w-24 px-2 py-1.5 text-right font-medium">Total</th>
           </tr>
         </thead>
         <tbody>
@@ -61,14 +61,17 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                         className={cn("flex h-full min-h-[92px] w-full flex-col gap-0.5 rounded-[4px] border p-1.5 text-left transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary",
                           hard && "hatch", w.type === "rest" && "opacity-70", w.skipped && "opacity-50")}
                         style={{
-                          background: w.actual ? "var(--type-easy-tint)" : hard ? tint : "var(--card)",
+                          background: hard ? tint : w.actual ? "var(--type-easy-tint)" : "var(--card)",
                           borderColor: selected ? "#1f1f1f" : hard ? color : "var(--border)",
                           borderWidth: selected ? 2 : 1,
                           ["--hatch" as string]: hard ? `color-mix(in srgb, ${color} 18%, transparent)` : undefined,
                           boxShadow: w.date === today ? `inset 0 3px 0 ${color}` : undefined,
                         }}>
                         <span className="font-mono text-[10.5px] text-muted-foreground">{formatDateShort(w.date)}</span>
-                        <span className="line-clamp-2 text-[12.5px] font-medium leading-tight" style={hard ? { color } : undefined}>{w.title}</span>
+                        <span className="flex items-start gap-1 text-[12.5px] font-medium leading-tight">
+                          {hard && <span aria-hidden="true" className="mt-1 size-2 shrink-0 rounded-full" style={{ background: color }} />}
+                          <span className="line-clamp-2">{w.title}</span>
+                        </span>
                         {w.type !== "rest" && <span className="num mt-auto text-sm font-semibold">{distanceInUnits(miles, units)} {unit}</span>}
                         {st && <span className="text-[11px] font-medium" style={{ color: st.color ?? "var(--muted-foreground)" }}>{st.text}</span>}
                       </button>

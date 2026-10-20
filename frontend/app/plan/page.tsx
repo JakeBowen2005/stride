@@ -364,10 +364,14 @@ export default function PlanPage() {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-3">
+        <div className="contents lg:block lg:min-w-0 lg:space-y-3">
           <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-0">
-            <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => setSelectedDate(w.date)} />
+            <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => {
+              setSelectedDate(w.date);
+              if (!window.matchMedia("(min-width: 1024px)").matches) requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ block: "start" }));
+            }} />
           </Panel>
+          <div className="order-3 min-w-0 space-y-3 lg:order-none">
           {plan.quality_policy && <TrainingProgression key={`${plan.id}-${plan.quality_policy.stage}`} policy={plan.quality_policy} experience={plan.athlete?.experience_level} />}
           <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} />
           {plan.notes.length > 0 && (
@@ -377,9 +381,10 @@ export default function PlanPage() {
               </div>
             </Panel>
           )}
+          </div>
         </div>
 
-        <div className="min-w-0 space-y-3">
+        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:order-none">
           {selected && (
             <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">
               <PlanDay
@@ -389,7 +394,7 @@ export default function PlanPage() {
                 readOnly={!!plan.preview}
                 isToday={selected.date === today}
                 expanded
-                onToggle={() => {}}
+                pinned
                 onPlanChanged={refresh}
               />
             </Panel>

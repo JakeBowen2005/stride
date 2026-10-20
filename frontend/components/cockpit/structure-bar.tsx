@@ -44,24 +44,24 @@ export function StructureBar({ prescription, kind, height = 40 }: { prescription
   const parts = blocks(prescription);
   const total = parts.reduce((sum, b) => sum + b.seconds, 0);
   if (!total || !parts.some((b) => b.kind === "work")) return null;
-  const { color, tint } = kindColor(kind);
+  const { color } = kindColor(kind);
   const workMin = Math.round(parts.filter((b) => b.kind === "work").reduce((s, b) => s + b.seconds, 0) / 60);
   return (
-    <figure className="space-y-1">
-      <div className="flex items-end gap-px overflow-hidden rounded-sm" style={{ height }} role="img"
+    <span className="block space-y-1">
+      <span className="flex items-end gap-px overflow-hidden rounded-sm" style={{ height }} role="img"
         aria-label={`Session shape: ${parts.filter((b) => b.kind === "work").length} work blocks, about ${workMin} minutes of work, ${Math.round(total / 60)} minutes total`}>
         {parts.map((b, i) => (
-          <div key={i} title={`${b.label} · ${Math.round(b.seconds / 60 * 10) / 10} min`}
+          <span key={i} title={`${b.label} · ${Math.round(b.seconds / 60 * 10) / 10} min`}
             style={{
               flexGrow: b.seconds, flexBasis: 0, minWidth: 2,
               height: b.kind === "work" ? "100%" : b.kind === "recovery" ? "30%" : "45%",
-              background: b.kind === "work" ? color : b.kind === "recovery" ? tint : "#d9dcd6",
+              background: b.kind === "work" ? color : b.kind === "recovery" ? `color-mix(in srgb, ${color} 45%, white)` : "#c9ccc5",
             }} />
         ))}
-      </div>
-      <figcaption className="flex justify-between font-mono text-[10.5px] text-muted-foreground">
+      </span>
+      <span className="flex justify-between font-mono text-[10.5px] text-muted-foreground">
         <span>~{workMin} min work</span><span>~{Math.round(total / 60)} min total</span>
-      </figcaption>
-    </figure>
+      </span>
+    </span>
   );
 }

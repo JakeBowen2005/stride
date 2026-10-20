@@ -153,7 +153,7 @@ CATALOG: tuple[Template, ...] = (
 ) + tuple(
     # Hills (trail/mountain goals): effort-based, own category so lap paces on a
     # hill never calibrate flat interval pace.
-    Template(key, 'hills', 'hills', name, (Rep(reps, seconds, None, seconds * 2),), None, HILLS, HILL_CUE,
+    Template(key, 'hills', 'hills', name, (Rep(reps, seconds, None, int(seconds * 1.5)),), None, HILLS, HILL_CUE,
              frozenset({'trail', 'mountain'}))
     for key, name, reps, seconds in (
         ('h_8x60', '8x60sec Hill Repeats', 8, 60), ('h_8x90', '8x90sec Hill Repeats', 8, 90),

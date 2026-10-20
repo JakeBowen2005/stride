@@ -179,13 +179,15 @@ export default function TodayPage() {
             {recentRuns.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="data-table">
-                  <thead><tr><th>Date</th><th>Run</th><th className="r">Dist</th><th className="r">Pace</th><th className="r">Time</th><th>Type</th></tr></thead>
+                  <thead><tr><th scope="col">Date</th><th scope="col">Run</th><th scope="col" className="r">Dist</th><th scope="col" className="r">Pace</th><th scope="col" className="r">Time</th><th scope="col">Type</th></tr></thead>
                   <tbody>
                     {recentRuns.slice(0, 7).map((run) => (
-                      <tr key={run.id} tabIndex={0} className="cursor-pointer" onClick={() => setSelectedRun(run)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedRun(run); } }}>
+                      <tr key={run.id} className="cursor-pointer" onClick={() => setSelectedRun(run)}>
                         <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date)}</td>
-                        <td className="max-w-[16rem] truncate font-medium">{run.title}</td>
+                        <td className="max-w-[16rem] truncate font-medium">
+                          <button type="button" className="max-w-full truncate text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                            onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>{run.title}</button>
+                        </td>
                         <td className="r">{formatDistance(run.distance_miles)}</td>
                         <td className="r">{run.avg_pace || "—"}</td>
                         <td className="r">{secondsToTime(run.duration_seconds)}</td>
