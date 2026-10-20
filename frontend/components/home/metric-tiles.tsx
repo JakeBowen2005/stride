@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -106,22 +107,61 @@ function shortDate(iso: string) {
 // Shown before "Show all": the four that most often change what you should run today
 const PRIMARY: MetricKey[] = ["sleep", "hrv", "rhr", "load"];
 
+const STORAGE_KEY = "stride.home.trendMetric";
+const HIDDEN = "none";
+const DEFAULT_METRIC: MetricKey = "hrv";
+
+// Persisted trend-chart choice. localStorage can be missing or throw (private mode,
+// blocked storage); in that case the choice simply lives for this page view.
+const listeners = new Set<() => void>();
+let memoryChoice: string | null = null;
+
+function readChoice(): string | null {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) ?? memoryChoice;
+  } catch {
+    return memoryChoice;
+  }
+}
+
+function writeChoice(v: MetricKey | null) {
+  memoryChoice = v ?? HIDDEN;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, memoryChoice);
+  } catch {
+    // storage unavailable — keep the in-memory value only
+  }
+  listeners.forEach((l) => l());
+}
+
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+
+function toMetric(raw: string | null): MetricKey | null {
+  if (raw === HIDDEN) return null;
+  return METRICS.some((m) => m.key === raw) ? (raw as MetricKey) : DEFAULT_METRIC;
+}
+
 export function MetricTiles({ today, history }: { today: Wellness | null; history: Wellness[] }) {
-  const [selected, setSelected] = useState<MetricKey>("hrv");
+  // null = trend chart hidden
+  const selected = toMetric(useSyncExternalStore(subscribe, readChoice, () => null));
+  const setSelected = writeChoice;
   const [showAll, setShowAll] = useState(false);
   if (!today) return null;
 
   const available = METRICS.filter((m) => m.value(today) != null || history.some((h) => m.value(h) != null));
   const tiles = showAll ? available : available.filter((m) => PRIMARY.includes(m.key) || m.key === selected);
-  const active = available.find((m) => m.key === selected) ?? available[0];
-  if (!active) return null;
+  const active = selected == null ? null : (available.find((m) => m.key === selected) ?? available[0]);
+  if (available.length === 0) return null;
 
   const series = (m: MetricDef) =>
     history.map((h) => ({ date: h.date, label: shortDate(h.date), v: m.value(h) ?? null })).filter((p) => p.v != null) as {
       date: string; label: string; v: number;
     }[];
-  const activeSeries = series(active);
-  const band = active.band?.(today) ?? null;
+  const activeSeries = active ? series(active) : [];
+  const band = active?.band?.(today) ?? null;
   const first = activeSeries[0]?.v;
   const last = activeSeries[activeSeries.length - 1]?.v;
   const change = first != null && last != null && activeSeries.length > 6 ? last - first : null;
@@ -137,11 +177,11 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
           <button
             key={m.key}
             type="button"
-            onClick={() => setSelected(m.key)}
-            aria-pressed={active.key === m.key}
+            onClick={() => setSelected(active?.key === m.key ? null : m.key)}
+            aria-pressed={active?.key === m.key}
             className={cn(
               "rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              active.key === m.key && "border-foreground/40 ring-1 ring-foreground/20",
+              active?.key === m.key && "border-foreground/40 ring-1 ring-foreground/20",
             )}
           >
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{m.label}</div>
@@ -164,46 +204,59 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
         </button>
       ) : null}
 
-      <Card>
-        <CardContent className="space-y-2 pt-4">
-          <div className="flex items-baseline justify-between gap-2">
-            <h4 className="text-sm font-medium">{active.label} · last {activeSeries.length} days</h4>
-            {change != null && (
-              <span className="text-xs text-muted-foreground">
-                {change === 0 ? "flat" : `${change > 0 ? "▲" : "▼"} ${Math.abs(change) < 10 ? Math.abs(change).toFixed(1) : Math.round(Math.abs(change))}`}
-                {change !== 0 && !active.neutralTrend && ` ${(change < 0) === !!active.lowerIsBetter ? "(better)" : "(watch)"}`}
-              </span>
-            )}
-          </div>
-          <p className="text-xs leading-relaxed text-muted-foreground">{active.help}</p>
-          {activeSeries.length > 1 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={activeSeries} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} className="fill-muted-foreground" interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" domain={["auto", "auto"]} width={40} />
-                {band && (
-                  <ReferenceArea y1={band[0]} y2={band[1]} fill="var(--viz-band)" stroke="none" ifOverflow="extendDomain" />
+      {active && (
+        <Card>
+          <CardContent className="space-y-2 pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-sm font-medium">{active.label} · last {activeSeries.length} days</h4>
+              <div className="flex items-center gap-2">
+                {change != null && (
+                  <span className="text-xs text-muted-foreground">
+                    {change === 0 ? "flat" : `${change > 0 ? "▲" : "▼"} ${Math.abs(change) < 10 ? Math.abs(change).toFixed(1) : Math.round(Math.abs(change))}`}
+                    {change !== 0 && !active.neutralTrend && ` ${(change < 0) === !!active.lowerIsBetter ? "(better)" : "(watch)"}`}
+                  </span>
                 )}
-                <Tooltip
-                  cursor={{ stroke: "var(--color-border)" }}
-                  contentStyle={{
-                    backgroundColor: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-md)",
-                    fontSize: 12,
-                  }}
-                  formatter={(v) => [typeof v === "number" ? (v < 10 ? v.toFixed(2) : Math.round(v)) : v, active.label]}
-                />
-                <Area type="monotone" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={2} fill={band ? "none" : "var(--viz-band)"} dot={false} activeDot={{ r: 4 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="py-6 text-center text-sm text-muted-foreground">Not enough history yet.</p>
-          )}
-          {band && <p className="text-xs text-muted-foreground">Shaded band = {active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}.</p>}
-        </CardContent>
-      </Card>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  aria-label="Hide chart"
+                  title="Hide chart"
+                  className="-mr-1 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">{active.help}</p>
+            {activeSeries.length > 1 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={activeSeries} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} className="fill-muted-foreground" interval="preserveStartEnd" minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" domain={["auto", "auto"]} width={40} />
+                  {band && (
+                    <ReferenceArea y1={band[0]} y2={band[1]} fill="var(--viz-band)" stroke="none" ifOverflow="extendDomain" />
+                  )}
+                  <Tooltip
+                    cursor={{ stroke: "var(--color-border)" }}
+                    contentStyle={{
+                      backgroundColor: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: 12,
+                    }}
+                    formatter={(v) => [typeof v === "number" ? (v < 10 ? v.toFixed(2) : Math.round(v)) : v, active.label]}
+                  />
+                  <Area type="monotone" dataKey="v" stroke="var(--viz-series-1)" strokeWidth={2} fill={band ? "none" : "var(--viz-band)"} dot={false} activeDot={{ r: 4 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">Not enough history yet.</p>
+            )}
+            {band && <p className="text-xs text-muted-foreground">Shaded band = {active.key === "hrv" ? "your normal HRV range" : "the 0.8-1.3 sweet spot"}.</p>}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

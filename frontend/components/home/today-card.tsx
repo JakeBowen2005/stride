@@ -38,22 +38,19 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 
 function ReadinessRing({ score, level }: { score: number; level: string | null | undefined }) {
-  const r = 34;
+  const r = 16;
   const c = 2 * Math.PI * r;
   const color = LEVEL_COLOR[(level || "").toUpperCase()] ?? "var(--viz-series-1)";
   return (
-    <div className="relative h-20 w-20 shrink-0" role="img" aria-label={`Training readiness ${score} of 100${level ? `, ${level.toLowerCase()}` : ""}`}>
-      <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
-        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="8" />
+    <div className="relative size-10 shrink-0" role="img" aria-label={`Training readiness ${score} of 100${level ? `, ${level.toLowerCase()}` : ""}`}>
+      <svg viewBox="0 0 40 40" className="size-10 -rotate-90">
+        <circle cx="20" cy="20" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="4" />
         <circle
-          cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="8" strokeLinecap="round"
+          cx="20" cy="20" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
           strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(score, 100) / 100)}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-xl font-semibold leading-none">{score}</span>
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">ready</span>
-      </div>
+      <span className="absolute inset-0 flex items-center justify-center font-mono text-xs font-semibold">{score}</span>
     </div>
   );
 }
@@ -97,64 +94,42 @@ export function TodayCard({
     : signals;
   const cautions = allSignals.filter((s) => s.level !== "good");
 
+  const goods = allSignals.filter((s) => s.level === "good");
+  const [showGood, setShowGood] = useState(false);
+  const level = wellness?.readiness_level;
+  const readinessText = wellness?.readiness_feedback
+    ? FEEDBACK[wellness.readiness_feedback] ?? wellness.readiness_feedback.replaceAll("_", " ").toLowerCase()
+    : level
+      ? `${level.charAt(0)}${level.slice(1).toLowerCase()} readiness`
+      : "";
+
   return (
     <Card>
       <CardContent className="space-y-4 pt-4">
-        {wellness?.readiness_score != null && (
-          <div className="flex items-center gap-4">
-            <ReadinessRing score={wellness.readiness_score} level={wellness.readiness_level} />
-            <div className="min-w-0 space-y-1">
-              <div className="text-sm font-medium">
-                {wellness.readiness_level ? `${wellness.readiness_level.charAt(0)}${wellness.readiness_level.slice(1).toLowerCase()} readiness` : "Readiness"}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {FEEDBACK[wellness.readiness_feedback || ""] ?? (wellness.readiness_feedback || "").replaceAll("_", " ").toLowerCase()}
-                {wellness.recovery_time_min ? ` · ${Math.round(wellness.recovery_time_min / 60)}h recovery left` : ""}
-              </div>
-              {statusLabel && (
-                <Badge variant="secondary" className="text-xs">
-                  Training status: {statusLabel}
-                </Badge>
-              )}
-            </div>
-          </div>
-        )}
-
-        {allSignals.length > 0 && (
-          <ul className="space-y-1.5">
-            {allSignals.map((s) => (
-              <li key={s.metric} className="flex gap-2 text-sm">
-                {s.level === "good" ? (
-                  <CircleCheck className="mt-0.5 size-4 shrink-0" style={{ color: "var(--status-good)" }} aria-label="Good" />
-                ) : (
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0" style={{ color: "var(--status-serious)" }} aria-label="Caution" />
-                )}
-                <span className="leading-snug">{s.message}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="border-t pt-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s run</div>
+        <div>
           {planStale ? (
-            <div className="mt-1 space-y-2">
+            <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Your last training block has ended.</p>
               <Link href="/plan" className={buttonVariants({ size: "sm" })}>
                 Generate this week&apos;s plan
               </Link>
             </div>
           ) : !today ? (
-            <p className="mt-1 text-sm text-muted-foreground">No plan for today yet.</p>
+            <p className="text-sm text-muted-foreground">No plan for today yet.</p>
           ) : (
-            <button type="button" className="mt-1 w-full text-left" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            <button type="button" className="w-full text-left" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-lg font-semibold leading-tight">{today.title}</div>
-                  <div className="text-sm text-muted-foreground">
+                <div className="min-w-0 space-y-1">
+                  <div className="text-xl font-semibold leading-tight sm:text-2xl">{today.title}</div>
+                  <div className="font-mono text-base font-medium sm:text-lg">
                     {today.type === "rest" ? "Rest day" : `${formatDistance(today.distance_miles)} mi planned`}
-                    {done && ` · done: ${formatDistance(today.actual!.distance_miles)} mi${today.actual!.avg_pace ? ` at ${today.actual!.avg_pace}/mi` : ""}`}
+                    {done && (
+                      <span className="text-muted-foreground">
+                        {` · done ${formatDistance(today.actual!.distance_miles)} mi${today.actual!.avg_pace ? ` at ${today.actual!.avg_pace}/mi` : ""}`}
+                      </span>
+                    )}
                   </div>
+                  {today.purpose && <p className="text-sm text-muted-foreground">{today.purpose}</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   {done && <Badge className="text-xs">Done</Badge>}
@@ -167,7 +142,6 @@ export function TodayCard({
                   {today.warmup && <p><span className="font-medium">Warmup:</span> {today.warmup}</p>}
                   {today.description && <p className="leading-relaxed">{today.description}</p>}
                   {today.cooldown && <p><span className="font-medium">Cooldown:</span> {today.cooldown}</p>}
-                  {today.purpose && <p className="text-muted-foreground italic">Why: {today.purpose}</p>}
                 </div>
               )}
             </button>
@@ -212,6 +186,65 @@ export function TodayCard({
             </p>
           )}
         </div>
+
+        {(wellness?.readiness_score != null || statusLabel || allSignals.length > 0) && (
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {wellness?.readiness_score != null && (
+                <div className="flex items-center gap-2">
+                  <ReadinessRing score={wellness.readiness_score} level={wellness.readiness_level} />
+                  <div className="text-sm leading-tight">
+                    <div className="font-medium">Readiness {wellness.readiness_score}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[readinessText, wellness.recovery_time_min ? `${Math.round(wellness.recovery_time_min / 60)}h recovery left` : ""]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {statusLabel && (
+                <Badge variant="secondary" className="text-xs">
+                  Training status: {statusLabel}
+                </Badge>
+              )}
+            </div>
+            {cautions.length > 0 && (
+              <ul className="space-y-1.5">
+                {cautions.map((s) => (
+                  <li key={s.metric} className="flex gap-2 text-sm">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0" style={{ color: "var(--status-serious)" }} aria-label="Caution" />
+                    <span className="leading-snug">{s.message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {goods.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowGood((v) => !v)}
+                  aria-expanded={showGood}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <CircleCheck className="size-3.5" style={{ color: "var(--status-good)" }} aria-hidden />
+                  {goods.length} good signal{goods.length === 1 ? "" : "s"}
+                  <ChevronDown className={cn("size-3.5 transition-transform", showGood && "rotate-180")} />
+                </button>
+                {showGood && (
+                  <ul className="mt-1.5 space-y-1.5">
+                    {goods.map((s) => (
+                      <li key={s.metric} className="flex gap-2 text-sm">
+                        <CircleCheck className="mt-0.5 size-4 shrink-0" style={{ color: "var(--status-good)" }} aria-label="Good" />
+                        <span className="leading-snug">{s.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
