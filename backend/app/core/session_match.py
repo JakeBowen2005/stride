@@ -49,19 +49,31 @@ def _prescribed_rep_seconds(prescription: dict) -> tuple[int, float | None]:
     return reps, statistics.median(lengths) if lengths else None
 
 
+def work_minutes(prescription: dict | None, executed: dict | None) -> tuple[float | None, float | None]:
+    """(prescribed, executed) minutes of work, for telling the coach whether the dose grew."""
+    planned = None
+    if prescription:
+        reps, rep_seconds = _prescribed_rep_seconds(prescription)
+        planned = round(reps * rep_seconds / 60, 1) if reps and rep_seconds else None
+    done = round(sum(r["duration_s"] for r in executed["reps"]) / 60, 1) if executed else None
+    return planned, done
+
+
 def off_plan(prescription: dict | None, executed: dict | None) -> bool:
     """True when a confident quality session clearly differs from the prescribed one."""
     if not prescription or not executed or prescription.get("category") not in QUALITY:
         return False
     if executed["kind"] != "reps" and prescription.get("format") == "continuous":
         return False  # a tempo on a tempo day is the planned session
-    if executed["category"] not in QUALITY:
-        return executed["category"] == "fartlek" and executed["kind"] == "reps" and len(executed["reps"]) >= 3
     reps, rep_seconds = _prescribed_rep_seconds(prescription)
     done_seconds = statistics.median(r["duration_s"] for r in executed["reps"])
     different_length = rep_seconds and abs(done_seconds - rep_seconds) / rep_seconds > REP_LENGTH_TOLERANCE
+    different_count = len(executed["reps"]) != reps
+    if executed["category"] not in QUALITY:
+        # A mixed/fartlek read is low confidence: only off-plan when both shape and count differ.
+        return bool(executed["kind"] == "reps" and different_length and different_count)
     different_kind = executed["category"] != prescription["category"]
-    return bool(different_length or (different_kind and len(executed["reps"]) != reps))
+    return bool(different_length or (different_kind and different_count))
 
 
 def fmt_pace(seconds: float) -> str:

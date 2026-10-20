@@ -141,7 +141,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         Activity.date < datetime.combine(today+timedelta(days=1), datetime.min.time())).order_by(Activity.date, Activity.id).all()
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all() if plan else []
     from app.api.plans import easy_pace_for
-    from app.core.session_match import executed_session, off_plan, off_plan_evaluation, session_title
+    from app.core.session_match import executed_session, off_plan, off_plan_evaluation, session_title, work_minutes
     easy = easy_pace_for(None, user_id, db) or next(
         (spec['easy_pace_sec_per_mile'] for r in rows if (spec := loads(r.prescription)) and spec.get('easy_pace_sec_per_mile')), None)
     executed_by_id = {}
@@ -192,11 +192,21 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
             # Judge the run on what was actually run, never against the session it replaced.
             evaluation = off_plan_evaluation(matched.title, executed_run)
             execution = None
+            planned_min, done_min = work_minutes(spec, executed_run)
+            # Minutes at threshold and at interval pace are different loads; only compare like with like.
+            same_kind = executed_run['category'] == spec.get('category')
+            dose = ("DOSE ABOVE PLAN" if same_kind and planned_min and done_min and done_min >= 1.5 * planned_min
+                    else "similar dose" if same_kind else "different intensity, compare effort not minutes")
             off_plan_note = (f"OFF-PLAN: prescribed {matched.title}, but laps show {executed_run['title']}. "
-                             "It REPLACED that day's planned quality session; it is not an extra session.")
+                             "It REPLACED that day's planned quality session; it is not an extra session. "
+                             f"Work: {done_min} min of {executed_run['category']} run vs {planned_min} min of "
+                             f"{spec.get('category')} planned ({dose}).")
     context = {'version': VERSION, 'today': today.isoformat(), 'model': settings.openai_coach_model,
         'athlete': {key: getattr(user, key) for key in ('age','experience_level','days_per_week','rest_days','long_run_day','workout_format','units')},
         'goal': goal_data,
+        # Stride's calibrated paces for the athlete's CURRENT fitness: judge reps against these, not PRs.
+        'current_paces': {k: _pace(v) for k, v in (loads_json(plan.training_paces) or {}).items()
+                          if isinstance(v, (int, float)) and v} if plan else None,
         'training_summary': _training_summary(user_id, runs, executed_by_id, today, rows, goal_data),
         'run': _run(activity, executed_run, matched) if activity else None,
         'run_vs_plan': off_plan_note or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),

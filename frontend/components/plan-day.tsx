@@ -14,6 +14,7 @@ import {
   secondsToTime,
   localDateStr,
   secondsToPace,
+  cleanPurpose,
 } from "@/lib/format";
 import type { Workout, DayFeedback } from "@/lib/types";
 
@@ -100,10 +101,11 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
     <div
       id={`session-${workout.id}`}
       className={cn(
-        "rounded-md border bg-card p-3 transition-colors",
-        !pinned && "cursor-pointer hover:border-primary/30 hover:bg-secondary/50",
-        isToday && "border-primary bg-primary/5",
-        hasActual && "bg-secondary/30",
+        "transition-colors",
+        // Pinned inside the inspector panel: that panel is already the card.
+        pinned ? "p-1" : "rounded-md border bg-card p-3 cursor-pointer hover:border-primary/30 hover:bg-secondary/50",
+        !pinned && isToday && "border-primary bg-primary/5",
+        !pinned && hasActual && "bg-secondary/30",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
       )}
@@ -113,21 +115,21 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
       aria-expanded={pinned ? undefined : expanded}
       onKeyDown={pinned ? undefined : (e) => { if (e.target===e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onToggle?.(); } }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-20 text-sm">
+      <div className={cn("flex justify-between", pinned ? "items-start gap-2" : "items-center")}>
+        <div className="flex min-w-0 items-center gap-3">
+          {!pinned && <div className="w-20 text-sm">
             <div className="font-medium">{formatDate(workout.date).split(",")[0]}</div>
             <div className="text-xs text-muted-foreground">
               {formatDate(workout.date).split(", ")[1]}
             </div>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{displayTitle}</span>
+          </div>}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className={cn("font-medium", pinned && "text-base")}>{displayTitle}</span>
               {workout.type !== "easy" && <KindPill kind={kind} />}
             </div>
             {actualLine && <div className="text-xs text-muted-foreground">{actualLine}</div>}
-            {workout.adjustment_note && (
+            {workout.adjustment_note && !/^Changed by athlete\.?$/.test(workout.adjustment_note) && (
               <div className="text-xs text-muted-foreground">Adjusted: {workout.adjustment_note}</div>
             )}
             {workout.intervals && !hasActual && (
@@ -137,9 +139,9 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3 text-right">
+        <div className="flex shrink-0 items-center gap-3 text-right">
           {workout.type !== "rest" && (
-            <span className="font-mono text-sm font-medium">
+            <span className="whitespace-nowrap font-mono text-sm font-medium">
               {hasActual && workout.actual
                 ? formatDistance(workout.actual.distance_miles)
                 : formatDistance(workout.distance_miles)}{" "}
@@ -221,12 +223,6 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                   </p>
                 )}
 
-                {/* Comparison summary */}
-                {workout.comparison && (
-                  <p className="text-xs text-muted-foreground">
-                    {workout.comparison.summary}
-                  </p>
-                )}
 
                 {/* Multi-activity breakdown */}
                 {workout.actual.activity_count && workout.actual.activity_count > 1 && workout.actual.activities && (
@@ -264,7 +260,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                   )}
                   {workout.purpose && (
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-medium">Why: </span>{workout.purpose}
+                      <span className="font-medium">Why: </span>{cleanPurpose(workout.purpose)}
                     </p>
                   )}
                 </div>

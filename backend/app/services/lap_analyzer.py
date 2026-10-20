@@ -118,6 +118,19 @@ def _merge(group: list[dict]) -> dict:
     return {"distance_m": distance, "duration_s": duration, "average_hr": hr, "laps": len(group)}
 
 
+def _auto_lap(lap: dict) -> bool:
+    """Garmin auto-lap length: 1.00 mi or 1.00 km (±1%)."""
+    d = lap.get("distance_m") or 0
+    return any(abs(d - m) / m <= 0.01 for m in (METERS_PER_MILE, 1000.0))
+
+
+def _similar_pace(rep: dict, lap: dict) -> bool:
+    """Same effort: within 5%, or 12% for a short remainder lap (GPS pace is noisy over 0.1 mi)."""
+    a, b = lap_pace_per_mile(rep), lap_pace_per_mile(lap)
+    short = (lap.get("distance_m") or 0) < 0.35 * METERS_PER_MILE
+    return bool(a and b and abs(a - b) / a <= (0.12 if short else 0.05))
+
+
 def _groups(indices: list[int]) -> list[list[int]]:
     """Split work-lap indices into runs of consecutive laps."""
     groups: list[list[int]] = []
@@ -154,6 +167,15 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
         return None
 
     groups = _groups(work_idx)
+    # Laps between efforts that are still near work pace are not recovery: one continuous effort.
+    paces_all = [lap_pace_per_mile(lap) for lap in laps]
+    valid_paces = [x for x in paces_all if x]
+    reference = easy_pace_sec or (statistics.median(valid_paces) if valid_paces else None)
+    gaps = [laps[a[-1] + 1: b[0]] for a, b in zip(groups, groups[1:])]
+    if len(groups) > 1 and reference and all(
+            all((lap_pace_per_mile(lap) or reference) <= reference * 0.90 for lap in gap) for gap in gaps):
+        work_idx = list(range(groups[0][0], groups[-1][-1] + 1))
+        groups = [work_idx]
     total_work_miles = sum(laps[i].get("distance_m") or 0 for i in work_idx) / METERS_PER_MILE
 
     # Continuous tempo: fast laps back-to-back (usually 1mi auto-laps) with no recovery
@@ -174,18 +196,20 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
                           "pace_sec_per_mile": round(avg), "average_hr": merged["average_hr"]}],
                 "recovery_seconds": None, "work_miles": round(total_work_miles, 2)}
 
-    # Within a run of back-to-back work laps, a short lap right after a longer one is the
-    # remainder of the same rep; two full-size laps stay separate reps.
+    # A back-to-back work lap continues the current rep only when the previous lap ended on a
+    # Garmin auto-lap marker (exactly 1.00 mi or 1.00 km) at a similar pace: the watch split
+    # the rep, the runner didn't. Laps the runner pressed (other lengths) stay separate reps.
     reps_idx: list[list[int]] = []
     for g in groups:
         for i in g:
             current = reps_idx[-1] if reps_idx and reps_idx[-1][-1] == i - 1 else None
-            head = (laps[current[0]].get("distance_m") or 0) if current else 0
-            if current and (laps[i].get("distance_m") or 0) < 0.5 * head:
+            if current and _auto_lap(laps[current[-1]]) and _similar_pace(_merge([laps[j] for j in current]), laps[i]):
                 current.append(i)
             else:
                 reps_idx.append([i])
     work = [_merge([laps[i] for i in rep]) for rep in reps_idx]
+    if any(rep["distance_m"] < 50 for rep in work):
+        return None  # e.g. treadmill laps with no distance: no paces to report or evaluate
     rest_durations = [sum(lap.get("duration_s") or 0 for lap in laps[a[-1] + 1: b[0]])
                       for a, b in zip(reps_idx, reps_idx[1:]) if b[0] > a[-1] + 1]
     rest = statistics.median(rest_durations) if rest_durations else None
@@ -205,6 +229,11 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
                 "recovery_seconds": round(rest) if rest else None, "work_miles": round(total_work_miles, 2)}
 
     distance_label = _nearest_standard(statistics.median(distances)) if _cv(distances) <= 0.10 else None
+    if distance_label:
+        # Every rep must actually be that distance, or printed rep TIMES would read as slow splits.
+        meters = next(m for m, lab in STANDARD_REPS if lab == distance_label)
+        if any(abs(d - meters) / meters > 0.05 for d in distances):
+            distance_label = None
     # Reps run by the clock (every rep 8:00 give or take a few seconds) are time reps even
     # when the distance happens to land near a standard one (8:00 at 6:45/mi is ~1.9 km).
     on_the_minute = minutes >= 3 and _cv(durations) <= 0.02 and abs(statistics.median(durations) - round(minutes) * 60) <= 5

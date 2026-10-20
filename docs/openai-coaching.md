@@ -61,3 +61,20 @@ Calls run in the synchronous worker request (not the event loop), with a 35-seco
 ### Live evaluation finding
 
 The first real-history smoke review incorrectly counted threshold workouts in two separate weeks as a second weekly quality stimulus, and overinterpreted an average HR without zones. The v2 prompt/context now supplies explicit per-week quality dates, a clear distinction between introductory quality and earned progression, HR uncertainty and non-diagnostic risk semantics. A regression verifies this context. Live model checks supplement deterministic tests; a valid JSON response is not evidence that coaching prose is correct.
+
+## What the coach is told about a run (coach v3, Oct 2026)
+
+- `run`: distance, duration, average pace, HR (avg/max), elevation, training effect, every Garmin
+  lap (miles, time, pace, HR, intensity), and `detected_session`: Stride's reading of the laps
+  (auto-lap remainders merged into reps) with per-rep pace and HR and the recovery length.
+- `run.athlete_feedback`: feel 1-10, notes, pace vs target, and whether they said they swapped.
+- `run_vs_plan`: "Matches the prescribed session" or "OFF-PLAN: prescribed X, but laps show Y",
+  plus planned vs run work minutes. Off-plan sessions are judged on their own terms and never as
+  a failed version of the prescription (`core/session_match.py`).
+- `current_paces`: the plan's calibrated paces for current fitness (not PRs or goal pace).
+- `training_summary`: goal, last 6 full weeks (miles, runs, longest), this week done vs planned,
+  and recent quality sessions. Older runs appear as one line each.
+- Output: a summary of at most 3 sentences, up to 3 observations and 2 uncertainties. Research is sent
+  ahead of the context so the provider's prompt cache can reuse it.
+- On Home, a stale review of today's run refreshes itself once. Older runs never refresh
+  automatically, so browsing history does not spend the daily AI limit.

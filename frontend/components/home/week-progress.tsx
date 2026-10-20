@@ -26,14 +26,14 @@ export function WeekProgress({ days }: { days: PlanDayLite[] }) {
               aria-label={`${d.date}: ${d.title}`}
               aria-pressed={selected === d.date}
               className={cn(
-                "flex flex-col items-center gap-1 rounded-lg py-1.5 text-xs transition-colors hover:bg-muted",
+                "flex min-h-12 flex-col items-center gap-1 rounded-lg py-1.5 text-xs transition-colors hover:bg-muted",
                 selected === d.date && "bg-muted",
               )}
             >
               <span className={cn("text-muted-foreground", isToday && "font-semibold text-foreground")}>{dayName}</span>
               <span
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-full border font-mono text-xs",
+                  "flex size-8 items-center justify-center rounded-full border font-mono text-xs",
                   d.actual && "border-transparent text-white",
                   !d.actual && HARD.has(d.type) && "border-foreground/50 font-semibold",
                   !d.actual && d.type === "rest" && "border-dashed",

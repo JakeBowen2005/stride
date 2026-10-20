@@ -154,6 +154,8 @@ export interface Plan {
 
 export interface Activity {
   id: number;
+  /** What the laps show was run on a quality day */
+  session?: { title: string; category: ExecutedWorkout["category"] } | null;
   external_id?: string;
   source?: "garmin" | "strava" | "manual";
   date: string;

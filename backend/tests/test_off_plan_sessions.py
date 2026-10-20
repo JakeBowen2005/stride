@@ -46,9 +46,23 @@ def test_auto_lap_remainders_merge_into_time_reps():
     assert summarize_workout(THRESHOLD_3X8, EASY) == "Garmin laps: 3x8min threshold (7:16, 7:08, 7:00/mi) w/ 2min recovery"
 
 
-def test_full_size_back_to_back_laps_stay_separate_reps():
-    laps = [lap(1.0, 560, 140), lap(1.0, 410, 170), lap(1.0, 411, 171), lap(0.1, 70, 140), lap(1.0, 414, 172), lap(1.0, 560, 140)]
-    assert analyze_laps(laps, EASY)["label"] == "3x1 mile"
+def test_laps_the_runner_pressed_stay_separate_reps():
+    """Only a lap ending on a 1.00 mi / 1 km auto-lap marker continues into the next one."""
+    laps = [lap(1.0, 560, 140), lap(0.5, 205, 170), lap(0.5, 206, 171), lap(0.2, 140, 140), lap(0.5, 207, 172), lap(1.0, 560, 140)]
+    assert analyze_laps(laps, EASY)["label"] == "3x800m"
+
+
+def test_multi_mile_reps_split_by_auto_laps_merge():
+    rep = [lap(1.0, 410, 170), lap(1.0, 398, 172), lap(0.38, 151, 174)]
+    laps = [lap(1.0, 543, 140)] + rep + [lap(0.5, 296, 150)] + rep + [lap(1.0, 512, 140)]
+    result = analyze_laps(laps, EASY)
+    assert len(result["reps"]) == 2 and result["category"] == "threshold"
+
+
+def test_faster_short_rep_is_not_swallowed_by_a_slower_lap():
+    laps = [lap(1.0, 480, 140), lap(0.51, 225, 160)] + [lap(0.25, 87, 175), lap(0.13, 77, 140)] * 4 + [lap(1.0, 480, 140)]
+    result = analyze_laps(laps, EASY)
+    assert all(r["distance_m"] < 0.6 * MI for r in result["reps"])
 
 
 def test_true_1200s_are_not_off_plan():
@@ -154,3 +168,20 @@ def test_coach_reads_the_run_that_was_actually_run(monkeypatch):
     assert ctx["training_summary"]["this_week"]["done_miles"] == 7.0 and ctx["training_summary"]["goal"]["race_distance"] == "5k"
     assert ctx["training_summary"]["recent_quality_sessions"][-1]["session"] == "3x8min Threshold"
     assert "laps" not in ctx["recent_runs"][-1]  # history stays one line per run
+
+
+def test_stored_lap_summaries_are_reread_once_and_keep_notes(monkeypatch):
+    from app.services import garmin
+    from app.services.garmin import refresh_lap_summaries
+    monkeypatch.setattr(garmin.EasyPaceIndex, "at", lambda self, when=None: EASY)
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source="garmin", external_id="old", name="Run", date=datetime(2026, 10, 1, 7),
+                        distance_meters=7 * MI, duration_seconds=3364, splits=json.dumps(THRESHOLD_3X8),
+                        description="Legs felt good\n\nGarmin laps: 6 reps fartlek (1.00mi @ 7:16, 0.10mi @ 7:13)"))
+        db.commit()
+        assert refresh_lap_summaries(db) == 1
+        text = db.query(Activity).filter_by(external_id="old").one().description
+        assert text.startswith("Legs felt good\n\nGarmin laps: 3x8min threshold")
+        assert refresh_lap_summaries(db) == 0
+        monkeypatch.setattr(garmin.EasyPaceIndex, "at", lambda self, when=None: None)
+        assert refresh_lap_summaries(db) == 0  # no reference: stored text is kept, never deleted

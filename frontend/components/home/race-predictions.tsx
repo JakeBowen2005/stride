@@ -24,6 +24,8 @@ export function RacePredictions({
     { key: "half", label: "Half", pred: wellness.predicted_half, pr: prs["Half Marathon"] },
     { key: "marathon", label: "Marathon", pred: wellness.predicted_marathon, pr: prs["Marathon"] },
   ];
+  // Only race goals have a time to compare; mileage goals leave the column empty.
+  const hasGoal = rows.some((r) => goal?.distance === r.key && goal?.target_time);
   return (
     <Card>
       <CardContent className="pt-3">
@@ -33,7 +35,7 @@ export function RacePredictions({
               <th className="pb-1 font-medium">Distance</th>
               <th className="pb-1 text-right font-medium">Predicted</th>
               <th className="pb-1 text-right font-medium">PR</th>
-              <th className="pb-1 text-right font-medium">Goal</th>
+              {hasGoal && <th className="pb-1 text-right font-medium">Goal</th>}
             </tr>
           </thead>
           <tbody>
@@ -42,7 +44,7 @@ export function RacePredictions({
                 <td className="py-1.5">{r.label}</td>
                 <td className="py-1.5 text-right font-mono">{fmt(r.pred)}</td>
                 <td className="py-1.5 text-right font-mono text-muted-foreground">{fmt(r.pr)}</td>
-                <td className="py-1.5 text-right font-mono">{goal?.distance === r.key ? fmt(goal.target_time) : ""}</td>
+                {hasGoal && <td className="py-1.5 text-right font-mono">{goal?.distance === r.key ? fmt(goal.target_time) : ""}</td>}
               </tr>
             ))}
           </tbody>

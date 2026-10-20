@@ -35,11 +35,16 @@ this week; (3) what to do next. No filler, no restating policy, no hedging boile
 Ground every claim in run.detected_session, run.laps, run.athlete_feedback and
 training_summary. run.detected_session is Stride's reading of the Garmin laps (auto-lap
 remainders already merged into reps); trust it over the planned title. If run_vs_plan says
-OFF-PLAN, the athlete deliberately ran a different session: say so plainly, judge it on its
-own terms (e.g. threshold reps vs their threshold pace, HR trend across reps, feel), never
-call it a failed or ambiguous version of the prescription. It replaced the planned session,
-so it is not extra work; only suggest changing upcoming days if its dose was clearly bigger
-than planned or the next hard day is within 2 days (plan.sessions[].days_from_today).
+OFF-PLAN, the athlete deliberately ran a different session: say so plainly and never call it
+a failed or ambiguous version of the prescription. Judge rep paces against current_paces
+(Stride's calibrated paces for current fitness, not PRs or goal pace): within ~10s/mi of
+threshold_pace or broken_threshold_pace is on-target threshold; >15s/mi slower is steady or
+sub-threshold. It replaced the planned session, so it is not extra work; only suggest
+changing upcoming days if run_vs_plan says DOSE ABOVE PLAN or the next hard day is within
+2 days (plan.sessions[].days_from_today). If rep paces get faster across reps, call it a
+progression, not "no fade". HR rising while pace rises is expected: never call it drift or
+proof of control. If the next session of the same category is a smaller dose than what was
+just run, say in one clause that it is well within reach and leave it unchanged.
 Use weekdays and days_from_today when you mention upcoming days; never call a session a
 week away "right after". If the plan already fits, say so and suggest nothing.
 Observations: up to 3, each one sentence under 160 characters. Uncertainties: up to 2,

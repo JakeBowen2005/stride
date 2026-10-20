@@ -25,7 +25,9 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
   // Blocks normally start Monday; label columns from the real dates in case one doesn't.
   const days = (weeks[0]?.workouts ?? []).map((w) => new Date(`${w.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }));
   return (
-    <div className="overflow-x-auto">
+    <>
+    <CompactCalendar weeks={weeks} units={units} selectedDate={selectedDate} onSelect={onSelect} today={today} />
+    <div className="hidden overflow-x-auto lg:block">
       <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
         <thead>
           <tr className="bg-[var(--ink)] text-left font-mono text-xs uppercase tracking-[.08em] text-[#f5f5f2]">
@@ -74,7 +76,7 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                           {hard && <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: color }} />}
                           {formatDateShort(w.date)}
                         </span>
-                        <span className="line-clamp-3 hyphens-auto break-words text-sm font-medium leading-snug">{title}</span>
+                        <span className="line-clamp-3 break-words text-sm font-medium leading-snug">{title}</span>
                         {ran?.off_plan && (
                           <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                             planned <span className="line-through">{w.title}</span>
@@ -99,6 +101,63 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
           })}
         </tbody>
       </table>
+    </div>
+    </>
+  );
+}
+
+
+/** Phones and tablets: each week fits the screen as 7 compact cells; tap one for the inspector. */
+function CompactCalendar({ weeks, units, selectedDate, onSelect, today }: {
+  weeks: PlanWeek[]; units: Units; selectedDate: string | null; onSelect: (w: Workout) => void; today: string;
+}) {
+  return (
+    <div className="divide-y divide-border lg:hidden">
+      {weeks.map((week) => {
+        const logged = week.workouts.reduce((sum, w) => sum + (w.actual?.distance_miles ?? 0), 0);
+        return (
+          <div key={week.week_number} className="space-y-1.5 p-2">
+            <div className="flex items-baseline justify-between font-mono text-xs">
+              <span>
+                <span className="font-semibold">W{week.week_number}</span>
+                <span className="text-muted-foreground"> · {formatDateShort(week.workouts[0]?.date ?? "")}</span>
+                {week.phase && week.phase.phase !== "general" && <span className="capitalize text-muted-foreground"> · {week.phase.phase.replace("_", " ")}</span>}
+              </span>
+              <span className="num">{logged > 0 ? `${distanceInUnits(logged, units)} / ` : ""}{distanceInUnits(week.total_miles, units)} {unitLabel(units)}</span>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {week.workouts.map((w) => {
+                const ran = w.actual?.workout ?? null;
+                const title = ran ? ran.title : w.title;
+                const kind = ran ? sessionKind("workout", ran.title, ran.category) : sessionKind(w.type, w.title, w.prescription?.category);
+                const { color, tint } = kindColor(kind);
+                const hard = QUALITY_KINDS.includes(kind);
+                const miles = w.actual ? w.actual.distance_miles : w.distance_miles;
+                const selected = selectedDate === w.date;
+                const day = new Date(`${w.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "narrow" });
+                return (
+                  <button key={w.date} type="button" onClick={() => onSelect(w)} aria-pressed={selected}
+                    aria-label={`${formatDateShort(w.date)}: ${title}${w.type !== "rest" ? `, ${distanceInUnits(miles, units)} ${unitLabel(units)}` : ""}${w.actual ? ", done" : ""}`}
+                    className={cn("flex min-h-16 flex-col items-center gap-0.5 rounded-[4px] border px-0.5 py-1 text-center",
+                      hard && "hatch", w.type === "rest" && "opacity-70", w.skipped && "opacity-50")}
+                    style={{
+                      background: hard ? tint : w.actual ? "var(--type-easy-tint)" : "var(--card)",
+                      borderColor: selected ? "var(--foreground)" : hard ? color : "var(--border)",
+                      borderWidth: selected ? 2 : 1,
+                      ["--hatch" as string]: hard ? `color-mix(in srgb, ${color} 18%, transparent)` : undefined,
+                      boxShadow: w.date === today ? `inset 0 3px 0 ${color}` : undefined,
+                    }}>
+                    <span className={cn("font-mono text-[11px]", w.date === today ? "font-semibold" : "text-muted-foreground")}>{day}</span>
+                    <span className="num text-sm font-semibold leading-none">{w.type === "rest" ? "–" : distanceInUnits(miles, units)}</span>
+                    {hard && <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: color }} />}
+                    {w.actual && <span aria-hidden="true" className="text-[10px] leading-none" style={{ color: "var(--type-easy)" }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

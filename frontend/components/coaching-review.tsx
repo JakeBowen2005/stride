@@ -35,10 +35,14 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 
 const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, autoRefresh = false }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
   /** Draw its own card border (when not already inside a card) */
   bordered?: boolean;
+  /** The "Coach" label; off when a surrounding header already names it */
+  showLabel?: boolean;
+  /** Refresh once when stale. Only for today's run, so browsing old runs never spends AI calls. */
+  autoRefresh?: boolean;
   /** The athlete's "what isn't working" from Plan options; a new nonce asks the coach again. */
   request?: { concern: string; nonce: number } | null;
 }) {
@@ -81,11 +85,11 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   // never reads advice about a stale picture of their run.
   const autoRefreshed = useRef(false);
   useEffect(() => {
-    if (!activityId || !review?.stale || configured !== true || busy || autoRefreshed.current || review.applied_candidate_id) return;
+    if (!autoRefresh || !activityId || !review?.stale || configured !== true || busy || autoRefreshed.current || review.applied_candidate_id) return;
     autoRefreshed.current = true;
     const timer = setTimeout(() => generate(review.athlete_concern), 0);
     return () => clearTimeout(timer);
-  }, [activityId, review, configured, busy, generate]);
+  }, [autoRefresh, activityId, review, configured, busy, generate]);
   const handled = useRef<number | null>(null);
   useEffect(() => {
     if (!request || handled.current === request.nonce) return;
@@ -107,9 +111,9 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0);
   const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
   return <section className={cn("space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
-    <div className="flex items-center justify-between gap-2">
-      <span className="stat-label">Coach</span>
-      <Button size="xs" variant="ghost" className="h-6 px-2 text-xs" disabled={busy || configured !== true}
+    <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
+      {showLabel && <span className="stat-label">Coach</span>}
+      <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
         title={PRIVACY} onClick={() => generate(review?.athlete_concern)}>
         <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden /> {refreshLabel}
       </Button>
@@ -124,7 +128,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       <p className={cn("leading-relaxed", !expanded && "line-clamp-3", busy && review.stale && "opacity-50")}>{review.summary}</p>
       {(hasDetails || review.summary.length > 220) && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
-          className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
           {expanded ? "Less" : "More"}
         </button>
       )}

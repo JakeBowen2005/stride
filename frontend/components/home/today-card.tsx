@@ -7,7 +7,7 @@ import { CircleCheck, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDistance, secondsToPace, secondsToTime } from "@/lib/format";
+import { cleanPurpose, formatDistance, secondsToPace, secondsToTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExecutedWorkout } from "@/lib/types";
 
@@ -133,7 +133,7 @@ export function TodayCard({
                 <div className="num text-base font-medium sm:text-lg">
                   {today.type === "rest" ? "Rest day" : `${formatDistance(today.distance_miles)} mi planned`}
                 </div>
-                {today.purpose && <p className="text-sm text-muted-foreground">{today.purpose}</p>}
+                {cleanPurpose(today.purpose) && <p className="text-sm text-muted-foreground">{cleanPurpose(today.purpose)}</p>}
               </div>
               <div className="flex items-center gap-2">
                 {hardToday && <Badge variant="secondary" className="text-xs">Quality</Badge>}

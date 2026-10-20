@@ -400,11 +400,11 @@ export default function PlanPage() {
             </button>
             {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
             <div id="plan-coach-body" hidden={!coachOpen} className="px-3 py-2.5">
-              <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} />
+              <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
             </div>
           </div>
           {/* Reference panels sit under the coach so both columns end near the same height. */}
-          <div className="order-4 grid min-w-0 items-start gap-3 sm:grid-cols-2 lg:order-none">
+          <div className="order-4 grid min-w-0 items-stretch gap-3 sm:grid-cols-2 lg:order-none [&>section]:h-full">
             {changes.length === 0 && !plan.assessment?.reasons?.length ? (
               <Panel label="Change log" meta="No changes yet" bodyClassName="hidden">{null}</Panel>
             ) : <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined} bodyClassName="px-3 py-2">
@@ -433,7 +433,9 @@ export default function PlanPage() {
           </div>
         </div>
 
-        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:order-none">
+        {/* On desktop the inspector stays in view and scrolls on its own, so an open Replace menu
+            never stretches the page and leaves the calendar column empty. */}
+        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:sticky lg:top-3 lg:order-none lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:overscroll-contain">
           {selected && (
             <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">
               <PlanDay

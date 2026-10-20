@@ -549,15 +549,20 @@ def _validate_schedule(plan: Plan, db: Session):
         if row.week_number <= len(budgets) and "budget_miles" not in w:
             w["budget_miles"] = budgets[row.week_number - 1]
         actuals = acts.get(row.date, [])
-        if actuals and "budget_miles" in w:
-            # Miles already run beyond a day's plan are history, not a proposal: they widen
-            # that week's ceiling so they never block an unrelated edit, but grant no new room.
-            w["budget_miles"] += max(0.0, sum(a.distance_meters for a in actuals) / 1609.34 - row.distance_miles)
+        if actuals:
+            # Miles already run beyond the plan are history, not a proposal. The NET overrun of
+            # completed days widens the week's ceiling so it never blocks an unrelated edit; a short
+            # day offsets a long one, so no new room is created.
+            w["overrun"] = w.get("overrun", 0.0) + sum(a.distance_meters for a in actuals) / 1609.34 - row.distance_miles
         # Completed work cannot be altered to make a proposed change fit.
         w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, baseline) for a in actuals) else row.type,
                            "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
                            "b2b": bool(row.b2b),
                            "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
+    for w in weeks.values():
+        if "budget_miles" in w:
+            w["budget_miles"] += max(0.0, w.pop("overrun", 0.0))
+        w.pop("overrun", None)
     prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
     errors = validate_plan(list(weeks.values()), rest, prior)
     if errors:
@@ -763,7 +768,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
     if off_plan_eval:
         evaluation = off_plan_eval | {"feel": req.feel_rating, "activity_ids": [a.id for a in activities]}
         pw.evaluation = json.dumps(evaluation)
-        pw.actual_workout_type = evaluation["executed"]["category"]
+        pw.actual_workout_type = req.actual_workout_type or evaluation["executed"]["category"]
     elif pw.type == "workout" and not req.swapped:
         prescribed = loads(pw.prescription)
         category = (prescribed["category"] if prescribed["category"] in {"threshold", "intervals"} else None) if prescribed else _detect_workout_category(pw.title)
@@ -926,7 +931,7 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     actual_miles = lambda row: sum(a.distance_meters for a in acts.get(row.date, [])) / 1609.34 if acts.get(row.date) else row.distance_miles
     total = sum(actual_miles(row) for row in week if row.id != slot.id) + new_miles
     # Extra miles already run on completed days are history; they never block this change.
-    budget += sum(max(0.0, actual_miles(row) - row.distance_miles) for row in week if row.id != slot.id and acts.get(row.date))
+    budget += max(0.0, sum(actual_miles(row) - row.distance_miles for row in week if row.id != slot.id and acts.get(row.date)))
     # Trim to the budget itself. Half-mile rounding tolerance isn't free training.
     over = total - budget
     if over <= BUDGET_OVER_TOLERANCE:
@@ -1062,7 +1067,8 @@ def _displayed_evaluation(pw: PlannedWorkout, actual: dict | None) -> dict | Non
     """Stored verdict, unless the laps show an off-plan session it was judged against wrongly."""
     stored = json.loads(pw.evaluation) if pw.evaluation else None
     workout = (actual or {}).get("workout")
-    if workout and workout["off_plan"] and (stored or {}).get("decision") != "off_plan":
+    # Only re-read verdicts that left the ladder alone; an applied regress/advance stays visible.
+    if workout and workout["off_plan"] and (stored or {}).get("decision") in {None, "insufficient", "hold"}:
         from app.core.session_match import off_plan_evaluation
         return off_plan_evaluation(pw.title, workout) | {"feel": pw.feel_rating}
     return stored

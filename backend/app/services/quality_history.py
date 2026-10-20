@@ -26,6 +26,13 @@ def quality_history(user_id, db, today=None):
         PlannedWorkout.date <= today.isoformat(),
         PlannedWorkout.date >= func.coalesce(Plan.prescribed_from, Plan.start_date)
     ).order_by(PlannedWorkout.id.desc()).all()
+    cache = {}
+
+    def easy_reference():
+        if 'easy' not in cache:
+            from app.services.garmin import recent_easy_pace
+            cache['easy'] = recent_easy_pace(user_id, db)
+        return cache['easy']
     latest = {}
     for row in rows:
         latest.setdefault(row.date, row)
@@ -44,8 +51,11 @@ def quality_history(user_id, db, today=None):
         spec = loads(row.prescription)
         evaluation = json.loads(row.evaluation) if row.evaluation else {}
         if evaluation.get('decision') == 'off_plan' or (
-                spec and off_plan(spec, executed_session(activities, spec.get('easy_pace_sec_per_mile')))):
-            # A different, coherent quality session: neither a failure nor proof of this ladder step.
+                spec and off_plan(spec, executed_session(activities, spec.get('easy_pace_sec_per_mile') or easy_reference()))):
+            # A different, coherent quality session is neither a failed nor a successful step of
+            # this ladder. A poor feel rating is still a recovery signal.
+            if feel is not None and feel <= 4:
+                failures.add(day)
             continue
         execution = execution_from_activities(activities, spec) if spec else None
         category = (spec or {}).get('category')

@@ -144,12 +144,12 @@ export default function TodayPage() {
                   coach={todayRun ? (
                     <CoachingReview
                       key={`coach-${todayRun.id}-${todayRun.feel_rating}-${todayRun.notes}`}
-                      activityId={todayRun.id} onPlanChanged={load} />
+                      activityId={todayRun.id} onPlanChanged={load} autoRefresh />
                   ) : undefined}
                 />
               </Section>
               {thisWeek && (
-                <Section label="This week" accent="var(--type-threshold)" className="order-2" meta={weekDone != null ? `${formatDistance(weekDone)} / ${formatDistance(thisWeek.target_mileage)} mi` : undefined}>
+                <Section label="This week" accent="var(--type-threshold)" className="order-2" meta="tap a day">
                   <Card>
                     <CardContent className="pt-2">
                       <WeekProgress days={thisWeek.days} />
@@ -159,26 +159,33 @@ export default function TodayPage() {
               )}
               <Panel label="Recent runs" className="order-6" meta={recentRuns.length ? `${Math.min(recentRuns.length, 6)} latest` : undefined} bodyClassName="p-0">
                 {recentRuns.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="data-table">
-                      <thead><tr><th scope="col">Date</th><th scope="col">Run</th><th scope="col" className="r">Dist</th><th scope="col" className="r">Pace</th><th scope="col" className="r">Time</th><th scope="col">Type</th></tr></thead>
-                      <tbody>
-                        {recentRuns.slice(0, 6).map((run) => (
+                  <table className="data-table w-full table-fixed">
+                    <thead><tr>
+                      <th scope="col" className="w-[4.5rem]">Date</th><th scope="col">Run</th>
+                      <th scope="col" className="r w-12">Dist</th><th scope="col" className="r w-16">Pace</th>
+                      <th scope="col" className="r hidden w-16 xl:table-cell">Time</th>
+                    </tr></thead>
+                    <tbody>
+                      {recentRuns.slice(0, 6).map((run) => {
+                        const kind = activityKind(run.session?.category === "fartlek" || run.session?.category === "speed" ? "intervals" : run.session?.category ?? run.type, run.title);
+                        return (
                           <tr key={run.id} className="cursor-pointer" onClick={() => setSelectedRun(run)}>
-                            <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date)}</td>
-                            <td className="max-w-[16rem] truncate font-medium">
-                              <button type="button" className="max-w-full truncate text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-                                onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>{run.title}</button>
+                            <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date).replace(/^\w+, /, "")}</td>
+                            <td className="min-w-0">
+                              <button type="button" className="flex min-h-8 max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                                onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>
+                                <span className="truncate">{run.session?.title ?? run.title}</span>
+                                {kind !== "easy" && <KindPill kind={kind} />}
+                              </button>
                             </td>
                             <td className="r">{formatDistance(run.distance_miles)}</td>
                             <td className="r">{run.avg_pace || "—"}</td>
-                            <td className="r">{secondsToTime(run.duration_seconds)}</td>
-                            <td><KindPill kind={activityKind(run.type, run.title)} /></td>
+                            <td className="r hidden xl:table-cell">{secondsToTime(run.duration_seconds)}</td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 ) : (
                   <p className="py-6 text-center text-muted-foreground">No runs yet — sync Garmin.</p>
                 )}
