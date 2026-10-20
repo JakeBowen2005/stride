@@ -786,6 +786,13 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 if ev.decision == 'recalibrate':
                     ev.decision = 'hold'
                     ev.reason = 'Controlled secondary dose completed; use the full primary prescription before changing pace.'
+            elif prescribed and prescribed.get('goal_pace'):
+                # Goal-pace reps move race-pace evidence (calibrator), not interval/threshold pace.
+                ev.new_pace_sec = None
+                if ev.decision == 'recalibrate':
+                    ev.decision = 'hold'
+                    ev.reason = ('Goal-pace reps ran faster than the step with control. Logged as race-pace evidence; '
+                                 'the next goal-pace step uses it. Interval pace is unchanged.')
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:

@@ -76,12 +76,17 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
             # Continuous threshold is the program's tempo field; broken reps
             # store threshold independently. No synthetic cross-category paces.
             key = 'tempo_pace' if category == 'threshold' and prescribed['format'] == 'continuous' else {'threshold': 'threshold_pace', 'intervals': 'interval_pace', 'strides': 'strides_pace'}.get(category)
+            if category == 'race_pace':
+                # Goal-pace reps are evidence only for that distance's race pace,
+                # never for interval/threshold pace (core/goal_pace.py).
+                distance = (prescribed.get('program_key') or '').split(':')[-1]
+                key = f'race_pace_{distance}' if distance else None
             paces = execution.get('rep_paces_sec_per_mile', [])[index:index + spec['reps']]
             index += spec['reps']
             if key and paces:
                 by_category.setdefault(key, []).extend(paces)
         for key, paces in by_category.items():
-            samples[key].append((age, statistics.median(paces), ids))
+            samples.setdefault(key, []).append((age, statistics.median(paces), ids))
 
     for act in activities:
         if act.id in seen or not act.description:
