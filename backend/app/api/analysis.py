@@ -106,7 +106,9 @@ def get_activities_list(
         .all()
     )
 
-    return [_format_activity(a) for a in activities]
+    from app.services.garmin import recent_easy_pace
+    easy = recent_easy_pace(user_id, db)
+    return [_format_activity(a, easy) for a in activities]
 
 
 @router.get("/{user_id}/activities/{activity_id}")
@@ -145,7 +147,20 @@ def submit_review(user_id: int, activity_id: int, data: ReviewData, db: Session 
     return {"message": "Review saved", "activity_id": activity_id}
 
 
-def _format_activity(a: Activity) -> dict:
+QUALITY_TYPES = {"workout", "intervals", "threshold", "tempo", "fartlek"}
+
+
+def _session(a: Activity, splits: list, easy_pace: float | None) -> dict | None:
+    """What the laps show was run on a quality day, e.g. {"title": "3x8min Threshold", "category": "threshold"}."""
+    if a.workout_type not in QUALITY_TYPES or not isinstance(splits, list) or not all(isinstance(s, dict) for s in splits):
+        return None
+    from app.core.session_match import session_title
+    from app.services.lap_analyzer import analyze_laps
+    found = analyze_laps(splits, easy_pace)
+    return {"title": session_title(found), "category": found["category"]} if found else None
+
+
+def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
     """Format an activity for the frontend."""
     dist_miles = a.distance_meters * METERS_TO_MILES if a.distance_meters else 0
     pace_per_mile = (a.duration_seconds / dist_miles) if dist_miles > 0 else 0
@@ -173,6 +188,7 @@ def _format_activity(a: Activity) -> dict:
         "elevation_gain_ft": round(a.elevation_gain * METERS_TO_FEET) if a.elevation_gain else None,
         "cadence": round(a.average_cadence * 2) if a.average_cadence else None,
         "splits": splits,
+        "session": _session(a, splits, easy_pace),
         "feel_rating": a.feel_rating,
         "notes": a.feel_notes,
         "coach_analysis": None,  # Stored reviews use /api/coaching so freshness is explicit

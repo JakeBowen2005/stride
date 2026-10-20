@@ -169,6 +169,8 @@ class _Week:
             return any(a.workout_type in QUALITY_ACTIVITY_TYPES for a in _get_activities_for_date(r.date, plan.user_id, db))
 
         self.hard_count = sum(substantial(r) or hard_long(r) or ran_quality(r) for r in self.others)
+        # Swapping a hard session for another keeps the week's hard-day count unchanged.
+        self.row_is_hard = substantial(row) or hard_long(row)
         self.has_light_support = any(r.type == 'workout' and not substantial(r) for r in self.others)
         self.phase_cap = self.info.get('max_workouts')
         if self.phase_cap is None and self.phase == 'taper':
@@ -189,7 +191,7 @@ def _quality_candidates(category, row, week, ctx, poor):
     """Full-dose threshold/interval (or hill) sessions from the catalog."""
     if poor or week.phase in {'race_week', 'recovery'}:
         return [], ['Recent recovery or a race/recovery week calls for easy running or rest instead of another hard session.']
-    if week.hard_count >= week.capacity:
+    if week.hard_count >= week.capacity and not week.row_is_hard:
         return [], ['This week already has its hard sessions. Swap one of those instead, or keep this day easy.']
     pace = ctx['paces']['broken_threshold_pace' if category == 'threshold' else 'interval_pace']
     volume = max(ctx['baseline'], week.budget or 0)

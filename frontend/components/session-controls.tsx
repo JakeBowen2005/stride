@@ -71,10 +71,19 @@ function Segmented<T extends string>({ label, value, options, onChange, disabled
   );
 }
 
+/** Start Replace on the session's own type so its alternatives load straight away. */
+function defaultReplacement(workout: Workout): Replacement {
+  if (workout.type === "long_run") return "long_run";
+  const category = workout.prescription?.category;
+  if (category === "threshold" || category === "intervals") return category;
+  const kind = sessionKind(workout.type, workout.title, category);
+  return kind === "intervals" ? "intervals" : kind === "long" ? "long_run" : "threshold";
+}
+
 export function SessionControls({ workout, onChanged }: { workout: Workout; onChanged?: () => void }) {
   const [action, setAction] = useState<Action>("replace");
   const [target, setTarget] = useState("");
-  const [replacement, setReplacement] = useState<Replacement>(workout.type === "workout" ? "easy" : "threshold");
+  const [replacement, setReplacement] = useState<Replacement>(() => defaultReplacement(workout));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

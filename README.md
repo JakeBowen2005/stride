@@ -158,6 +158,55 @@ Garmin's official API is enterprise-only (and closed to new applicants), so Stri
 The backend polls Garmin every `GARMIN_POLL_MINUTES` (default 10). The first sync imports your full history.
 If Garmin ever expires the session, re-run `garmin_login.py`.
 
+## Deploying to Render
+
+One always-on Render **Starter** web service (~$7/mo) runs both processes from the root
+`Dockerfile`: FastAPI on `127.0.0.1:8000` (private) and the Next.js standalone server on
+`$PORT` (public, password-gated). SQLite and the Garmin tokens live on a 1 GB persistent disk at
+`/var/data`. The Garmin poller runs in-process every 10 minutes. Config is in `render.yaml`;
+the entrypoint is `deploy/start.sh`.
+
+### One-time cut-over
+
+1. **Create the service.** Render dashboard → **New → Blueprint** → pick this repo (branch `main`).
+   Enter the `sync: false` secrets when prompted:
+   - `STRIDE_PASSWORD`: the app password (if it's empty, every page returns 503 instead of going public)
+   - `OPENAI_API_KEY`: the AI coach key (optional; without it the coach uses templates)
+   - `GARMIN_TOKENS_JSON`: the contents of `backend/.garmin/garmin_tokens.json` (see step 3)
+
+   Apply. The first deploy starts with an empty database on the disk.
+2. **Copy your data.** Stop `./start.sh` locally so the DB isn't being written, then take a
+   consistent snapshot (it includes WAL contents) and upload it over Render SSH. Add your SSH key
+   under Account Settings → SSH Keys; the service's **Connect → SSH** shows its address.
+   ```bash
+   sqlite3 backend/stride.db ".backup /tmp/stride-upload.db"
+   scp /tmp/stride-upload.db <service-ssh-address>:/var/data/stride-upload.db
+   ```
+   Then **Manual Deploy → Restart service**. On boot, `deploy/start.sh` moves
+   `stride-upload.db` into place as `stride.db` *before* the backend opens it, and keeps the empty
+   first-boot DB as `stride.db.before-import-<time>`. Don't overwrite `stride.db` directly while the
+   service is running. Delete `/tmp/stride-upload.db` afterwards: it is your personal health data.
+3. **Garmin tokens.** `GARMIN_TOKENS_JSON` is written once to
+   `/var/data/.garmin/garmin_tokens.json` (mode 600) on boot, but only if that file doesn't exist.
+   After that the disk copy wins, because garminconnect refreshes it. To re-bootstrap, run
+   `backend/garmin_login.py` locally, update the secret, delete the file over SSH, and restart.
+   You can clear the env var once the file exists.
+4. **Check it.** Open the `.onrender.com` URL and sign in. Settings should show Garmin connected,
+   and a run should appear within ~10 minutes of a watch upload. Run `date` in the Render shell; it
+   should print Pacific time (`TZ=America/Los_Angeles`; plan logic uses `date.today()`).
+
+### Risks to watch
+
+- **Garmin may challenge datacenter IPs.** The tokens were minted on your home network. If Garmin
+  flags logins or refreshes from Render's IPs, sync fails with an auth error in the logs and you
+  have to re-run `garmin_login.py` and re-bootstrap the tokens. If it keeps happening, sync from
+  home and treat Render as read-mostly.
+- **Memory.** Starter has 512 MB. Node is capped with `NODE_OPTIONS=--max-old-space-size=192`.
+  Watch the Metrics tab. If the service sits above ~450 MB, split the frontend into its own service
+  (or move it to Vercel) and point `BACKEND_URL` at the backend. Note that `BACKEND_URL` is baked in
+  at build time by the `/api` rewrite.
+- **One instance only.** SQLite on a disk means no scaling out and a short downtime on each deploy.
+
 ## Current Athlete Data (Jake)
 
 - **465 activities** synced from Strava
