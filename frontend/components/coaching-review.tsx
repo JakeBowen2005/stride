@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +11,7 @@ interface Review {
   model: string | null;
   stale: boolean;
   applied_candidate_id: string | null;
+  athlete_concern?: string | null;
   summary: string;
   plan_fit: "consistent" | "consider_change" | "insufficient_evidence";
   observations: string[];
@@ -29,8 +30,10 @@ async function post<T>(path: string, data: unknown): Promise<T> {
   return result;
 }
 
-export function CoachingReview({ activityId, planId, onPlanChanged }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
+  /** The athlete's "what isn't working" from Plan options; a new nonce asks the coach again. */
+  request?: { concern: string; nonce: number } | null;
 }) {
   const [review, setReview] = useState<Review | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -57,12 +60,22 @@ export function CoachingReview({ activityId, planId, onPlanChanged }: {
     return () => clearInterval(timer);
   }, [autoPending, review?.status, load]);
 
-  async function generate() {
+  const generate = useCallback(async (concern?: string | null) => {
     setBusy(true); setError(null);
-    try { setReview(await post<Review>(`/coaching/${USER_ID}/review`, { activity_id: activityId, plan_id: planId })); }
+    try {
+      setReview(await post<Review>(`/coaching/${USER_ID}/review`,
+        { activity_id: activityId, plan_id: planId, ...(concern ? { athlete_concern: concern } : {}) }));
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Coach review failed. Your plan is unchanged."); }
     finally { setBusy(false); }
-  }
+  }, [activityId, planId]);
+  const handled = useRef<number | null>(null);
+  useEffect(() => {
+    if (!request || handled.current === request.nonce) return;
+    handled.current = request.nonce;
+    const timer = setTimeout(() => generate(request.concern), 0);
+    return () => clearTimeout(timer);
+  }, [request, generate]);
   async function accept(id: string) {
     if (!review) return;
     setBusy(true); setError(null);
@@ -80,6 +93,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged }: {
       <p className="mt-1 text-xs text-muted-foreground">Reviews training, recovery and your coaching research. Suggested changes need your approval.</p>
     </div>
     {configured === false && <p className="text-sm text-muted-foreground">OpenAI isn&apos;t configured. Your training rules and saved feedback still work.</p>}
+    {busy && request && <p role="status" className="text-sm text-muted-foreground">Coach is reviewing your request against your training and the plan…</p>}
     {autoPending && <p role="status" className="text-xs text-muted-foreground">New Garmin run received · {autoJob?.status === "running" ? "coach is reviewing it and your upcoming plan" : "automatic coach review queued"}. You can add how it felt afterward.</p>}
     {autoJob?.status === "failed" && <p role="status" className="text-xs text-muted-foreground">Automatic review could not finish. You can request a review manually.</p>}
     {review && <div className="space-y-3 text-sm">
@@ -89,6 +103,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged }: {
         <span>{new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")).toLocaleString()}</span>
       </div>
       {review.stale && <p role="status" className="rounded-md bg-muted p-2">Training has changed since this review. Request an updated review before applying an option.</p>}
+      {review.athlete_concern && <p className="rounded-md bg-muted px-3 py-2 text-sm"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
       <p className="leading-relaxed">{review.summary}</p>
       {review.observations.length > 0 && <ul className="list-disc space-y-1 pl-4">{review.observations.map((text, i) => <li key={i}>{text}</li>)}</ul>}
       {review.uncertainties.length > 0 && <details><summary className="cursor-pointer text-muted-foreground">What the coach couldn&apos;t establish</summary><ul className="mt-2 list-disc space-y-1 pl-4">{review.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul></details>}
@@ -106,7 +121,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged }: {
     </div>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {error && configured === null && <Button size="sm" variant="outline" onClick={load}>Retry loading coach</Button>}
-    <Button size="sm" variant="outline" disabled={busy || configured !== true} onClick={generate}>{busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Review with latest training" : activityId ? "Review run & upcoming plan" : "Ask coach to review this block"}</Button>
+    <Button size="sm" variant="outline" disabled={busy || configured !== true} onClick={() => generate(review?.athlete_concern)}>{busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Review with latest training" : activityId ? "Review run & upcoming plan" : "Ask coach to review this block"}</Button>
     <p className="text-[11px] text-muted-foreground">Training summaries, feedback and research excerpts are sent to OpenAI when a new Garmin run syncs, you request a review, or submit run feedback. No GPS routes or account credentials are sent. Unchanged reviews are reused.</p>
   </section>;
 }

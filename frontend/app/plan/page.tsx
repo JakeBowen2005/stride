@@ -1,9 +1,9 @@
 "use client";
 
 import { CoachingReview } from "@/components/coaching-review";
+import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
-import { TrainingProgression, type QualityProgression } from "@/components/training-progression";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
 import { useState, useEffect, useCallback } from "react";
@@ -72,7 +72,7 @@ interface ApiWeek {
 interface ApiPlan {
   id: number;
   preview?: boolean;
-  quality_policy?: QualityProgression | null;
+  quality_policy?: { stage: string } | null;
   start_date: string;
   end_date: string;
   block_number: number;
@@ -167,9 +167,12 @@ export default function PlanPage() {
   const [noPlan, setNoPlan] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [coachRequest, setCoachRequest] = useState<{ concern: string; nonce: number } | null>(null);
 
   useEffect(() => {
     getJson<{ units: Units }>(`/users/${USER_ID}`).then((u) => { if (u) setUnits(u.units); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
+    getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`).then((s) => setAiConfigured(s?.configured ?? false)).catch(() => setAiConfigured(false));
   }, []);
 
   const fetchPlan = useCallback(async () => {
@@ -338,6 +341,20 @@ export default function PlanPage() {
             <span>{plan.preview ? "Draft for review" : "Approved block · log runs and feel ratings to adjust it as you go"}</span>
           </div>
         </div>
+        {!plan.preview && (
+          <PlanOptionsDialog
+            aiConfigured={aiConfigured}
+            busy={generating}
+            nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
+            onAskCoach={(concern) => {
+              setCoachRequest({ concern, nonce: Date.now() });
+              requestAnimationFrame(() => document.getElementById("plan-coach")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
+            onLighter={() => generatePlan(true)}
+            onRevise={() => generatePlan()}
+            onNextBlock={() => generatePlan(false, "next")}
+          />
+        )}
       </div>
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
@@ -351,15 +368,13 @@ export default function PlanPage() {
         </div>
       </Panel>}
 
-      <div className="panel grid grid-cols-2 divide-x divide-y divide-[#2a2a2a]/15 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-        <StatCell label="Last full wk" value={distance(plan.load?.recent_week_miles)} sub={unit} />
-        <StatCell label="4-wk avg" value={distance(plan.load?.baseline)} sub={`${unit}/week`} />
+      <div className="panel grid grid-cols-2 divide-x divide-[#2a2a2a]/15 sm:grid-cols-4">
         {weekTotals.slice(0, 2).map((t, i) => (
-          <StatCell key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
+          <StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
             sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} />
         ))}
-        <StatCell label="Experience" value={plan.athlete?.experience_level ? plan.athlete.experience_level[0].toUpperCase() + plan.athlete.experience_level.slice(1) : undefined} sub={plan.quality_policy ? `${plan.quality_policy.stage} quality stage` : undefined} />
-        <StatCell label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
+        <StatCell size="sm" label="4-wk avg" value={distance(plan.load?.baseline)} sub={`${unit}/week`} />
+        <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
           sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} tone="var(--type-easy)" />
       </div>
 
@@ -372,15 +387,9 @@ export default function PlanPage() {
             }} />
           </Panel>
           <div className="order-3 min-w-0 space-y-3 lg:order-none">
-          {plan.quality_policy && <TrainingProgression key={`${plan.id}-${plan.quality_policy.stage}`} policy={plan.quality_policy} experience={plan.athlete?.experience_level} />}
-          <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} />
-          {plan.notes.length > 0 && (
-            <Panel label="Plan notes">
-              <div className="space-y-1">
-                {plan.notes.map((note, i) => <p key={i} className="text-sm leading-relaxed text-muted-foreground">{note}</p>)}
-              </div>
-            </Panel>
-          )}
+          <div id="plan-coach" className="scroll-mt-16">
+            <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} />
+          </div>
           </div>
         </div>
 
@@ -423,16 +432,6 @@ export default function PlanPage() {
               ))}
             </div>
           </Panel>
-          {!plan.preview && <Panel label="Plan options">
-            <div className="space-y-3 text-sm">
-              <p className="text-muted-foreground">Need to revise this block? Review a replacement using your latest training. Your approved sessions stay active until you approve the revision.</p>
-              <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Review revised current block</Button>
-              {nextBlockAvailable(plan.end_date, today) ? <div>
-                <p className="mb-2 text-muted-foreground">Your next block starts after {formatDateShort(plan.end_date)}.</p>
-                <Button disabled={generating} onClick={() => generatePlan(false, "next")}>Preview next block</Button>
-              </div> : <p className="text-muted-foreground">When this block ends, review the next one using your latest runs and feedback.</p>}
-            </div>
-          </Panel>}
         </div>
       </div>
     </div>

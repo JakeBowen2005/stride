@@ -354,3 +354,36 @@ def test_opening_plan_does_not_stale_automatic_review(monkeypatch):
     assert latest['id']==initial['id'] and latest['stale'] is False
     with SessionLocal() as db:db.get(Activity,act).feel_rating=2;db.commit()
     assert client.get(f'/api/coaching/1/latest?activity_id={act}').json()['stale'] is True
+
+
+def concern_review(plan, concern):
+    return client.post('/api/coaching/1/review', json={'plan_id': plan, 'athlete_concern': concern})
+
+
+def test_athlete_concern_reaches_model_as_data_and_gets_its_own_review(monkeypatch):
+    plan,_,_=seed();calls=fake(monkeypatch)
+    plain=review(plan).json()
+    asked=concern_review(plan,'  Too much   volume this week ').json()
+    assert len(calls)==2 and 'athlete_request' not in calls[0]
+    assert calls[1]['athlete_request']=='Too much volume this week'
+    assert asked['id']!=plain['id'] and asked['athlete_concern']=='Too much volume this week'
+    assert 'athlete_request' in openai_coach.INSTRUCTIONS
+    # Same words again are a cache hit, not a second provider call.
+    assert concern_review(plan,'Too much volume this week').json()['id']==asked['id'] and len(calls)==2
+    # Blank concern is no concern.
+    assert concern_review(plan,'   ').json()['id']==plain['id'] and len(calls)==2
+
+
+def test_concern_review_is_fresh_and_applicable(monkeypatch):
+    plan,_,day=seed();fake(monkeypatch)
+    data=concern_review(plan,'Schedule conflict on Monday').json()
+    latest=client.get(f'/api/coaching/1/latest?plan_id={plan}').json()
+    assert latest['id']==data['id'] and latest['stale'] is False and latest['athlete_concern']=='Schedule conflict on Monday'
+    option=data['suggestions'][0]
+    r=client.post(f'/api/coaching/1/reviews/{data["id"]}/accept',json={'candidate_id':option['id']})
+    assert r.status_code==200,r.text
+
+
+def test_athlete_concern_is_bounded():
+    plan,_,_=seed()
+    assert concern_review(plan,'x'*501).status_code==422
