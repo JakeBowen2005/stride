@@ -61,7 +61,20 @@ export interface Goal {
   race_date?: string;
 }
 
+/** What Garmin's laps show was actually run (null for steady runs). */
+export interface ExecutedWorkout {
+  title: string;
+  label: string;
+  category: "threshold" | "intervals" | "speed" | "fartlek";
+  kind: "reps" | "tempo";
+  reps: { distance_m: number; duration_s: number; pace_sec_per_mile: number; average_hr: number | null }[];
+  recovery_seconds: number | null;
+  /** True when it differs from the prescribed session (e.g. threshold on an interval day) */
+  off_plan: boolean;
+}
+
 export interface ActualRun {
+  workout?: ExecutedWorkout | null;
   distance_miles: number;
   avg_pace: string | null;
   duration_seconds: number;
@@ -141,6 +154,8 @@ export interface Plan {
 
 export interface Activity {
   id: number;
+  /** What the laps show was run on a quality day */
+  session?: { title: string; category: ExecutedWorkout["category"] } | null;
   external_id?: string;
   source?: "garmin" | "strava" | "manual";
   date: string;

@@ -102,3 +102,10 @@ export function workoutTypeShort(type: string): string {
 export function isHardWorkout(type: string): boolean {
   return ["tempo", "intervals", "threshold", "hill_repeats", "time_trial", "workout", "race"].includes(type);
 }
+
+/** Workout "why" text without legacy internal prefixes like "mileage general: ". */
+export function cleanPurpose(purpose: string | null | undefined): string | null {
+  if (!purpose) return null;
+  const text = purpose.replace(/^[a-z0-9_-]+ [a-z_]+: /, "").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : null;
+}

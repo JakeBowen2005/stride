@@ -134,7 +134,7 @@ export function GarminSync({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button variant="outline" size="sm" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
+      <Button variant="outline" size="sm" className="h-10 sm:h-7" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
         {syncing ? "Syncing…" : label}
       </Button>
       {notConnected || (status?.last_error && !message) ? (

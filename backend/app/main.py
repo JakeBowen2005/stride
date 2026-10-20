@@ -24,6 +24,22 @@ Base.metadata.create_all(bind=engine)
 add_missing_columns()
 
 
+def _refresh_lap_summaries():
+    """Re-read stored lap summaries with the current analyzer. Never blocks startup."""
+    from app.database import SessionLocal
+    from app.services.garmin import refresh_lap_summaries
+    try:
+        with SessionLocal() as db:
+            changed = refresh_lap_summaries(db)
+        if changed:
+            logger.info("Refreshed %d stored Garmin lap summaries", changed)
+    except Exception as e:  # noqa: BLE001 — a summary refresh must never stop the API
+        logger.warning("Lap summary refresh skipped: %s", type(e).__name__)
+
+
+_refresh_lap_summaries()
+
+
 async def garmin_auto_sync():
     """Poll Garmin for new runs. Garmin offers no webhooks for personal use,
     so polling every few minutes is how new watch uploads appear automatically."""

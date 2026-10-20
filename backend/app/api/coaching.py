@@ -20,6 +20,7 @@ class ReviewRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     activity_id: int | None = Field(default=None, gt=0)
     plan_id: int | None = Field(default=None, gt=0)
+    athlete_concern: str | None = Field(default=None, max_length=500)
 
 
 class AcceptRequest(BaseModel):
@@ -39,7 +40,7 @@ def status(user_id: int, db: Session = Depends(get_db)):
 
 @router.post('/{user_id}/review')
 def create_review(user_id: int, req: ReviewRequest, db: Session = Depends(get_db)):
-    return review_training(user_id, db, req.activity_id, req.plan_id)
+    return review_training(user_id, db, req.activity_id, req.plan_id, req.athlete_concern)
 
 
 @router.get('/{user_id}/jobs/{activity_id}')
@@ -61,7 +62,7 @@ def latest(user_id: int, activity_id: int | None = None, plan_id: int | None = N
     row = query.order_by(CoachingReview.id.desc()).first()
     if not row:
         return None
-    _, _, fingerprint, _ = build_context(user_id, db, activity_id, plan_id)
+    _, _, fingerprint, _ = build_context(user_id, db, activity_id, plan_id, row.athlete_concern)
     return serialize_review(row, stale=fingerprint != row.context_hash)
 
 
@@ -81,7 +82,7 @@ def accept(user_id: int, review_id: int, req: AcceptRequest, db: Session = Depen
     result = json.loads(review.result)
     if req.candidate_id not in {s['candidate_id'] for s in result.get('suggestions', [])}:
         raise HTTPException(422, 'Choose a suggestion from this review')
-    _, _, fingerprint, plan = build_context(user_id, db, review.activity_id, review.plan_id)
+    _, _, fingerprint, plan = build_context(user_id, db, review.activity_id, review.plan_id, review.athlete_concern)
     if fingerprint != review.context_hash:
         raise HTTPException(409, 'Training, feedback or schedule changed. Request a fresh review before applying this suggestion.')
     if not plan or not plan.is_active:
