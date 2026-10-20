@@ -1,5 +1,7 @@
 "use client";
 
+import { CoachingReview } from "@/components/coaching-review";
+
 import { SplitsTable } from "@/components/splits-table";
 import {
   Sheet,
@@ -266,6 +268,8 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
               </div>
             </>
           )}
+
+          <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />
 
           {activity.splits.length > 0 && (
             <>

@@ -121,3 +121,8 @@ Detailed policy numbers, sources and remaining evidence/UI limitations: `docs/co
 - Easy-day effort checks from HR (not just distance), and pace-vs-target on Today.
 - A Stride/VDOT race prediction next to Garmin's.
 - Push structured workouts to the watch.
+
+
+## OpenAI adviser
+
+See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable.

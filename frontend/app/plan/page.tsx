@@ -1,5 +1,7 @@
 "use client";
 
+import { CoachingReview } from "@/components/coaching-review";
+
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
 import { TrainingProgression, type QualityProgression } from "@/components/training-progression";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
@@ -412,6 +414,8 @@ export default function PlanPage() {
           }}
         />
       ))}
+
+      <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} />
 
       {plan.notes.length > 0 && (
         <Card>

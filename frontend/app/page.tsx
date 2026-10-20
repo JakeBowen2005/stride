@@ -1,5 +1,7 @@
 "use client";
 
+import { CoachingReview } from "@/components/coaching-review";
+
 import { getJson, USER_ID } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -75,6 +77,7 @@ export default function TodayPage() {
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
   const today = localDateStr();
   const planStale = !!plan?.is_stale;
+  const todayRun = recentRuns.find(run => run.date.startsWith(today));
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;
 
@@ -112,6 +115,10 @@ export default function TodayPage() {
             planStale={planStale || !plan}
             mileageRisk={planStale ? null : plan?.athlete?.injury_risk}
           />
+
+          {todayRun && <CoachingReview
+            key={`coach-${todayRun.id}-${todayRun.feel_rating}-${todayRun.notes}`}
+            activityId={todayRun.id} onPlanChanged={load} />}
 
           {thisWeek && (
             <Card>

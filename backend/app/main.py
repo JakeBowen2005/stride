@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.api.coaching import router as coaching_router
 from app.api.analysis import router as analysis_router
 from app.api.garmin import router as garmin_router, _sync_in_new_session
 from app.api.plans import router as plans_router
@@ -61,6 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(coaching_router)
 app.include_router(analysis_router)
 app.include_router(garmin_router)
 app.include_router(plans_router)
