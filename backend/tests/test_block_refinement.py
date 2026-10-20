@@ -80,7 +80,12 @@ def test_replacement_rebalances_easy_miles_and_retains_originals(budget):
         db.add(Activity(user_id=1, source='manual', date=datetime.combine(monday, datetime.min.time()),
                         distance_meters=5.0095 * 1609.34, duration_seconds=2700))
         db.commit()
-    r = client.post(f'/api/plans/1/sessions/{monday+timedelta(days=1)}', json={'action':'replace','replacement':'intervals'})
+    with SessionLocal() as db:
+        from app.models.user import User
+        db.get(User,1).experience_level='advanced'; db.commit()
+    menu=client.get(f'/api/plans/1/sessions/{monday+timedelta(days=1)}/options?category=intervals').json()
+    option=next(o for o in menu['options'] if o['distance_miles']>5)
+    r = client.post(f'/api/plans/1/sessions/{monday+timedelta(days=1)}', json={'action':'replace','replacement':'intervals','option_id':option['id']})
     assert r.status_code == 200, r.text
     with SessionLocal() as db:
         days = db.query(PlannedWorkout).order_by(PlannedWorkout.date).all()

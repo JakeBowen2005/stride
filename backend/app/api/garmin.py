@@ -86,6 +86,9 @@ def _sync_in_new_session(user_id: int, full: bool) -> dict:
         except Exception as e:
             db.rollback()
             result["wellness"] = {"status": "error", "message": str(e)}
+        if result.get('status') == 'ok':
+            from app.services.coaching_jobs import release_synced_jobs
+            release_synced_jobs(user_id, db)
         return result
     finally:
         db.close()

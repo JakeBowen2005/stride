@@ -17,11 +17,12 @@ OPENAI_API_KEY=your-key-here
 OPENAI_COACH_MODEL=gpt-5.4-mini
 OPENAI_COACH_DAILY_LIMIT=12
 OPENAI_COACH_TIMEOUT_SECONDS=35
+OPENAI_AUTO_REVIEWS=true
 ```
 
 The default is GPT-5.4 mini with low reasoning effort and the Responses API's Pydantic Structured Outputs. The official model documentation lists $0.75/M input tokens and $4.50/M output tokens when checked October 19, 2026. A measured synthetic review used 7,277 input / 561 output tokens, roughly $0.008 at those rates; actual context/output varies. Twelve such calls/day would be about $3/month, but this is an illustration, **not a dollar budget guarantee**. Set a project budget/alerts in OpenAI as well.
 
-Each call has a 120,000-character serialized input ceiling, 3,000 output-token ceiling, bounded network timeout, and no SDK retries. The local 12-attempt/day UTC limit includes failed requests and retried attempts; requests with identical evidence are cached and don't spend again. No paid calls on page load or Garmin sync. Saving planned-day run feedback requests one review after the deterministic effects have committed. There is no automatic historical backfill.
+Each call has a 120,000-character serialized input ceiling, 3,000 output-token ceiling, bounded network timeout, and no SDK retries. The local 12-attempt/day UTC limit includes failed requests and retried attempts; requests with identical evidence are cached and don't spend again. No paid calls on page load. Newly synced recent Garmin runs now enqueue an automatic background review (see [automatic review and session menus](adaptive-sessions-and-demos.md)). Saving planned-day run feedback requests one review after the deterministic effects have committed. There is no automatic historical backfill.
 
 Official references: [model and pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
@@ -35,7 +36,7 @@ Local storage saves the structured advice, source paths, context fingerprint, pe
 
 ## Enforced boundary
 
-- `services/coaching_options.py` authors alternatives before the call. Existing quality slots only, unchanged category/paces, no greater work/session mileage, unchanged bookends and no shorter recovery. No new hard days, faster paces, rest-day changes, race changes or level advancement. Modified workouts carry `progression_eligible=False`.
+- `services/coaching_options.py` authors alternatives before the call. Legacy alternatives preserve quality slots, category, paces and bookends while reducing dose. Adaptive session-menu alternatives may reshape a session or use an earned quality slot; they are rebuilt and validated against phase, recovery, spacing and the weekly budget before acceptance. Neither pathway permits invented faster paces, rest-day changes, race changes or level advancement. Modified workouts carry `progression_eligible=False`.
 - Every candidate is trialed in a rolled-back savepoint through `api/plans._validate_schedule`, the shared budget/rest/hard-spacing validator. Preview plans have no mutation candidates.
 - `services/openai_coach.py` has no tools, database mutation or arbitrary URL capabilities. Structured output selects candidate IDs only. Unknown candidates/sources and conflicting same-day suggestions are rejected entirely.
 - `api/coaching.accept` serializes acceptance, verifies ownership and exact context freshness, locks completed activities/history, records the original prescription and adjustment note, validates the full schedule again, and commits atomically. Duplicate acceptance is idempotent. One option per review; request a new review to consider another.
@@ -55,7 +56,7 @@ Today shows the review for today's latest recorded run; run details support any 
 
 Normal tests explicitly disable both provider keys before importing settings and use disposable databases. Regression coverage includes malicious/unknown candidate IDs, unknown sources, deduplication/concurrency, quotas, bounded transport, phase/category/pace preservation, rollback and stale context rejection. A separate small live connection test used synthetic metrics only. UI QA and migration verification use database copies with Garmin polling and tokens disabled.
 
-Calls run in the synchronous worker request (not the event loop), with a 35-second network timeout; there is no durable background job queue. A killed process can leave a pending reservation; it expires to a safe fallback and can be retried after five minutes. The menu is deliberately conservative, not unrestricted AI plan generation. No OpenAI-powered pace calibration, automatic escalation, diagnostic triage, real-time Garmin-sync model calls or weekly-notification system was added. Those need separate product decisions and evaluations.
+Calls run in the synchronous worker request (not the event loop), with a 35-second network timeout; manual reviews still run within the request; automatic Garmin reviews use the local durable job worker. A killed process can leave a pending reservation; it expires to a safe fallback and can be retried after five minutes. The menu is deliberately conservative, not unrestricted AI plan generation. No OpenAI-powered pace calibration, automatic escalation, diagnostic triage or weekly-notification system was added. Garmin sync now schedules reviews through the local durable worker. Those need separate product decisions and evaluations.
 
 ### Live evaluation finding
 

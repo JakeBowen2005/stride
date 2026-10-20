@@ -126,3 +126,8 @@ Detailed policy numbers, sources and remaining evidence/UI limitations: `docs/co
 ## OpenAI adviser
 
 See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable.
+
+
+## Synced-run jobs, session choices and demos
+
+See [automatic reviews and adaptive choices](docs/adaptive-sessions-and-demos.md). Garmin import transactionally queues recent new/merged runs; a durable local leased worker reviews them after sync/wellness. Feedback remains human evidence. A shared personalized session menu powers athlete replacement and AI IDs, enforcing earned weekly capacity, phase, dose, budgets and actual completed training. Synthetic scenario branches preload isolated databases and frontend copies via start-demo.sh; they never connect to Garmin/OpenAI or the personal database.

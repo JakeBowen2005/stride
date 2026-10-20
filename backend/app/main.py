@@ -46,9 +46,13 @@ async def lifespan(app: FastAPI):
     task = None
     if settings.garmin_poll_minutes > 0:
         task = asyncio.create_task(garmin_auto_sync())
+    from app.services.coaching_jobs import coaching_worker
+    coach_task = asyncio.create_task(coaching_worker()) if settings.openai_auto_reviews else None
     yield
-    if task:
-        task.cancel()
+    for running in (task, coach_task):
+        if running:
+            running.cancel()
+    await asyncio.gather(*(running for running in (task, coach_task) if running), return_exceptions=True)
 
 
 app = FastAPI(title="Stride", description="AI-Powered Running Coach", version="0.2.0", lifespan=lifespan)

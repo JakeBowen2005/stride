@@ -291,6 +291,9 @@ def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session, 
         base_desc = None  # regenerate our own summary rather than nesting it
     activity.description = build_description(base_desc, laps, easy_pace)
     activity.has_workout_description = is_workout_description(activity.description)
+    if outcome in {'new', 'merged'}:
+        from app.services.coaching_jobs import enqueue_synced_run
+        enqueue_synced_run(activity, db)
     return outcome
 
 

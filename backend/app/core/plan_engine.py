@@ -310,7 +310,7 @@ def generate_plan(
         "notes": list(load.reasons) + [quality.reason],
         "quality_policy": quality.to_dict(),
         "phases": [w["phase"] for w in weeks],
-        "load": load.to_dict(),
+        "load": load.to_dict() | {"deload_week": deload_week},
         "violations": violations,
     }
     for note in fit_notes:
