@@ -185,6 +185,38 @@ def build_description(user_desc: str | None, laps: list[dict], easy_pace_sec: fl
     return summary or user_desc
 
 
+def refresh_lap_summaries(db: Session) -> int:
+    """Rewrite stored "Garmin laps: ..." text with the current lap analyzer.
+
+    The pace calibrator and evaluator read this text, so when lap detection improves (e.g.
+    merging auto-lap remainders into reps) old runs must be re-read too. Only the generated
+    summary is replaced; the athlete's own notes before it are kept. Idempotent.
+    """
+    changed = 0
+    indexes: dict[int, EasyPaceIndex] = {}
+    rows = db.query(Activity).filter(Activity.source == "garmin", Activity.description.like("%Garmin laps:%")).all()
+    for activity in rows:
+        try:
+            laps = json.loads(activity.splits or "[]")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(laps, list) or not all(isinstance(lap, dict) for lap in laps):
+            continue
+        index = indexes.setdefault(activity.user_id, EasyPaceIndex(activity.user_id, db))
+        easy = index.at(activity.date)
+        summary = summarize_workout(laps, easy) if easy else None
+        if not summary:
+            continue  # never delete a summary; without an easy-pace reference keep what's stored
+        head = activity.description.split("Garmin laps:")[0].rstrip()
+        updated = f"{head}\n\n{summary}" if head else summary
+        if updated != activity.description:
+            activity.description = updated
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
+
+
 # ── Sync ────────────────────────────────────────────────────────
 
 class EasyPaceIndex:

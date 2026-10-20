@@ -332,4 +332,5 @@ npm run dev  # runs on port 3000
 ./start.sh        # or ./start.sh dev
 # One-time Garmin login
 cd backend && venv/bin/python garmin_login.py
+docker build -t stride . && docker run -p 10000:10000 -v /tmp/stride-data:/var/data -e STRIDE_PASSWORD=x stride  # Render image; see README "Deploying to Render"
 ```
