@@ -104,11 +104,45 @@ def _find_work_laps(laps: list[dict], easy_pace_sec: float | None) -> list[int]:
     ]
 
 
-def summarize_workout(laps: list[dict], easy_pace_sec: float | None = None) -> str | None:
-    """Build a workout summary string from laps, or None if it looks like a steady run.
+def _lap_hr(lap: dict) -> float | None:
+    hr = lap.get("average_hr", lap.get("heart_rate"))
+    return float(hr) if isinstance(hr, (int, float)) and hr > 0 else None
 
-    `easy_pace_sec` is the athlete's typical easy pace (sec/mile); it makes
-    detection much more reliable than comparing laps within one run.
+
+def _merge(group: list[dict]) -> dict:
+    """One rep from back-to-back work laps (e.g. a 1.00mi auto-lap plus its 0.10mi remainder)."""
+    distance = sum(lap.get("distance_m") or 0 for lap in group)
+    duration = sum(lap.get("duration_s") or 0 for lap in group)
+    timed = [(hr, lap.get("duration_s") or 0) for lap in group if (hr := _lap_hr(lap))]
+    hr = sum(h * d for h, d in timed) / sum(d for _, d in timed) if timed and sum(d for _, d in timed) else None
+    return {"distance_m": distance, "duration_s": duration, "average_hr": hr, "laps": len(group)}
+
+
+def _groups(indices: list[int]) -> list[list[int]]:
+    """Split work-lap indices into runs of consecutive laps."""
+    groups: list[list[int]] = []
+    for i in indices:
+        if groups and i == groups[-1][-1] + 1:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    return groups
+
+
+def _category(kind: str, minutes: float) -> str:
+    if kind == "tempo" or minutes >= 5:
+        return "threshold"
+    return "intervals" if minutes >= 1.5 else "speed"
+
+
+def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict | None:
+    """Structured read of a quality session from its laps, or None for a steady run.
+
+    Returns {kind, category, label, text, reps: [{distance_m, duration_s, pace_sec_per_mile,
+    average_hr}], recovery_seconds, work_miles}. `text` is the "Garmin laps: ..." summary the
+    pace calibrator and evaluator parse. Garmin auto-laps split a rep that crosses a mile
+    marker (an 8-minute rep becomes 1.00mi + 0.10mi), so when a session has recoveries,
+    back-to-back work laps are merged into one rep.
     """
     if not laps or len(laps) < 2:
         return None
@@ -119,63 +153,106 @@ def summarize_workout(laps: list[dict], easy_pace_sec: float | None = None) -> s
     ):
         return None
 
-    work = [laps[i] for i in work_idx]
-    contiguous = all(b - a == 1 for a, b in zip(work_idx, work_idx[1:]))
-
-    # Recovery between reps = laps sitting between consecutive work laps
-    rest_durations = []
-    for a, b in zip(work_idx, work_idx[1:]):
-        between = laps[a + 1 : b]
-        if between:
-            rest_durations.append(sum(lap.get("duration_s") or 0 for lap in between))
-    rest_note = f" w/ {_fmt_rest(statistics.median(rest_durations))} recovery" if rest_durations else ""
-
-    distances = [lap.get("distance_m") or 0 for lap in work]
-    durations = [lap.get("duration_s") or 0 for lap in work]
-    paces = [lap_pace_per_mile(lap) or 0 for lap in work]
-    n = len(work)
-    total_work_miles = sum(distances) / METERS_PER_MILE
+    groups = _groups(work_idx)
+    total_work_miles = sum(laps[i].get("distance_m") or 0 for i in work_idx) / METERS_PER_MILE
 
     # Continuous tempo: fast laps back-to-back (usually 1mi auto-laps) with no recovery
-    if contiguous and not rest_durations:
+    if len(groups) == 1:
         if total_work_miles < 1.5:
             return None  # a couple of quick auto-laps isn't a tempo
         if work_idx[0] == 0:
             return None  # fast from the first lap with no warmup = steady run or race, not a tempo
-        pace_list = ", ".join(_fmt_time(p) for p in paces)
+        work = [laps[i] for i in work_idx]
+        paces = [lap_pace_per_mile(lap) or 0 for lap in work]
+        durations = [lap.get("duration_s") or 0 for lap in work]
         miles = round(total_work_miles * 2) / 2
-        return f"Garmin laps: tempo {miles:g} miles ({pace_list}) avg {_fmt_time(sum(durations) / total_work_miles)}/mi"
+        avg = sum(durations) / total_work_miles
+        merged = _merge(work)
+        return {"kind": "tempo", "category": "threshold", "label": f"{miles:g} mi tempo",
+                "text": f"Garmin laps: tempo {miles:g} miles ({', '.join(_fmt_time(p) for p in paces)}) avg {_fmt_time(avg)}/mi",
+                "reps": [{"distance_m": merged["distance_m"], "duration_s": merged["duration_s"],
+                          "pace_sec_per_mile": round(avg), "average_hr": merged["average_hr"]}],
+                "recovery_seconds": None, "work_miles": round(total_work_miles, 2)}
+
+    # Within a run of back-to-back work laps, a short lap right after a longer one is the
+    # remainder of the same rep; two full-size laps stay separate reps.
+    reps_idx: list[list[int]] = []
+    for g in groups:
+        for i in g:
+            current = reps_idx[-1] if reps_idx and reps_idx[-1][-1] == i - 1 else None
+            head = (laps[current[0]].get("distance_m") or 0) if current else 0
+            if current and (laps[i].get("distance_m") or 0) < 0.5 * head:
+                current.append(i)
+            else:
+                reps_idx.append([i])
+    work = [_merge([laps[i] for i in rep]) for rep in reps_idx]
+    rest_durations = [sum(lap.get("duration_s") or 0 for lap in laps[a[-1] + 1: b[0]])
+                      for a, b in zip(reps_idx, reps_idx[1:]) if b[0] > a[-1] + 1]
+    rest = statistics.median(rest_durations) if rest_durations else None
+    rest_note = f" w/ {_fmt_rest(rest)} recovery" if rest else ""
+
+    distances = [rep["distance_m"] for rep in work]
+    durations = [rep["duration_s"] for rep in work]
+    paces = [lap_pace_per_mile(rep) or 0 for rep in work]
+    n = len(work)
+    minutes = statistics.median(durations) / 60
+    reps = [{"distance_m": round(rep["distance_m"], 1), "duration_s": round(rep["duration_s"], 1),
+             "pace_sec_per_mile": round(p), "average_hr": round(rep["average_hr"]) if rep["average_hr"] else None}
+            for rep, p in zip(work, paces)]
+
+    def out(label: str, text: str) -> dict:
+        return {"kind": "reps", "category": _category("reps", minutes), "label": label, "text": text, "reps": reps,
+                "recovery_seconds": round(rest) if rest else None, "work_miles": round(total_work_miles, 2)}
 
     distance_label = _nearest_standard(statistics.median(distances)) if _cv(distances) <= 0.10 else None
+    # Reps run by the clock (every rep 8:00 give or take a few seconds) are time reps even
+    # when the distance happens to land near a standard one (8:00 at 6:45/mi is ~1.9 km).
+    on_the_minute = minutes >= 3 and _cv(durations) <= 0.02 and abs(statistics.median(durations) - round(minutes) * 60) <= 5
+    if distance_label and on_the_minute:
+        meters = next(m for m, lab in STANDARD_REPS if lab == distance_label)
+        if abs(statistics.median(distances) - meters) / meters > 0.02:
+            distance_label = None
 
     # Distance-based reps (e.g. 800s, miles)
     if distance_label:
         label = distance_label
         if label in ("200", "300", "400"):
             times = ", ".join(str(round(d)) for d in durations)
-            return f"Garmin laps: {n}x{label} ({times}){rest_note}"
+            return out(f"{n}x{label}m", f"Garmin laps: {n}x{label} ({times}){rest_note}")
         if label in ("600", "800", "1k", "1200", "2k"):
             times = ", ".join(_fmt_time(d) for d in durations)
-            return f"Garmin laps: {n}x{label} ({times}){rest_note}"
+            return out(f"{n}x{label}" + ("" if label.endswith("k") else "m"), f"Garmin laps: {n}x{label} ({times}){rest_note}")
         if label == "1 mile":
             times = ", ".join(_fmt_time(d) for d in durations)
-            return f"Garmin laps: {n}x1 mile ({times}){rest_note}"
+            return out(f"{n}x1 mile", f"Garmin laps: {n}x1 mile ({times}){rest_note}")
         pace_list = ", ".join(_fmt_time(p) for p in paces)
-        return f"Garmin laps: {n}x{label} threshold ({pace_list}){rest_note}"
+        return out(f"{n}x{label}", f"Garmin laps: {n}x{label} threshold ({pace_list}){rest_note}")
 
     # Time-based reps (e.g. 4x10min, 6x3min)
     if _cv(durations) <= 0.10:
-        minutes = round(statistics.median(durations) / 60)
+        whole = round(minutes)
         pace_list = ", ".join(_fmt_time(p) for p in paces)
-        kind = "threshold" if minutes >= 5 else "fartlek"
-        return f"Garmin laps: {n}x{minutes}min {kind} ({pace_list}/mi){rest_note}"
+        kind = "threshold" if whole >= 5 else "fartlek"
+        return out(f"{n}x{whole}min", f"Garmin laps: {n}x{whole}min {kind} ({pace_list}/mi){rest_note}")
 
     # Consistent but non-standard distance (e.g. 500m reps)
     if _cv(distances) <= 0.10:
         meters = round(statistics.median(distances) / 10) * 10
         times = ", ".join(_fmt_time(d) for d in durations)
-        return f"Garmin laps: {n}x{meters}m ({times}){rest_note}"
+        return out(f"{n}x{meters}m", f"Garmin laps: {n}x{meters}m ({times}){rest_note}")
 
     # Mixed reps (ladder / fartlek) — list each rep
-    reps = ", ".join(f"{lap.get('distance_m', 0) / METERS_PER_MILE:.2f}mi @ {_fmt_time(p)}" for lap, p in zip(work, paces))
-    return f"Garmin laps: {n} reps fartlek ({reps}){rest_note}"
+    listed = ", ".join(f"{rep['distance_m'] / METERS_PER_MILE:.2f}mi @ {_fmt_time(p)}" for rep, p in zip(work, paces))
+    result = out(f"{n}-rep fartlek", f"Garmin laps: {n} reps fartlek ({listed}){rest_note}")
+    result["category"] = "fartlek"
+    return result
+
+
+def summarize_workout(laps: list[dict], easy_pace_sec: float | None = None) -> str | None:
+    """Build a workout summary string from laps, or None if it looks like a steady run.
+
+    `easy_pace_sec` is the athlete's typical easy pace (sec/mile); it makes
+    detection much more reliable than comparing laps within one run.
+    """
+    analysis = analyze_laps(laps, easy_pace_sec)
+    return analysis["text"] if analysis else None

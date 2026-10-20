@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
 
+from app.core.session_match import executed_session, off_plan
 from app.core.workout_data import execution_from_activities, loads
 from app.models.activity import Activity
 from app.models.plan import Plan, PlannedWorkout
@@ -41,8 +42,12 @@ def quality_history(user_id, db, today=None):
             feels.append(row.feel_rating)
         feel = min(feels) if feels else None
         spec = loads(row.prescription)
-        execution = execution_from_activities(activities, spec) if spec else None
         evaluation = json.loads(row.evaluation) if row.evaluation else {}
+        if evaluation.get('decision') == 'off_plan' or (
+                spec and off_plan(spec, executed_session(activities, spec.get('easy_pace_sec_per_mile')))):
+            # A different, coherent quality session: neither a failure nor proof of this ladder step.
+            continue
+        execution = execution_from_activities(activities, spec) if spec else None
         category = (spec or {}).get('category')
         if category in {'threshold','intervals'} and execution:
             from app.core.workout_evaluator import evaluate_workout

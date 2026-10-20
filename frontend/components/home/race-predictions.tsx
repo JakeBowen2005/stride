@@ -26,11 +26,7 @@ export function RacePredictions({
   ];
   return (
     <Card>
-      <CardContent className="pt-4">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium">Race Predictions</h3>
-          <span className="text-xs text-muted-foreground">Garmin, based on current fitness</span>
-        </div>
+      <CardContent className="pt-3">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -51,9 +47,6 @@ export function RacePredictions({
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Predictions dip during a rebuild and climb as fitness returns. Use them to track the trend, not to set race pace.
-        </p>
       </CardContent>
     </Card>
   );

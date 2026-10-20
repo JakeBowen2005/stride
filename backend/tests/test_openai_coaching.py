@@ -64,7 +64,7 @@ def test_review_options_are_bounded_and_dry_runs_do_not_mutate(monkeypatch):
     data=r.json();assert data['status']=='ready' and len(calls)==1
     original=calls[0]['matched_prescription']
     assert original is None  # run predates the future plan, never invent a match
-    assert calls[0]['run']['feel']==7 and 'Private location' not in json.dumps(calls[0])
+    assert calls[0]['run']['athlete_feedback']['feel_1_to_10']==7 and 'Private location' not in json.dumps(calls[0])
     with SessionLocal() as db:
         pw=db.query(PlannedWorkout).filter_by(plan_id=plan,date=day.isoformat()).one()
         assert pw.title=='2x6min Threshold' and pw.original_prescription is None and pw.session_status is None
@@ -261,7 +261,7 @@ def test_advice_is_generated_after_deterministic_feedback(monkeypatch):
             type='easy',title='Run before plan',distance_miles=5));db.commit()
     r=client.post(f'/api/plans/1/feedback/{date.today()}',json={'feel_rating':7,'feel_notes':'Good recovery'})
     assert r.status_code==200 and len(calls)==1
-    assert calls[0]['run']['feel']==7 and calls[0]['run']['notes']=='Good recovery'
+    assert calls[0]['run']['athlete_feedback']['feel_1_to_10']==7 and calls[0]['run']['athlete_feedback']['notes']=='Good recovery'
     assert 'Controlled run' in r.json()['coach_response']
 
 
@@ -339,7 +339,7 @@ def test_feedback_reviews_work_activity_not_larger_warmup(monkeypatch):
         db.add(work);db.commit();work_id=work.id
     r=client.post(f'/api/plans/1/feedback/{date.today()}',json={'feel_rating':7,'feel_notes':'Controlled reps'})
     assert r.status_code==200 and calls[0]['run']['id']==work_id
-    assert calls[0]['run']['feel']==7
+    assert calls[0]['run']['athlete_feedback']['feel_1_to_10']==7
 
 
 def test_opening_plan_does_not_stale_automatic_review(monkeypatch):

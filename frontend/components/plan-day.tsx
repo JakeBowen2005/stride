@@ -13,6 +13,7 @@ import {
   formatDate,
   secondsToTime,
   localDateStr,
+  secondsToPace,
 } from "@/lib/format";
 import type { Workout, DayFeedback } from "@/lib/types";
 
@@ -79,15 +80,18 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
   // For completed days, derive the display title from what was actually done
   const actualWorkoutTitle = hasActual ? extractWorkoutTitle(workout.actual?.description ?? null) : null;
   const actualWasWorkout = hasActual && actualIsWorkout(workout.actual?.description ?? null);
-  // Keep the planned session as the title (it's what the athlete recognizes); what was
-  // actually run shows underneath — Garmin's auto-names ("Fullerton Running") say little.
-  const displayTitle = workout.title;
+  // Once run, a quality day is titled by what the laps show was actually run; the planned
+  // session stays visible underneath. Garmin's auto-names ("Fullerton Running") say little.
+  const executed = workout.actual?.workout ?? null;
+  const displayTitle = executed?.title ?? workout.title;
   const actualLine = hasActual
-    ? [actualWasWorkout ? actualWorkoutTitle : null, workout.actual?.name, workout.actual?.avg_pace ? `${paceInUnits(workout.actual.avg_pace, units)}/${unit}` : null]
+    ? [executed?.off_plan ? `instead of ${workout.title}` : !executed && actualWasWorkout ? actualWorkoutTitle : null,
+       workout.actual?.avg_pace ? `${paceInUnits(workout.actual.avg_pace, units)}/${unit}` : null]
         .filter(Boolean)
         .join(" · ")
     : null;
-  const kind = sessionKind(workout.type, workout.title, workout.prescription?.category);
+  const kind = executed ? sessionKind("workout", executed.title, executed.category) : sessionKind(workout.type, workout.title, workout.prescription?.category);
+  const repHr = executed?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
   const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
@@ -203,8 +207,15 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                   )}
                 </div>
 
-                {/* Activity notes / Garmin lap summary */}
-                {workout.actual.description && (
+                {/* What the laps show; else the activity's own notes / lap summary */}
+                {executed && executed.reps.length > 1 ? (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{executed.title}: </span>
+                    <span className="num">{executed.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}/{unit}</span>
+                    {repHr.length > 1 && <span className="num"> · HR {repHr[0]}→{repHr[repHr.length - 1]}</span>}
+                    {executed.recovery_seconds ? <span> · {secondsToTime(executed.recovery_seconds)} recovery</span> : null}
+                  </p>
+                ) : workout.actual.description && (
                   <p className="text-xs text-muted-foreground italic whitespace-pre-line">
                     {workout.actual.description}
                   </p>
@@ -327,7 +338,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
               )}
               {localFeedback.evaluation && (
                 <p className="text-xs">
-                  <span className="font-medium">Progression: </span>
+                  <span className="font-medium">{localFeedback.evaluation.decision === "off_plan" ? "Logged: " : "Progression: "}</span>
                   <span className="text-muted-foreground">{localFeedback.evaluation.reason}</span>
                 </p>
               )}
@@ -336,12 +347,6 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                   {c.date ? `${c.date}: ` : ""}{c.reason}
                 </p>
               ))}
-              {localFeedback.coach_response && (
-                <div className="rounded-md bg-secondary/50 p-2.5 text-xs leading-relaxed">
-                  <span className="font-medium">Coach: </span>
-                  <span className="text-muted-foreground">{localFeedback.coach_response}</span>
-                </div>
-              )}
             </div>
           )}
 
