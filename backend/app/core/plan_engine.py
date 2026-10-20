@@ -477,7 +477,6 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
     steady = format_pace(paces["steady_pace"])
     grp = paces.get("goal_race_pace")
     mp_label = f"goal MP ({format_pace(grp)}/mi)" if grp else f"steady ({steady}/mi)"
-    mp_pace = format_pace(grp) if grp else steady
     total = _round_half(total_miles)
 
     if run_type == "easy":

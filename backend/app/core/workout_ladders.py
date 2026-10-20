@@ -298,6 +298,27 @@ def program_key(distance: str | None = "5k") -> str:
     return f"ladder-v2:{distance or 'general'}"
 
 
+GOAL_LABELS = {"5k": "5K", "10k": "10K", "half": "half marathon", "marathon": "marathon", "50k": "50K",
+               "50mi": "50-mile", "100k": "100K", "100mi": "100-mile", "mileage": "mileage build",
+               "general": "general fitness", "comeback": "comeback"}
+
+
+def ladder_purpose(category: str, distance: str, phase: str) -> str:
+    """Coach-voice 'why' for a ladder session; dose and pace stay in the prescription."""
+    goal = GOAL_LABELS.get(distance, distance)
+    if phase in ("taper", "race_week"):
+        return ("Short and controlled: keeps threshold rhythm sharp while volume drops before the race."
+                if category == "threshold" else "Brief fast reps keep your legs sharp without adding fatigue before the race.")
+    if phase == "recovery":
+        return "A light touch of rhythm while you recover; finish feeling better than you started."
+    if category == "threshold":
+        lead = "Builds the aerobic base" if phase == "base" else "Raises your lactate threshold"
+        return (f"{lead}: comfortably hard running at the pace you could hold for about an hour, "
+                f"the key limiter for your {goal} goal. Stay controlled, never racing.")
+    return (f"VO2max work at roughly 5K effort builds the aerobic power behind your {goal} goal. "
+            "Run every rep even; the last should match the first.")
+
+
 def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> list[dict]:
     """Stride templates, not validated physiological dose equivalences.
 
@@ -340,7 +361,7 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
             name = f"2x{rep_minutes}min Threshold"
             structure = f"2x{rep_minutes}min at {{tp_fast}}/mi with 2min jog rest."
         result.append({"level": level, "name": name, "format": "time_intervals" if category == "threshold" else "track_intervals",
-                       "structure_template": structure, "purpose": f"{distance} {phase}: controlled {category} work within the weekly budget.",
+                       "structure_template": structure, "purpose": ladder_purpose(category, distance, phase),
                        "warmup": "1.5mi easy", "cooldown": "1.5mi easy", "total_miles": total,
                        "work_spec": {"reps": reps, "seconds": rep_minutes * 60 if category == "threshold" else None, "meters": meters if category == "intervals" else None}})
     return result

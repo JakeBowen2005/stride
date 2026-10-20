@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.coaching import CoachingReview, CoachingJob
-from app.models.plan import Plan, PlannedWorkout
+from app.models.plan import PlannedWorkout
 from app.services.coaching import build_context, review_training, serialize_review
 
 router = APIRouter(prefix='/api/coaching', tags=['coaching'])
