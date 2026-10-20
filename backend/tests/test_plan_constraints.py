@@ -121,10 +121,11 @@ def test_ultra_back_to_back_fits_and_is_flagged():
 
 
 def test_no_unconditional_week_to_week_growth_padding():
-    # Deload in week 2 must actually be lower — no long-run padding to beat week 1
+    # An untouched Monday can start recovery now; the following week returns to baseline.
     p = plan(current_weekly_mileage=40, block_number=4)  # advanced: block 4 is a deload
     assert p["is_deload"]
-    assert p["weeks"][1]["target_mileage"] < p["weeks"][0]["target_mileage"]
+    assert p["weeks"][0]["target_mileage"] < p["weeks"][1]["target_mileage"]
+    assert p["weeks"][0]["budget_miles"] == 30
 
 
 def test_deload_lands_on_a_full_future_week():
@@ -229,9 +230,10 @@ from app.core.load_policy import deload_due  # noqa: E402
 
 
 def test_deload_due_after_loaded_streak():
-    assert deload_due([30, 32, 34], "intermediate")[0] is True
+    assert deload_due([30, 32, 34, 36, 38], "intermediate")[0] is True
     assert deload_due([30, 32, 34, 36], "advanced")[0] is False
-    assert deload_due([30, 32, 34, 36, 38], "advanced")[0] is True
+    assert deload_due([30, 32, 34, 36, 38], "advanced")[0] is False
+    assert deload_due([30, 32, 34, 36, 38, 40, 42], "advanced")[0] is True
 
 
 def test_natural_down_week_resets_the_streak():

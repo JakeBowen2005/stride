@@ -2,7 +2,7 @@
 
 Three separate quantities (they were previously blurred together):
 
-- **baseline** — demonstrated recent training: the 4-week rolling average from
+- **baseline** — demonstrated recent training: the last four completed calendar weeks from
   completed runs, divided over the whole window (rest/interrupted days count),
   so a few big days after a break can't inflate it.
 - **budget** — the permitted load for each week of the next block.
@@ -46,6 +46,8 @@ class LoadPlan:
     weekly_budgets: list[float]
     rate: float
     reasons: list[str] = field(default_factory=list)
+    recent_week_miles: float | None = None
+    planning_anchor: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -55,6 +57,8 @@ class LoadPlan:
             "weekly_budgets": self.weekly_budgets,
             "rate": self.rate,
             "reasons": self.reasons,
+            "recent_week_miles": self.recent_week_miles,
+            "planning_anchor": self.planning_anchor,
         }
 
 
@@ -89,10 +93,10 @@ def default_destination(goal_type: str, target_weekly_mileage: float | None) -> 
     return None  # race goals: growth is limited by demonstrated training each block
 
 
-# Consecutive loaded weeks before a deload is due (training-principles.md: every
-# 3rd-4th week for beginners/intermediates, 5th-7th for advanced)
-DELOAD_AFTER_WEEKS = {"beginner": 3, "intermediate": 3, "advanced": 5}
-DOWN_WEEK_RATIO = 0.85  # a week under 85% of the previous 3 weeks' average counts as a down week
+# Consecutive loaded weeks before considering a deload. Novice defaults retained;
+# advanced uses the longer end of the existing 5-7-week guidance, per athlete preference.
+DELOAD_AFTER_WEEKS = {"beginner": 3, "intermediate": 3, "advanced": 7}
+DOWN_WEEK_RATIO = 0.85  # a lighter week versus the recent high resets accumulated load
 
 
 def deload_due(weekly_miles: list[float], experience: str) -> tuple[bool, str]:
@@ -103,14 +107,14 @@ def deload_due(weekly_miles: list[float], experience: str) -> tuple[bool, str]:
     streak = 0
     for i, miles in enumerate(weekly_miles):
         prev = weekly_miles[max(0, i - 3):i]
-        avg = sum(prev) / len(prev) if prev else 0
-        if miles <= 0 or (avg > 0 and miles < avg * DOWN_WEEK_RATIO):
+        reference = max(prev, default=0)
+        if miles <= 0 or (reference > 0 and miles <= reference * DOWN_WEEK_RATIO):
             streak = 0
         else:
             streak += 1
     if streak >= limit:
-        return True, f"{streak} loaded weeks in a row since your last lighter week: a deload is due."
-    return False, f"{streak} loaded week{'s' if streak != 1 else ''} since your last lighter week (deload after {limit})."
+        return True, f"{streak} sustained loaded weeks without a meaningful lighter week: including a recovery week."
+    return False, f"{streak} loaded week{'s' if streak != 1 else ''} since your last meaningful lighter week; no automatic deload needed."
 
 
 def plan_load(
@@ -123,6 +127,7 @@ def plan_load(
     assessment: str | None = None,  # build | hold | reduce | recovery (from block assessment)
     deload_week: int | None = None,  # 0-based week index to deload, if a deload is due
     reported_mileage: float | None = None,  # athlete's own estimate when history is missing
+    completed_weeks: list[float] | None = None,  # oldest -> newest, full calendar weeks incl zero
 ) -> LoadPlan:
     baseline = round(_finite(baseline), 1)
     peak = _finite(peak)
@@ -144,7 +149,26 @@ def plan_load(
     mode = "build"
     growth = [rate * min(w + 1, 2) / 2 for w in range(num_weeks)]  # +½rate, +rate, then hold
     budgets = [baseline * (1 + g) for g in growth]
+    recent = _finite(completed_weeks[-1]) if completed_weeks else None
+    anchor = baseline
+    recent_build = False
+    # For an experienced mileage builder, a repeatable recent high is evidence
+    # that the rolling average can lag current training. Do not chase one spike.
+    history = (completed_weeks or [])[-4:]
+    repeatable = sum(_finite(w) >= (recent or 0) * .8 for w in history) >= 2
+    if (experience == "advanced" and goal_type == "mileage" and assessment not in {"hold", "reduce", "recovery"}
+            and deload_week is None and recent and len(history) == 4 and all(_finite(w) > 0 for w in history)
+            and baseline < recent <= baseline * 1.35 and repeatable):
+        anchor = recent
+        next_miles = round((recent + min(2.0, recent * .05)) * 2) / 2
+        budgets = [next_miles] * num_weeks  # repeat, don't staircase on unobserved recovery
+        rate = next_miles / recent - 1
+        recent_build = True
     reasons.append(f"Baseline {baseline:g} mi/week (4-week average of completed runs).")
+
+    if recent_build:
+        reasons.append(f"Last full week {recent:g} mi, supported by another comparable recent week. "
+                       f"Plan {budgets[0]:g} mi/week, then repeat it while your run feedback guides adjustments.")
 
     if assessment in ("hold", "reduce", "recovery"):
         factor = {"hold": HOLD_FACTOR, "reduce": REDUCE_FACTOR, "recovery": RECOVERY_FACTOR}[assessment]
@@ -180,6 +204,6 @@ def plan_load(
         mode = "deload" if mode == "build" else mode
         reasons.append(f"Deload in week {deload_week + 1}: ~{1 - DELOAD_FACTOR:.0%} less volume to absorb training.")
 
-    if mode == "build":
+    if mode == "build" and not recent_build:
         reasons.insert(1, f"Building up to {rate:.0%} over the block ({budgets[0]:.0f} → {budgets[-1]:.0f} mi/week).")
-    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons)
+    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor)

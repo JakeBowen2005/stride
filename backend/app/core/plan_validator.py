@@ -61,6 +61,15 @@ def fit_week_to_budget(
     live = [d for d in days if d.get("prescribed", True) and d["type"] != "race"]
     locked = sum(d["distance_miles"] for d in days if d not in live)
 
+    if live and budget - locked < MIN_EASY_FLOOR:
+        for day in live:
+            day.update({'type': 'rest', 'title': 'Recovery / Rest',
+                        'description': "The week's mileage is already accounted for. Rest and recover.",
+                        'purpose': 'Recovery after completed training.', 'distance_miles': 0, 'warmup': None, 'cooldown': None})
+            day.pop('prescription', None)
+            day.pop('b2b', None)
+        return ["No remaining mileage budget: upcoming prescribed days became recovery/rest; completed runs were preserved."]
+
     def fixed_miles():
         return sum(d["distance_miles"] for d in live if d["type"] in ("workout", "long_run"))
 
@@ -119,6 +128,20 @@ def fit_week_to_budget(
                 i -= 1
 
     total = locked + sum(d["distance_miles"] for d in live)
+    if total > budget + BUDGET_OVER_TOLERANCE:
+        remaining_workouts = [d for d in live if d['type'] == 'workout']
+        if remaining_workouts:
+            _easy(remaining_workouts[-1], easy_desc, MIN_EASY_FLOOR)
+            notes.append("Quality session replaced by easy running: its full prescription cannot fit this week's remaining budget.")
+            notes.extend(fit_week_to_budget(days, budget, easy_desc, restructure_long))
+            return notes
+    if total > budget + BUDGET_OVER_TOLERANCE:
+        remaining_longs = [d for d in live if d['type'] == 'long_run']
+        if remaining_longs:
+            _easy(remaining_longs[-1], easy_desc, MIN_EASY_FLOOR, title='Recovery Run')
+            notes.append("Long run replaced by affordable recovery running: completed training leaves too little mileage for its full prescription.")
+            notes.extend(fit_week_to_budget(days, budget, easy_desc, restructure_long))
+            return notes
     if total < budget - BUDGET_UNDER_TOLERANCE and e:
         notes.append(
             f"Scheduled {total:g} of {budget:g} mi: with this many run days the easy runs would get too long; "
@@ -186,7 +209,7 @@ def validate_plan(
         scheduled = sum(d["distance_miles"] for d in w["days"])
         if budget is not None and not has_race and scheduled > budget + BUDGET_OVER_TOLERANCE:
             problems.append({"code": "over_budget", "date": w["days"][0]["date"],
-                             "message": f"Week {w.get('week_number')}: {scheduled:g} mi scheduled vs {budget:g} mi budget"})
+                             "message": f"Week {w.get('week_number')}: {scheduled:.1f} mi scheduled vs {budget:.1f} mi budget"})
 
     for d in all_days:
         if not d.get("prescribed", True):

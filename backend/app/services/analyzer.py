@@ -1,10 +1,12 @@
 import json
+import math
 from datetime import datetime, timedelta
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity, PersonalRecord
+from app.models.user import User
 
 
 def analyze_athlete(user_id: int, db: Session) -> dict:
@@ -154,6 +156,10 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     else:
         experience = "beginner"
 
+    profile = db.get(User, user_id)
+    if profile and profile.experience_level in {'beginner', 'intermediate', 'advanced'}:
+        experience = profile.experience_level
+
     # --- Injury Risk: Acute/Chronic Workload ---
     acute_load = recent_4w["distance_miles"].sum() / 4 if not recent_4w.empty else 0
     chronic_load = twelve_week_avg if twelve_week_avg > 0 else 1
@@ -233,7 +239,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
 
 def _format_pace(seconds_per_mile: float | None) -> str | None:
     """Convert seconds per mile to mm:ss format."""
-    if seconds_per_mile is None:
+    if seconds_per_mile is None or not math.isfinite(seconds_per_mile):
         return None
     minutes = int(seconds_per_mile // 60)
     secs = int(seconds_per_mile % 60)

@@ -1,12 +1,13 @@
 "use client";
 
 import { apiUrl, USER_ID } from "@/lib/api";
+import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
-import { formatDateShort, localDateStr } from "@/lib/format";
+import { formatDateShort, formatDistance, localDateStr } from "@/lib/format";
 import type { PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
 
@@ -74,6 +75,8 @@ interface ApiPlan {
     mode: string;
     weekly_budgets: number[];
     reasons: string[];
+    recent_week_miles?: number | null;
+    planning_anchor?: number | null;
   } | null;
   assessment?: { decision: string | null; reasons: string[] } | null;
   weeks: ApiWeek[];
@@ -129,36 +132,29 @@ const MODE_LABEL: Record<string, string> = {
   deload: "Deload included", start: "Getting started",
 };
 
-function BlockSummary({ load, assessment }: { load: NonNullable<ApiPlan["load"]>; assessment: ApiPlan["assessment"] }) {
-  const budgets = load.weekly_budgets.map((b) => Math.round(b)).join(" → ");
+function BlockSummary({ plan }: { plan: ApiPlan }) {
+  const load = plan.load!;
   return (
-    <Card>
-      <CardContent className="space-y-2 pt-4 text-sm">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="font-medium">This block: {MODE_LABEL[load.mode] ?? load.mode}</h3>
-          <span className="shrink-0 font-mono text-muted-foreground">{budgets} mi/wk</span>
-        </div>
-        <p className="text-muted-foreground">
-          Baseline {Math.round(load.baseline)} mi/week from your recent runs
-          {load.destination ? ` · goal ${Math.round(load.destination)} mi/week` : ""}
-        </p>
-        {load.destination && load.destination > load.baseline && (
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-label="Progress toward mileage goal">
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.min(100, (load.baseline / load.destination) * 100)}%`, background: "var(--viz-series-1)" }}
-            />
-          </div>
-        )}
-        {assessment?.reasons?.length ? (
-          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-            {assessment.reasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        ) : null}
-      </CardContent>
-    </Card>
+    <Card><CardContent className="space-y-3 pt-4 text-sm">
+      <h3 className="font-medium">This block: {MODE_LABEL[load.mode] ?? load.mode}</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {plan.weeks.map((week) => {
+          const logged = week.days.reduce((sum, d) => sum + (d.actual?.distance_miles ?? (d.prescribed === false ? d.distance_miles : 0)), 0);
+          const remaining = week.days.filter((d) => d.prescribed !== false && !d.actual).reduce((sum, d) => sum + d.distance_miles, 0);
+          return <div key={week.week_number} className="rounded-md bg-muted/50 p-3">
+            <p className="text-xs text-muted-foreground">Week {week.week_number} · {formatDateShort(week.days[0].date)}–{formatDateShort(week.days[week.days.length - 1].date)}</p>
+            <p className="font-mono">{formatDistance(logged + remaining)} mi {logged > 0 ? "total" : "planned"}</p>
+            {logged > 0 && <p className="text-xs text-muted-foreground">{formatDistance(logged)} logged · {formatDistance(remaining)} remaining</p>}
+          </div>;
+        })}
+      </div>
+      <p className="text-muted-foreground">
+        {load.recent_week_miles != null && `Last full week ${formatDistance(load.recent_week_miles)} mi · `}
+        Four-week average {formatDistance(load.baseline)} mi/week
+        {load.destination ? ` · goal ${formatDistance(load.destination)} mi/week` : ""}
+      </p>
+      {plan.assessment?.reasons?.map((reason) => <p key={reason} className="text-muted-foreground">{reason}</p>)}
+    </CardContent></Card>
   );
 }
 
@@ -177,6 +173,8 @@ function pacingRows(g: Record<string, string>): [string, string, string][] {
 
 export default function PlanPage() {
   const [plan, setPlan] = useState<ApiPlan | null>(null);
+  const [activePlan, setActivePlan] = useState<ApiPlan | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,22 +184,10 @@ export default function PlanPage() {
   const fetchPlan = useCallback(async () => {
     try {
       setError(null);
-      const draftRes = await fetch(apiUrl(`/plans/${USER_ID}/draft`));
-      if (!draftRes.ok) throw new Error("Could not load pending preview");
-      const draft = await draftRes.json();
-      if (draft) { setPlan(draft); setNoPlan(false); return; }
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/current`));
-      if (res.status === 404) {
-        setNoPlan(true);
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || "Failed to load plan");
-        return;
-      }
-      setNoPlan(false);
-      setPlan(await res.json());
+      const state = await loadPlanState<ApiPlan>();
+      setActivePlan(state.active);
+      setPlan(state.visible);
+      setNoPlan(!state.visible);
     } catch {
       setError("Failed to connect to server");
     } finally {
@@ -209,22 +195,21 @@ export default function PlanPage() {
     }
   }, []);
 
-  const generatePlan = useCallback(async (lighter = false) => {
+  const generatePlan = useCallback(async (lighter = false, scope: "current" | "next" = "current") => {
     setGenerating(true);
     setError(null);
     try {
       const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lighter }),
+        body: JSON.stringify({ lighter, scope }),
       });
       if (!res.ok) {
         const data = await res.json();
         setError(data.detail || "Failed to generate plan");
         return;
       }
-      // Re-fetch via GET to get matched actuals
-      setLoading(true);
+      setNotice(null);
       await fetchPlan();
     } catch {
       setError("Failed to connect to server");
@@ -241,6 +226,7 @@ export default function PlanPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save your choice");
       await fetchPlan();
+      setNotice(action === "approve" ? "Plan approved. Your training block is active." : "Preview discarded. Your current plan is unchanged.");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not reach Stride"); }
     finally { setGenerating(false); }
   }
@@ -265,6 +251,7 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Current Plan</h1>
+        {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No plan yet. Generate your first training plan.</p>
@@ -305,6 +292,7 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Current Plan</h1>
+        {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
             <p className="font-medium">Your last training block ended {formatDateShort(plan.end_date)}.</p>
@@ -312,7 +300,7 @@ export default function PlanPage() {
               Generate a fresh 2-week block. It&apos;s built from your latest Garmin runs, current fitness and{" "}
               {plan.goal.race_date ? "where you are relative to race day" : "your goal"}.
             </p>
-            <Button onClick={() => generatePlan()} disabled={generating}>
+            <Button onClick={() => generatePlan(false, "next")} disabled={generating}>
               {generating ? "Building your plan…" : "Generate this week's plan"}
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -369,34 +357,18 @@ export default function PlanPage() {
       </div>
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
+      {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
       {plan.preview && <Card><CardContent className="space-y-3 pt-4">
         <h2 className="font-semibold">Review this block before starting</h2>
         <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
         <div className="flex flex-wrap gap-2">
           <Button disabled={generating} onClick={() => finishPreview("approve")}>Approve</Button>
           <Button variant="outline" disabled={generating} onClick={() => generatePlan(true)}>Make it lighter</Button>
-          <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Discard preview</Button>
+          {activePlan && !activePlan.is_stale && <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Keep current plan</Button>}
         </div>
       </CardContent></Card>}
-      {!plan.preview && <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Preview next block</Button>}
-      {plan.load && <BlockSummary load={plan.load} assessment={plan.assessment ?? null} />}
-
-      {/* Pacing Guide — the same numbers the workouts below use */}
-      <Card>
-        <CardContent className="pt-4">
-          <h3 className="mb-2 text-sm font-medium">Pacing Guide</h3>
-          <div className="space-y-1 text-sm">
-            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
-              <div key={label} className="flex items-baseline justify-between gap-3">
-                <span className="text-muted-foreground">
-                  {label} <span className="text-xs">· {hint}</span>
-                </span>
-                <span className="shrink-0 font-mono">{value}/mi</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {!plan.preview && <p className="text-sm text-muted-foreground">Approved block · log your runs and feel ratings to adjust it as you go.</p>}
+      {plan.load && <BlockSummary plan={plan} />}
 
       {pastWeeks.length > 0 && (
         <button
@@ -438,6 +410,34 @@ export default function PlanPage() {
           </CardContent>
         </Card>
       )}
+      {!plan.preview && <details className="rounded-md border p-4 text-sm">
+        <summary className="cursor-pointer font-medium">Plan options</summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-muted-foreground">Need to revise this block? Review a replacement using your latest training. Your approved sessions stay active until you approve the revision.</p>
+          <Button variant="outline" disabled={generating} onClick={() => generatePlan()}>Review revised current block</Button>
+          {nextBlockAvailable(plan.end_date, today) ? <div>
+            <p className="mb-2 text-muted-foreground">Your next block starts after {formatDateShort(plan.end_date)}.</p>
+            <Button disabled={generating} onClick={() => generatePlan(false, "next")}>Preview next block</Button>
+          </div> : <p className="text-muted-foreground">When this block ends, review the next one using your latest runs and feedback.</p>}
+        </div>
+      </details>}
+      {/* Pacing Guide — the same numbers the workouts below use */}
+      <Card>
+        <CardContent className="pt-4">
+          <h3 className="mb-2 text-sm font-medium">Pacing Guide</h3>
+          <div className="space-y-1 text-sm">
+            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+              <div key={label} className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">
+                  {label} <span className="text-xs">· {hint}</span>
+                </span>
+                <span className="shrink-0 font-mono">{value}/mi</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
     </div>
   );
 }
