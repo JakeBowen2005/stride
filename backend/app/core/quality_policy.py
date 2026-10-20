@@ -168,37 +168,39 @@ def format_bookends(workout, paces, workout_format):
     return workout
 
 
-def secondary_quality(paces, program, phase, week_number, current_mileage, progression_state=None):
+def secondary_quality(paces, program, phase, week_number, current_mileage, progression_state=None, *,
+                      experience='intermediate', deload=False):
     """Two-workout stage: goal-specific substantial secondary dose, not maximal.
 
     This is a coordinated prescription, not a second independent progression ladder.
     Primary ladder advancement remains evidence-gated; secondary completion helps
     demonstrate weekly tolerance without double-incrementing threshold level.
+
+    Dose comes from the same catalog and dose band as the replace menu
+    (core/session_catalog.py), taken at the band FLOOR: the smallest session that
+    reaches the athlete's experience floor, so the two systems never disagree.
+    Odd weeks (and base) are threshold for longer goals; marathoners in build/peak
+    use a continuous marathon-pace run on the other weeks, everyone else short reps.
     """
+    from app.core.goal_pace import allows_goal_pace
+    from app.core.session_catalog import at_floor, build_workout, dose_band
     from app.core.workout_ladders import program_key
     threshold_focus = (program in {'mileage','half','marathon'} and (phase=='base' or week_number%2==1))
     if threshold_focus:
-        # Controlled broken threshold. Duration grows only with demonstrated volume;
-        # pace remains the current evidence-based broken-threshold pace.
-        reps, seconds = (3,360) if current_mileage>=50 else (3,300)
-        pace = paces.get('broken_threshold_pace',paces['tempo_pace']-10)
-        work = segment(reps,seconds=seconds,fast=pace,slow=pace,recovery_seconds=90)
-        category, name = 'threshold', f'{reps}x{seconds//60}min Controlled Threshold'
+        # Controlled broken threshold at the current evidence-based pace.
+        families, dose, pace = ('cruise_time', 'cruise_distance'), 'threshold', paces.get('broken_threshold_pace', paces['tempo_pace']-10)
         purpose = 'Second controlled aerobic-strength stimulus; finish repeatable, not racing the primary workout.'
+    elif program == 'marathon' and paces.get('specific_pace') and allows_goal_pace(program, phase, deload=deload):
+        families, dose, pace = ('mp_continuous', 'mp_block'), 'marathon_pace', paces['specific_pace']
+        purpose = 'Marathon-pace rhythm as the second session; controlled, the long run stays the priority.'
     else:
-        reps, meters = (6,600) if current_mileage>=50 else (5,600)
-        pace = paces['interval_pace']
-        work = segment(reps,meters=meters,fast=pace,slow=pace,recovery_seconds=120)
-        category, name = 'intervals', f'{reps}x{meters}m Controlled Intervals'
+        families, dose, pace = ('short_reps', 'time_reps'), 'intervals', paces['interval_pace']
         purpose = 'Shorter faster aerobic work complements threshold; preserve recovery for the long run.'
-    data=prescription(category,'time_intervals' if threshold_focus else 'track_intervals',[work],
-                      program=program_key(program),phase=phase,note='Controlled effort with a repetition in reserve; no maximal finish.')
-    data.update({'progression_eligible':False,'role':'secondary_quality',
-                 'easy_pace_sec_per_mile':paces['long_run_pace']})
-    data['warmup']=segment(meters=1.5*MI)
-    data['cooldown']=segment(meters=1.5*MI)
-    work_miles=(work['distance_meters']/MI if work['distance_meters'] else work['duration_seconds']/pace)*work['reps']
-    total=3+work_miles+(work['reps']-1)*work['recovery_seconds']/paces['long_run_pace']
-    data['total_distance_meters']=round(total*MI,2)
-    return {'name':name,'structure':render(data),'prescription':data,'total_miles':math.ceil(total*2)/2,
-            'warmup':'1.5mi easy','cooldown':'1.5mi easy','purpose':purpose}
+    band = dose_band(dose, experience, current_mileage, pace, phase, deload)
+    template = at_floor(families, band, paces, program)
+    workout = build_workout(template, paces, program=program_key(program), phase=phase)
+    data = workout['prescription']
+    data['note'] = 'Controlled effort with a repetition in reserve; no maximal finish.'
+    data['role'] = 'secondary_quality'
+    data['dose_band'] = {'low': band.low, 'high': band.high}
+    return workout | {'name': f'Controlled {template.name}', 'structure': render(data), 'purpose': purpose}

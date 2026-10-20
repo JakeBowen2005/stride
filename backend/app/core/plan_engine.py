@@ -13,6 +13,8 @@ from datetime import date, timedelta
 
 from app.core.pacing import format_pace, goal_paces, pace_range
 from app.core.workouts import get_workout_library
+from app.core.goal_pace import with_specific_pace
+from app.core.session_catalog import ultra_vert_session
 from app.core.workout_ladders import get_workout_at_level, get_deload_workout, get_week2_variant
 from app.core.experience import experienced
 from app.core.quality_policy import select_quality_policy, light_speed_support, format_bookends
@@ -170,6 +172,10 @@ def generate_plan(
         current_mileage=current_weekly_mileage,
     )
 
+    # Goal-pace target for race-specific work, stepped from the paces workouts use
+    current_paces["specific_pace"] = with_specific_pace(
+        effective_paces(current_paces, progression_state), goal_distance)["specific_pace"]
+
     # Ultras use the marathon library for road-style sessions (threshold, long-run variety)
     lib_distance = "marathon" if is_ultra(goal_distance) else (goal_distance or "5k")
     workout_lib = get_workout_library(current_paces, lib_distance, sizing_mileage)
@@ -251,6 +257,7 @@ def generate_plan(
             light_second=quality.light_second and wk_workouts > 1,
             workout_format=workout_format,
             quality_stage=quality.stage,
+            experience=experience_level,
         )
 
         week_days = [d for d in week_days if d['date'] <= end_date.isoformat()]
@@ -407,6 +414,8 @@ def _build_current_paces(
             "long_run_pace": _round_pace(easy_pace),
             "strides_pace": _round_pace(workout_paces.get("strides_pace", easy_pace * 0.55)),
             "goal_race_pace": grp,
+            # Calibrated goal-pace rep evidence per distance (pace_calibrator)
+            **{k: v for k, v in workout_paces.items() if k.startswith("race_pace_")},
         }
 
     return {
@@ -476,7 +485,12 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
     easy_range = pace_range(paces["easy_pace_low"], paces["easy_pace_high"])
     steady = format_pace(paces["steady_pace"])
     grp = paces.get("goal_race_pace")
-    mp_label = f"goal MP ({format_pace(grp)}/mi)" if grp else f"steady ({steady}/mi)"
+    # Marathon-pace segments step toward goal MP from demonstrated pace (core/goal_pace.py).
+    mp = paces.get("specific_pace") or grp
+    if mp and grp and mp > grp:
+        mp_label = f"MP step ({format_pace(mp)}/mi, goal {format_pace(grp)}/mi)"
+    else:
+        mp_label = f"goal MP ({format_pace(mp)}/mi)" if mp else f"steady ({steady}/mi)"
     total = _round_half(total_miles)
 
     if run_type == "easy":
@@ -566,6 +580,7 @@ def _build_week(
     light_second: bool = False,
     workout_format: str = 'distance',
     quality_stage: str = 'single',
+    experience: str = 'intermediate',
 ) -> list[dict]:
     phase = phase or WeekPhase(phase="general")
     easy_range = pace_range(current_paces["easy_pace_low"], current_paces["easy_pace_high"])
@@ -658,7 +673,8 @@ def _build_week(
                 elif placed == 1 and ultra and trail and phase.phase in ("base", "build", "peak"):
                     # Trail/mountain ultras: hills replace track intervals early in the week
                     day_assignments[wd] = "workout_speed"
-                    workout1 = hill_session(phase.phase)
+                    workout1 = ultra_vert_session(phase.phase, goal_distance, terrain, current_paces, experience,
+                                                  current_mileage, start_date, is_deload) or hill_session(phase.phase)
                 elif placed == 1:
                     # Intervals (hard speed work) early in the week
                     day_assignments[wd] = "workout_speed"
@@ -671,12 +687,15 @@ def _build_week(
                     )
                 elif quality_stage == 'dual' and ultra and trail and phase.phase in {'base','build','peak'}:
                     day_assignments[wd] = "workout_speed"
-                    workout1 = hill_session(phase.phase)
+                    workout1 = ultra_vert_session(phase.phase, goal_distance, terrain, current_paces, experience,
+                                                  current_mileage, start_date, is_deload) or hill_session(phase.phase)
                 elif quality_stage == 'dual' and goal_distance not in {'5k','10k'}:
                     day_assignments[wd] = "workout_speed"
                     from app.core.quality_policy import secondary_quality
-                    workout1 = secondary_quality(current_paces, program_distance or 'mileage', phase.phase,
-                                                 week_num, current_mileage, progression_state)
+                    workout1 = secondary_quality(effective_paces(current_paces, progression_state),
+                                                 program_distance or 'mileage', phase.phase,
+                                                 week_num, current_mileage, experience=experience,
+                                                 deload=is_deload)
                 elif light_second:
                     support = light_speed_support(current_paces, workout_format, week_start=start_date, terrain=terrain)
                     # Legacy slots are positional; preserve a short-race primary

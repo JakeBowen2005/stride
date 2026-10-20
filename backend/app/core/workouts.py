@@ -17,8 +17,9 @@ def get_workout_library(paces: dict, distance: str, current_mileage: float = 0) 
     sp = paces.get("strides_pace", rp * 0.85)
     thrp = paces.get("threshold_pace", tp)
     stp = paces.get("steady_pace", ep_low * 0.90)
-    # Goal race pace for MP workouts — falls back to threshold if no goal
-    grp = paces.get("goal_race_pace") or thrp
+    # MP workouts use the goal-pace step (demonstrated pace moving toward goal MP,
+    # core/goal_pace.py), never a jump to goal pace; threshold if there is no goal
+    grp = paces.get("specific_pace") or paces.get("goal_race_pace") or thrp
     grp_label = format_pace(grp)
     # Extended rep pace: slightly faster than threshold (~10sec), used for 1.5mi reps
     ext_rep = thrp - 10

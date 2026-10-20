@@ -35,6 +35,22 @@ Unchanged gates: earned single/support/dual stage limits substantial weekly work
 
 These choices interpret the personal Long Game research plus existing goal/phase/quality policies. They are intentionally explicit product policy and require future longitudinal evaluation; neither a fast PR nor an experience label removes recovery needs.
 
+### Goal pace and specific endurance (menu v3, `core/goal_pace.py`)
+
+Build and peak sessions now look more like the race. **Goal pace is a target, never a prescription by itself.** Every goal-pace session runs at `max(goal pace, demonstrated race pace − 5 s/mi)`. That is one step from what the athlete has shown, and never faster than the goal. Demonstrated race pace comes from calibrated goal-pace reps (`race_pace_<distance>`, two executed sessions as for every other calibrated pace). Without those, it comes from the training paces already in use. These are Stride heuristics after Daniels: 5K ≈ I + 5 s, 10K ≈ T − 10 s, MP ≈ T + 20 s. When the reps are completed and calibrate a faster pace, the next session steps again. Goal-pace reps calibrate only their own distance's race pace. They never move interval or threshold pace, and the feedback path holds instead of recalibrating them. The rule is deterministic: the same evidence always gives the same pace.
+
+| Goal | Where it opens (phase gate) | Sessions |
+|---|---|---|
+| 5K / 10K | Peak only, not deload | Goal-pace reps (5×1K, 6×1K, 8×800, 3–4×1mi, 3×2K, 2×3K; 10K: up to 8×1K, 5×1mi, 4×2K, 3×3K). The interval ladder in peak is now a 12-level goal-pace ladder instead of generic 800s at I pace. |
+| Marathon | Build and peak, not deload | Threshold menu: MP blocks (3×2mi … 2×4mi), continuous MP (4–8mi) and medium-long runs with an MP segment (10–15mi, capped at 25% of weekly volume). Long-run menu: MP-finish and, in peak, MP-block long runs, behind the existing steady-finish gate (two-workout stage, ≥40 mi/week, no other hard day). The plan engine's MP sessions and MP long runs use the same step. |
+| Trail/mountain ultras | Power-hike base–peak; downhill build–peak; never taper or deload | Power-hike climbs (6×4min … 3×12min) and climb + fast-descent repeats. Each has a climbing target estimated at ~700 m/h hiking or ~500 m/h running uphill. The plan engine alternates the two by calendar week in build/peak; base keeps short hill repeats. |
+
+Goal-specific shapes lead the menu, at most two of them, so one general shape (threshold, VO2 or hills) is always offered too. They have their own dose bands: goal-pace reps sit between Daniels' T and I caps, marathon pace near Pfitzinger's midweek MP runs, and climbing is measured in time. These bands are Stride heuristics.
+
+**One dosing system.** `quality_policy.secondary_quality` (the controlled second session at the two-workout stage) now picks from the same catalog and `dose_band`. It takes the smallest session that reaches the experience floor, so an advanced runner's secondary threshold is ≥20 minutes, not the old fixed 15–18. Marathoners in build or peak get a continuous MP run on alternate weeks in place of 600s.
+
+Not changed: race-week sharpeners still use exact goal pace, since the race is run at goal pace anyway. Half-marathon MP-finish long runs still use goal HMP as before; a half-marathon step is a follow-up.
+
 Every option is dry-run with its companion budget cuts in rolled-back savepoints through the common validator. A selected ID hashes the full athlete/training/schedule context and proposed changes. POST recomputes it under a write lock: new runs, feedback, goals or schedule edits reject stale choices. Every affected day records its original prescription and adjustment note, then the complete schedule is revalidated and committed atomically. Legacy category-only requests also use the validated menu.
 
 The AI can select IDs from the **same** menu, including earned easy→quality choices. It cannot supply arbitrary pace/reps or bypass the menu limits. The client displays companion mileage cuts before acceptance. No automatic plan activation was added.

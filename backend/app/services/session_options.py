@@ -15,11 +15,13 @@ from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException
 
+from app.core.goal_pace import step_note
 from app.core.session_catalog import (
     MAX_OPTIONS,
     build_workout,
     dose_band,
     ranked_templates,
+    specific_bands,
 )
 from app.core.workout_data import MI, day_prescription, loads
 from app.models.activity import Activity
@@ -28,7 +30,7 @@ from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
 from app.services.coaching_options import snapshot
 
-VERSION = 'session-menu-v2'
+VERSION = 'session-menu-v3'
 QUALITY_ACTIVITY_TYPES = {'workout', 'threshold', 'intervals', 'tempo', 'fartlek', 'hill_repeats', 'race'}
 ULTRA_PROGRAMS = {'50k', '50mi', '100k', '100mi'}
 
@@ -65,6 +67,8 @@ def _approved_category_paces(rows, stored, calibrated, paces):
 def context_for(plan, db):
     """Everything a menu depends on, plus a token that changes when any of it does."""
     from app.api.plans import _parse_pace
+    from app.core.goal_pace import with_specific_pace
+    from app.core.pacing import goal_paces
     from app.core.plan_engine import _build_current_paces, effective_paces
     from app.core.quality_policy import select_quality_policy
     from app.core.workout_ladders import program_key
@@ -104,6 +108,11 @@ def context_for(plan, db):
         user_id=plan.user_id, program_key=program_key(program)).order_by(WorkoutProgression.id).all()
     paces = effective_paces(paces, {p.category: {'current_pace_sec': p.current_pace_sec}
                                     for p in progression if p.current_pace_sec})
+    # Goal pace is a target only: specific_pace steps toward it from demonstrated pace.
+    goal_pace = (goal_paces(goal.race_distance, goal.target_time_seconds) or {}).get('race_pace') \
+        if goal and goal.goal_type == 'race' and goal.race_distance and goal.target_time_seconds else None
+    paces['goal_race_pace'] = round(goal_pace) if goal_pace else None
+    paces = with_specific_pace(paces, program)
 
     completed_dates = {a.date.date().isoformat() for a in acts}
     fingerprint = {
@@ -186,19 +195,27 @@ def _quality_candidates(category, row, week, ctx, poor):
     volume = max(ctx['baseline'], week.budget or 0)
     band = dose_band(category, ctx['experience'], volume, pace, week.phase, week.deload)
     terrain = ctx['goal'].terrain if ctx['goal'] else None
+    specific = specific_bands(ctx['program'], ctx['experience'], volume, ctx['paces'], week.phase,
+                              deload=week.deload, terrain=terrain)
     week_index = date.fromisoformat(row.date).isocalendar()[1]
     templates = ranked_templates(category, band, ctx['paces'], phase=week.phase, terrain=terrain,
-                                 prefer_time=ctx['user'].workout_format == 'time', week_index=week_index)
+                                 prefer_time=ctx['user'].workout_format == 'time', week_index=week_index,
+                                 program=ctx['program'], specific=specific, weekly_miles=volume)
     from app.core.quality_policy import format_bookends
     from app.core.workout_ladders import program_key
+    why = step_note(ctx['program'], ctx['paces'])
     candidates = []
     for template in templates:
-        workout = build_workout(template, ctx['paces'], program=program_key(ctx['program']), phase=week.phase)
+        workout = build_workout(template, ctx['paces'], program=program_key(ctx['program']), phase=week.phase,
+                                why=why if template.pace_key == 'specific_pace' else '')
         candidates.append((template.family, _as_patch(format_bookends(workout, ctx['paces'], ctx['user'].workout_format))))
     reason = (f"{ctx['experience'].title()} runner, {volume:.0f} mi/week, {week.phase} phase: "
               f"{band.low:.0f}-{band.high:.0f} min of {'threshold' if category == 'threshold' else 'hard'} work, "
               'in three different shapes.')
-    return candidates, [reason]
+    reasons = [reason]
+    if any(t.specific for t in templates):
+        reasons.append('Goal-specific options come first. ' + (why or 'Race-specific work for this phase of your goal.'))
+    return candidates, reasons
 
 
 def _support_candidates(row, week, ctx, poor):
@@ -236,6 +253,10 @@ def _long_run_candidates(row, week, ctx, poor):
     lengths = [m for m in (top, top - 2, top - 4) if m >= max(2, cap * .5)]
     steady_ok = (ctx['program'] in {'marathon', 'half'} and week.phase in {'build', 'peak'} and ctx['quality'].stage == 'dual'
                  and week.hard_count < 1 and ctx['baseline'] >= 40 and not poor)
+    from app.core.goal_pace import allows_goal_pace
+    # Marathon-pace long runs share the steady-finish readiness gate and the goal-pace phase gate.
+    mp_ok = (steady_ok and ctx['program'] == 'marathon' and ctx['paces'].get('specific_pace')
+             and allows_goal_pace('marathon', week.phase, deload=week.deload))
     candidates = []
     for miles in lengths:
         patch = {'type': 'long_run', 'distance_miles': miles, 'warmup': None, 'cooldown': None, 'b2b': False,
@@ -251,11 +272,19 @@ def _long_run_candidates(row, week, ctx, poor):
             continue  # a helper's minimum duration must not override the athlete's dose cap
         patch['prescription'] = json.dumps(day_prescription(patch))
         candidates.append((f'easy-{miles}', patch))
+        if mp_ok and miles >= 12 and not any(f.startswith('mp-') for f, _ in candidates):
+            for run_type in ('mp_finish', 'mp_block') if week.phase == 'peak' and miles >= 14 else ('mp_finish',):
+                mp = copy.deepcopy(patch)
+                mp.update(_long_run_structure(miles, run_type, ctx['paces']))
+                mp['purpose'] = f"{mp['purpose']} {step_note('marathon', ctx['paces'])}".strip()
+                mp['prescription'] = json.dumps(day_prescription(mp))
+                candidates.append((f'mp-{run_type}-{miles}', mp))
         if steady_ok and miles >= 12 and not any(f.startswith('steady') for f, _ in candidates):
             steady = copy.deepcopy(patch)
             steady.update(_long_run_structure(miles, 'steady_finish', ctx['paces']))
             steady['prescription'] = json.dumps(day_prescription(steady))
-            candidates.insert(1, (f'steady-{miles}', steady))
+            # Marathon-pace options lead for marathoners; steady stays the half-marathon choice.
+            candidates.insert(len(candidates) if mp_ok else 1, (f'steady-{miles}', steady))
     return candidates, ['Long-run length is bounded by your recent longest run, the phase and 35% of this week’s budget (a Stride heuristic).']
 
 
