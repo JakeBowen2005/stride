@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 class PlanRequest(BaseModel):
     start_date: date | None = None  # ISO date, defaults to smart calculation
     lighter: bool = False
+    scope: Literal["current", "next"] = "current"
 
 
 class FeedbackRequest(BaseModel):
@@ -44,6 +45,7 @@ class FeedbackRequest(BaseModel):
 def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = Depends(get_db)):
     """Generate an inactive preview; approval is the only activation path."""
     _begin_schedule_write(db)
+    req = req or PlanRequest()
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -74,15 +76,32 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     if not rest_days:
         rest_days = ["sunday"]
 
-    # Calculate smart plan params (or use explicit start_date)
-    if req and req.start_date:
+    # Current-block revision preserves its boundaries. A true next block is
+    # available after completion; it never silently replaces today's schedule.
+    active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if req.scope == 'next':
+        if not active:
+            raise HTTPException(409, "Approve a current block first")
+        if date.today().isoformat() <= active.end_date:
+            raise HTTPException(409, "Finish this block before creating the next one; use current-block revision for changes now")
+        if req.start_date and req.start_date.isoformat() <= active.end_date:
+            raise HTTPException(422, "A next block cannot start inside the previous block")
+    if req.start_date:
         start = req.start_date
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
+    elif req.scope == 'current' and active and active.start_date <= date.today().isoformat() <= active.end_date:
+        start, end = date.fromisoformat(active.start_date), date.fromisoformat(active.end_date)
+        params = {"start_date": start, "end_date": end, "num_weeks": ((end - start).days // 7) + 1,
+                  "first_prescribe_date": date.today()}
     else:
         params = calculate_plan_params()
-
     fpd = params.get("first_prescribe_date") or params["start_date"]
     baseline = current_fitness["weekly_mileage_4w_avg"]
+    if (params['start_date'] <= date.today() and fpd <= date.today()
+            and _get_activities_for_date(date.today().isoformat(), user_id, db)):
+        # A recorded run today is completed load, not another open prescription.
+        fpd = date.today() + timedelta(days=1)
+        params['first_prescribe_date'] = fpd
 
     # Real training already done in this block's first week, and real hard runs just
     # before it — so a midweek plan prescribes only what's left and can't stack a
@@ -104,8 +123,11 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     from app.services.analyzer import compute_weekly_mileage
 
     this_monday = (date.today() - timedelta(days=date.today().weekday())).isoformat()
-    full_weeks = [w["actual"] for w in compute_weekly_mileage(user_id, db, weeks=10) if w["week_start"] < this_monday]
-    is_deload_due, deload_reason = deload_due(full_weeks[-8:], analysis["overview"]["experience_level"])
+    weekly = {w['week_start']: w['actual'] for w in compute_weekly_mileage(user_id, db, weeks=10)}
+    monday = date.fromisoformat(this_monday)
+    full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
+    baseline = round(sum(full_weeks[-4:]) / 4, 1)
+    is_deload_due, deload_reason = deload_due(full_weeks, analysis["overview"]["experience_level"])
 
     # Assess the previous block (what was prescribed and actually run) — drives
     # build / hold / reduce / recovery for the next block's volume.
@@ -114,6 +136,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
     recent_cutoff = (params["start_date"] - timedelta(days=ASSESSMENT_MAX_GAP_DAYS)).isoformat()
     assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
+
+    fatigue = _recent_fatigue_assessment(user_id, active, db)
+    if fatigue:
+        severity = {None: 0, 'build': 0, 'hold': 1, 'reduce': 2, 'recovery': 3}
+        if not assessment or severity[fatigue.decision] >= severity[assessment.decision]:
+            assessment = fatigue
 
     # Determine block number — reuse on overlapping regeneration, increment on new block
     last_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.preview_state.is_(None)).order_by(Plan.id.desc()).first()
@@ -130,11 +158,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Load or initialize workout progression state
     progression_state = _load_progression_state(user_id, db, goal.race_distance or goal.goal_type)
 
+    effective_assessment = "recovery" if req.lighter else assessment.decision if assessment else None
     plan_data = generate_plan(
         goal_type=goal.goal_type,
         goal_distance=goal.race_distance,
         target_time_seconds=goal.target_time_seconds,
-        current_weekly_mileage=current_fitness["weekly_mileage_4w_avg"],
+        current_weekly_mileage=baseline,
         peak_weekly_mileage=current_fitness["peak_weekly_mileage"],
         experience_level=analysis["overview"]["experience_level"],
         days_per_week=user.days_per_week or 6,
@@ -151,15 +180,16 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         race_date=date.fromisoformat(goal.race_date) if goal.race_date else None,
         terrain=goal.terrain,
         target_weekly_mileage=goal.target_weekly_mileage,
-        assessment="recovery" if req and req.lighter else assessment.decision if assessment else None,
+        assessment=effective_assessment,
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
-        reported_mileage=user.current_weekly_mileage,
+        reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks,
+        fatigue_recovery=bool(fatigue),
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
-        deload_is_due=is_deload_due and not (assessment and assessment.decision in ("reduce", "recovery")),
+        deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
     )
-    if is_deload_due:
-        plan_data["notes"].insert(0, deload_reason)
+    plan_data["notes"].insert(0, "Reduced recovery load already provides a lighter block; no additional deload added."
+                              if is_deload_due and effective_assessment in ("reduce", "recovery") else deload_reason)
     if assessment:
         plan_data["notes"] = assessment.reasons + plan_data["notes"]
 
@@ -174,7 +204,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     }
     athlete_snapshot = {
         "name": user.name,
-        "current_weekly_mileage": current_fitness["weekly_mileage_4w_avg"],
+        "current_weekly_mileage": baseline,
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
@@ -253,14 +283,21 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
     user = db.get(User, user_id)
     goals = db.query(Goal).filter_by(user_id=user_id, active=True).all()
     active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    activities = db.query(Activity).filter_by(user_id=user_id).order_by(Activity.id).all()
+    completed_dates = {a.date.date().isoformat() for a in activities}
+    def stable_day(workout):
+        snapshot = json.loads(_snapshot(workout))
+        if workout.date in completed_dates:
+            snapshot['session_status'] = 'completed'
+        return json.dumps(snapshot, sort_keys=True) + str(workout.feel_rating) + str(workout.evaluation)
     data = {
         "today": date.today().isoformat(),
         "user": {c.name: getattr(user, c.name) for c in User.__table__.columns},
         "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
         "active": active.id if active else None,
-        "schedule": [_snapshot(w) + str(w.feel_rating) + str(w.evaluation) for w in active.planned_workouts] if active else [],
+        "schedule": [stable_day(w) for w in active.planned_workouts] if active else [],
         "activities": [(a.id, a.date, a.distance_meters, a.duration_seconds, a.description, a.splits, a.feel_rating)
-                       for a in db.query(Activity).filter_by(user_id=user_id).order_by(Activity.id)],
+                       for a in activities],
         "progression": [(p.id, p.current_level, p.current_pace_sec, p.updated_at)
                         for p in db.query(WorkoutProgression).filter_by(user_id=user_id).order_by(WorkoutProgression.id)],
     }
@@ -534,6 +571,8 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             _mark_changed(source, req.reason)
             if req.replacement in {"threshold", "intervals"}:
                 workout = _generate_swap_workout(user_id, req.replacement, plan, db, source.date)
+                if not _fits_week_budget(plan, source, workout['total_miles'], db):
+                    raise HTTPException(409, "This interval/threshold session cannot fit the week's budget without cutting protected training. Choose a shorter or easy session.")
                 source.type, source.title = "workout", workout["name"]
                 source.description, source.purpose = workout["structure"], workout["purpose"]
                 source.distance_miles = workout["total_miles"]
@@ -801,30 +840,38 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     from app.core.plan_validator import BUDGET_OVER_TOLERANCE, MIN_EASY
 
     budgets = (json.loads(db_plan.load) or {}).get("weekly_budgets", []) if db_plan.load else []
-    if not (0 < slot.week_number <= len(budgets)):
-        return True  # legacy plan without budgets: neighbours were still checked
-    budget = budgets[slot.week_number - 1]
-    week = db.query(PlannedWorkout).filter(
-        PlannedWorkout.plan_id == db_plan.id, PlannedWorkout.week_number == slot.week_number
-    ).all()
-    total = sum(d.distance_miles for d in week) - slot.distance_miles + new_miles
-    over = total - (budget + BUDGET_OVER_TOLERANCE)
-    if over <= 0:
+    week = db.query(PlannedWorkout).filter_by(plan_id=db_plan.id, week_number=slot.week_number).order_by(PlannedWorkout.date).all()
+    def original_miles(row):
+        return json.loads(row.original_prescription).get('distance_miles', row.distance_miles) if row.original_prescription else row.distance_miles
+    budget = budgets[slot.week_number - 1] if 0 < slot.week_number <= len(budgets) else sum(original_miles(row) for row in week)
+    acts = _activities_by_date(db_plan.user_id, min(d.date for d in week), max(d.date for d in week), db)
+    actual_miles = lambda row: sum(a.distance_meters for a in acts.get(row.date, [])) / 1609.34 if acts.get(row.date) else row.distance_miles
+    total = sum(actual_miles(row) for row in week if row.id != slot.id) + new_miles
+    # Trim to the budget itself. Half-mile rounding tolerance isn't free training.
+    over = total - budget
+    if over <= BUDGET_OVER_TOLERANCE:
         return True
     today = date.today().isoformat()
-    flexible = [d for d in week if d is not slot and d.type == "easy" and d.date > today and not d.activity_id]
-    room = sum(max(0.0, d.distance_miles - MIN_EASY) for d in flexible)
-    if room < over:
-        return False
-    for d in flexible:  # take the excess from the longest easy days first
+    flexible = sorted([d for d in week if d.id != slot.id and d.type == 'easy' and d.date > today
+                       and d.date >= (db_plan.prescribed_from or db_plan.start_date)
+                       and not d.activity_id and not acts.get(d.date)
+                       and d.session_status not in {'skipped', 'moved', 'replaced'}], key=lambda d: (-d.distance_miles, d.date))
+    cuts = []
+    import math
+    for row in flexible:
+        room = max(0, row.distance_miles - MIN_EASY)
+        cut = min(room, math.ceil(over * 2 - 1e-9) / 2)
+        if cut > 0:
+            cuts.append((row, cut))
+            over -= cut
         if over <= 0:
             break
-        cut = min(over, max(0.0, d.distance_miles - MIN_EASY))
-        if cut > 0:
-            _mark_changed(d, "Shortened to make room for a rescheduled workout within the weekly budget.")
-            d.distance_miles = round((d.distance_miles - cut) * 2) / 2
-            d.prescription = json.dumps(day_prescription({"type": d.type, "distance_miles": d.distance_miles, "description": d.description}))
-            over -= cut
+    if over > BUDGET_OVER_TOLERANCE:
+        return False
+    for row, cut in cuts:
+        _mark_changed(row, f"Shortened {cut:g} mi to fit your replacement workout within this week's budget.")
+        row.distance_miles = round(row.distance_miles - cut, 2)
+        row.prescription = json.dumps(day_prescription({'type': row.type, 'distance_miles': row.distance_miles, 'description': row.description}))
     return True
 
 
@@ -1181,3 +1228,29 @@ def _begin_schedule_write(db: Session):
     from sqlalchemy import text
     if db.bind.dialect.name == "sqlite":
         db.execute(text("BEGIN IMMEDIATE"))
+
+
+def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
+    """Feel evidence can justify recovery before a block has five run days."""
+    from app.core.block_assessment import BlockAssessment
+    cutoff = date.today() - timedelta(days=6)
+    ratings = {}
+    def add(day, feel):
+        if cutoff.isoformat() <= day <= date.today().isoformat() and feel is not None:
+            ratings[day] = min(ratings.get(day, 10), feel)
+    for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), Activity.feel_rating.isnot(None)):
+        add(act.date.date().isoformat(), act.feel_rating)
+    if active:
+        for day in active.planned_workouts:
+            add(day.date, day.feel_rating)
+    low = sum(feel <= 4 for feel in ratings.values())
+    if low >= 2:
+        decision = 'recovery'
+        reason = 'Two or more low feel ratings in the last seven days: reduce volume and keep the remaining current week easy.'
+    elif ratings and ratings[max(ratings)] <= 4 and (date.today() - date.fromisoformat(max(ratings))).days <= 2:
+        decision = 'hold'
+        reason = 'Your latest rated run felt poor: no mileage uplift, and the remaining current week stays easy before reassessing.'
+    else:
+        return None
+    return BlockAssessment(decision=decision, reasons=[reason], feel_count=len(ratings), low_feels=low,
+                           avg_feel=round(sum(ratings.values()) / len(ratings), 1))

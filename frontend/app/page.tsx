@@ -127,6 +127,9 @@ export default function TodayPage() {
           )}
           <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
 
+          <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
+          <WeeklyMileageChartWrapper data={weeklyMileage} />
+
           <div>
             <h3 className="mb-2 text-sm font-medium">Recent Runs</h3>
             {recentRuns.length > 0 ? (
@@ -157,9 +160,6 @@ export default function TodayPage() {
             )}
           </div>
 
-          <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
-
-          <WeeklyMileageChartWrapper data={weeklyMileage} />
         </>
       )}
 

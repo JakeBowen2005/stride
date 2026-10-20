@@ -96,6 +96,8 @@ def generate_plan(
     reported_mileage: float | None = None,
     allow_preview: bool = True,
     deload_is_due: bool | None = None,
+    completed_weeks: list[float] | None = None,
+    fatigue_recovery: bool = False,
 ) -> dict:
     """Generate a block.
 
@@ -131,7 +133,7 @@ def generate_plan(
     if due:
         for w in range(num_weeks):
             wk_start = start_date + timedelta(days=7 * w)
-            if wk_start > fpd and phases[w].phase in ("general", "base", "build", "peak"):
+            if (wk_start > fpd or (wk_start == fpd and not completed_by_date)) and phases[w].phase in ("general", "base", "build", "peak"):
                 deload_week = w
                 break
     is_deload = deload_week is not None
@@ -145,7 +147,7 @@ def generate_plan(
         target_weekly_mileage=target_weekly_mileage,
         assessment=assessment,
         deload_week=deload_week,
-        reported_mileage=reported_mileage,
+        reported_mileage=reported_mileage, completed_weeks=completed_weeks,
     )
     # Volume that sessions are sized from (the baseline, or the starting load when
     # there's no usable history)
@@ -202,7 +204,14 @@ def generate_plan(
             # Taper / race week / post-race recovery: scale from current volume, no ramp
             wk_target = round(max(current_weekly_mileage, 10) * wk_phase.volume_multiplier, 1)
 
+        covered_days = max(0, min(7, (end_date - wk_start).days + 1))
+        if covered_days < 7:
+            wk_target = round(wk_target * covered_days / 7, 1)
+        load.weekly_budgets[wk] = wk_target
+
         wk_workouts = min(workouts_per_week, 1) if wk_is_deload else workouts_per_week
+        if fatigue_recovery and wk_start <= fpd <= wk_start + timedelta(days=6):
+            wk_workouts = 0
         if wk_phase.max_workouts is not None:
             wk_workouts = min(wk_workouts, wk_phase.max_workouts)
         if wk_phase.phase == "base" and experience_level != "advanced":
@@ -223,6 +232,7 @@ def generate_plan(
             allow_preview=allow_preview, program_distance=goal_distance or goal_type,
         )
 
+        week_days = [d for d in week_days if d['date'] <= end_date.isoformat()]
         # Days before the plan starts prescribing already happened: they carry the
         # real miles run (0 if none), never a hypothetical prescription.
         for d in week_days:
@@ -241,6 +251,13 @@ def generate_plan(
             else:
                 d["prescribed"] = True
 
+        locked_miles = sum(d['distance_miles'] for d in week_days if not d.get('prescribed', True))
+        if not any(d.get('prescribed', True) for d in week_days):
+            wk_target = locked_miles
+        elif locked_miles > wk_target:
+            fit_notes.append("This week's completed mileage already exceeds the new target; remaining training is recovery/rest, not mileage to repay.")
+            wk_target = locked_miles
+        load.weekly_budgets[wk] = wk_target
         if not any(d["type"] == "race" for d in week_days):
             fit_notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
 

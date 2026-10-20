@@ -162,7 +162,7 @@ def test_reschedule_respects_weekly_budget():
            (4, "easy", "Easy Run", 3), (6, "long_run", "Long", 8)])
     db = SessionLocal()
     p = db.query(Plan).filter(Plan.is_active == True).one()  # noqa: E712
-    p.load = json.dumps({"weekly_budgets": [25.0, 25.0]})  # 7+3+3+3+8=24; swapping a 3-mi easy for a 6.5-mi workout = 27.5 > 25.5, and easy days are already at 3 mi
+    p.load = json.dumps({"weekly_budgets": [23.0, 23.0]})  # Actual source was 4 mi: replacement yields 24.5, over 23.5, and easy days are at the floor
     db.commit()
     db.close()
     _run(0, 4)
