@@ -49,8 +49,8 @@
 }
 
 :root {
-  --background: #f5f7f4;
-  --foreground: #1c3027;
+  --background: #fafaf8;
+  --foreground: #1b1d1c;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -64,15 +64,15 @@
   --accent: #e2eee7;
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: #dcdcd6;
+  --input: #cfcfc8;
   --ring: #16634b;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.375rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -156,3 +156,44 @@
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   button:not(:disabled):active { transform: none; }
 }
+
+/* ── Stride cockpit design system ─────────────────────────────────────────
+   Dark-header panels, monospace numbers, one color per session type.
+   Type colors meet 4.5:1 for text on their tint and on white. */
+:root {
+  --ink: #1f1f1f;
+  --panel-border: #2a2a2a;
+  --warn: #c2410c;
+  --warn-tint: #fff1e8;
+  --type-easy: #0f7a55;     --type-easy-tint: #e3f4ec;
+  --type-long: #1d5fbf;     --type-long-tint: #e4eefc;
+  --type-threshold: #9a4a06; --type-threshold-tint: #fdf0dc;
+  --type-intervals: #7c3aed; --type-intervals-tint: #efe7fe;
+  --type-hills: #4d7c0f;    --type-hills-tint: #eef6df;
+  --type-support: #0e7490;  --type-support-tint: #def4f8;
+  --type-race: #be123c;     --type-race-tint: #fde4ea;
+  --type-rest: #6b6b66;     --type-rest-tint: #efefec;
+  --row-hover: #f3f3ef;
+}
+.panel { background: var(--card); border: 1.5px solid var(--panel-border); border-radius: 6px; overflow: hidden; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  background: var(--ink); color: #f5f5f2; padding: .4rem .75rem;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.panel-head h2 { font: inherit; margin: 0; }
+.panel-head .meta { color: #b8b8b2; letter-spacing: .02em; text-transform: none; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.hatch { background-image: repeating-linear-gradient(135deg, var(--hatch, rgba(0,0,0,.08)) 0 2px, transparent 2px 7px); }
+.stat-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th { background: var(--ink); color: #f5f5f2; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; text-align: left; padding: .4rem .75rem; }
+.data-table td { padding: .45rem .75rem; border-top: 1px solid var(--border); }
+.data-table .r { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.data-table tbody tr:hover { background: var(--row-hover); }
+.data-table tbody tr:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* A dark label strip that sits directly on top of an existing Card. */
+.section-stack > .panel-head { border-radius: 6px 6px 0 0; }
+.section-stack > [data-slot=card], .section-stack > .section-body { border-top-left-radius: 0; border-top-right-radius: 0; }
+.section-body { background: var(--card); border: 1.5px solid var(--panel-border); border-top: 0; border-radius: 0 0 6px 6px; }
+/* A labeled section whose component rendered nothing (no data yet) collapses. */
+.section-stack:has(> .panel-head:only-child) { display: none; }

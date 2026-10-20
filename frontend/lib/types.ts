@@ -116,6 +116,8 @@ export interface Workout {
   comparison?: RunComparison | null;
   feedback?: DayFeedback | null;
   adjustment_note?: string | null;
+  /** Versioned numeric prescription (null for legacy or unprescribed days). */
+  prescription?: import("@/components/cockpit/structure-bar").Prescription | null;
 }
 
 export interface PlanWeek {

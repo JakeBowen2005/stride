@@ -35,11 +35,26 @@ def seed(experience='advanced',phase='general'):
 def menu(day,category):return client.get(f'/api/plans/1/sessions/{day}/options?category={category}')
 
 
-def test_advanced_can_choose_three_by_eight_and_budget_cuts_are_reviewable():
+def work_minutes(option):
+    data=option['prescription'];easy=data['easy_pace_sec_per_mile']
+    total=0
+    for seg in data['segments']:
+        pace=(seg.get('pace_range_sec_per_mile') or {}).get('slow') or easy*.85
+        total+=seg['reps']*(seg.get('duration_seconds') or seg['distance_meters']/MI*pace)
+    return total/60
+
+
+def test_advanced_menu_is_three_varied_full_doses_and_budget_cuts_are_reviewable():
     plan,day=seed();response=menu(day+timedelta(days=1),'threshold');assert response.status_code==200,response.text
-    options=response.json()['options'];choice=next(o for o in options if o['title']=='3x8min Threshold')
-    assert any(c['date']!=choice['date'] for c in choice['changes'])
-    assert choice['prescription']['segments'][0]['pace_range_sec_per_mile']=={'fast':450,'slow':450}
+    options=response.json()['options']
+    assert len(options)==3 and len({o['shape'] for o in options})==3
+    # An advanced runner never sees a token 2x3min dose.
+    assert all(work_minutes(o)>=19.5 for o in options)
+    # Not everything is time-based: at least one measured-distance session.
+    assert any(any(s.get('distance_meters') for s in o['prescription']['segments']) for o in options)
+    choice=next(o for o in options if any(c['date']!=o['date'] for c in o['changes']))
+    cruise=[s for o in options for s in o['prescription']['segments'] if o['shape']!='continuous']
+    assert all(s['pace_range_sec_per_mile']=={'fast':450,'slow':450} for s in cruise)
     with SessionLocal() as db:
         assert db.query(PlannedWorkout).filter_by(plan_id=plan,date=choice['date']).one().title=='2x6min Threshold'
         assert all(r.original_prescription is None for r in db.query(PlannedWorkout))
@@ -49,18 +64,25 @@ def test_advanced_can_choose_three_by_eight_and_budget_cuts_are_reviewable():
         rows=db.query(PlannedWorkout).filter_by(plan_id=plan).all()
         assert sum(r.distance_miles for r in rows)<=35.5
         changed=[r for r in rows if r.original_prescription]
-        assert len(changed)>=2 and any(r.title=='3x8min Threshold' for r in changed)
+        assert len(changed)>=2 and any(r.title==choice['title'] for r in changed)
+        assert all(r.adjustment_note for r in changed)
 
 
 def test_beginner_does_not_receive_advanced_threshold_dose():
     _,day=seed('beginner');data=menu(day+timedelta(days=1),'threshold').json()
-    assert data['options'] and all(sum(s['reps']*(s.get('duration_seconds') or 0) for s in o['prescription']['segments'])<=720 for o in data['options'])
-    assert not any(o['title']=='3x8min Threshold' for o in data['options'])
+    assert data['options'] and all(work_minutes(o)<=16.5 for o in data['options'])
 
 
-def test_taper_menu_reduces_dose():
+def test_taper_menu_reduces_dose_but_keeps_intensity():
     _,day=seed(phase='taper');data=menu(day+timedelta(days=1),'threshold').json()
-    assert data['options'] and all(sum(s['reps']*s['duration_seconds'] for s in o['prescription']['segments'])<=480 for o in data['options'])
+    assert data['options'] and all(work_minutes(o)<=15.5 for o in data['options'])
+    reps=[s for o in data['options'] if o['shape']!='continuous' for s in o['prescription']['segments']]
+    assert reps and all(s['pace_range_sec_per_mile']['slow']==450 for s in reps)
+
+
+def test_menu_text_has_no_dangling_step_joiner():
+    _,day=seed();options=menu(day+timedelta(days=1),'threshold').json()['options']
+    assert options and not any('Then Comfortably' in o['description'] or 'Then Settle' in o['description'] for o in options)
 
 
 def test_easy_to_quality_honors_earned_slots_and_spacing():
@@ -137,7 +159,7 @@ def test_ai_selected_expanded_option_uses_same_atomic_menu_and_cuts(monkeypatch)
     plan,day=seed()
     monkeypatch.setattr(settings,'openai_api_key','unit-test-key')
     def request(context,sources):
-        option=next(c for c in context['candidates'] if c.get('session_option_id') and c['replacement']['title']=='3x8min Threshold')
+        option=next(c for c in context['candidates'] if c.get('session_option_id') and any(ch['date']!=c['date'] for ch in c['changes']))
         return CoachAdvice(summary='Consider this earned-menu alternative.',plan_fit='consider_change',observations=[],uncertainties=[],research_ids=[],suggestions=[Suggestion(candidate_id=option['id'],reason='Same validated athlete menu.')]),{}
     monkeypatch.setattr(coaching,'request_advice',request)
     review=client.post('/api/coaching/1/review',json={'plan_id':plan}).json()
@@ -148,7 +170,7 @@ def test_ai_selected_expanded_option_uses_same_atomic_menu_and_cuts(monkeypatch)
     assert r.status_code==200,r.text
     with SessionLocal() as db:
         rows=db.query(PlannedWorkout).filter_by(plan_id=plan).all()
-        assert any(row.title=='3x8min Threshold' for row in rows)
+        assert any(row.title==chosen['replacement']['title'] for row in rows)
         assert sum(row.distance_miles for row in rows)<=35.5
 
 

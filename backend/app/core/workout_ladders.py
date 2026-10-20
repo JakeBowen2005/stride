@@ -298,6 +298,57 @@ def program_key(distance: str | None = "5k") -> str:
     return f"ladder-v2:{distance or 'general'}"
 
 
+GOAL_LABELS = {"5k": "5K", "10k": "10K", "half": "half marathon", "marathon": "marathon", "50k": "50K",
+               "50mi": "50-mile", "100k": "100K", "100mi": "100-mile", "mileage": "mileage build",
+               "general": "general fitness", "comeback": "comeback"}
+
+
+def ladder_purpose(category: str, distance: str, phase: str) -> str:
+    """Coach-voice 'why' for a ladder session; dose and pace stay in the prescription."""
+    goal = GOAL_LABELS.get(distance, distance)
+    if phase in ("taper", "race_week"):
+        return ("Short and controlled: keeps threshold rhythm sharp while volume drops before the race."
+                if category == "threshold" else "Brief fast reps keep your legs sharp without adding fatigue before the race.")
+    if phase == "recovery":
+        return "A light touch of rhythm while you recover; finish feeling better than you started."
+    if category == "threshold":
+        lead = "Builds the aerobic base" if phase == "base" else "Raises your lactate threshold"
+        return (f"{lead}: comfortably hard running at the pace you could hold for about an hour, "
+                f"the key limiter for your {goal} goal. Stay controlled, never racing.")
+    return (f"VO2max work at roughly 5K effort builds the aerobic power behind your {goal} goal. "
+            "Run every rep even; the last should match the first.")
+
+
+# ── Goal-pace ladders (5K/10K peak) ──────────────────────────────
+# (reps, meters, recovery seconds). Volume of goal-pace work grows first, then
+# rest shrinks. Pace is core/goal_pace.specific_pace: a step from demonstrated
+# race pace toward goal pace, never goal pace outright.
+GOAL_PACE_LADDER = {
+    "5k": [(4, 1000, 120), (5, 800, 90), (5, 1000, 120), (3, 1609.34, 120), (6, 800, 75), (6, 1000, 120),
+           (3, 2000, 150), (4, 1609.34, 120), (5, 1000, 75), (4, 1609.34, 90), (3, 2000, 90), (6, 1000, 60)],
+    "10k": [(5, 1000, 90), (4, 1609.34, 90), (3, 2000, 120), (6, 1000, 75), (5, 1609.34, 90), (4, 2000, 120),
+            (3, 3000, 150), (6, 1609.34, 75), (5, 2000, 120), (3, 3000, 120), (7, 1609.34, 60), (4, 2500, 90)],
+}
+
+
+def _rep_label(meters: float) -> str:
+    return "1mi" if abs(meters - 1609.34) < 1 else f"{meters / 1000:g}K" if meters >= 1000 else f"{meters:g}m"
+
+
+def _goal_pace_ladder(distance: str) -> list[dict]:
+    label = GOAL_LABELS[distance]
+    result = []
+    for level, (reps, meters, rest) in enumerate(GOAL_PACE_LADDER[distance], start=1):
+        total = round((3 + reps * meters / 1609.34 + (reps - 1) * 0.2) * 2) / 2
+        result.append({"level": level, "name": f"{reps}x{_rep_label(meters)} at {label} Goal Pace", "format": "track_intervals",
+                       "structure_template": f"{reps}x{_rep_label(meters)} at goal-pace step with {rest}s jog rest.",
+                       "purpose": (f"Goal-pace reps: rehearses {label} race rhythm so it feels familiar on race day. "
+                                   "Pace steps from what you have shown toward goal pace."),
+                       "warmup": "2mi easy", "cooldown": "1.5mi easy", "total_miles": total,
+                       "work_spec": {"reps": reps, "seconds": None, "meters": meters, "recovery": rest, "goal_pace": True}})
+    return result
+
+
 def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> list[dict]:
     """Stride templates, not validated physiological dose equivalences.
 
@@ -308,6 +359,8 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
         return []
     if distance == "5k" and phase in ("build", "general"):
         return THRESHOLD_LADDER_5K if category == "threshold" else INTERVAL_LADDER_5K
+    if category == "intervals" and phase == "peak" and distance in GOAL_PACE_LADDER:
+        return _goal_pace_ladder(distance)
     # Threshold duration grows more gradually for mileage/general/ultra programs.
     aerobic = distance in ("mileage", "general", "comeback", "50k", "50mi", "100k", "100mi")
     duration = 6 if aerobic else 8 if distance in ("10k", "5k") else 10
@@ -340,7 +393,7 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
             name = f"2x{rep_minutes}min Threshold"
             structure = f"2x{rep_minutes}min at {{tp_fast}}/mi with 2min jog rest."
         result.append({"level": level, "name": name, "format": "time_intervals" if category == "threshold" else "track_intervals",
-                       "structure_template": structure, "purpose": f"{distance} {phase}: controlled {category} work within the weekly budget.",
+                       "structure_template": structure, "purpose": ladder_purpose(category, distance, phase),
                        "warmup": "1.5mi easy", "cooldown": "1.5mi easy", "total_miles": total,
                        "work_spec": {"reps": reps, "seconds": rep_minutes * 60 if category == "threshold" else None, "meters": meters if category == "intervals" else None}})
     return result
@@ -424,12 +477,20 @@ def get_workout_at_level(
         spec = template["work_spec"]
         if category == "threshold":
             segments = [segment(spec["reps"], seconds=spec["seconds"], fast=broken, slow=broken, recovery_seconds=120)]
+        elif spec.get("goal_pace"):
+            from app.core.goal_pace import specific_pace
+            gp = paces.get("specific_pace") or specific_pace(distance, paces)
+            segments = [segment(spec["reps"], meters=spec["meters"], fast=gp, slow=gp,
+                                recovery_seconds=spec["recovery"], category="race_pace")]
         else:
             fast, slow = ipf, ip
             segments = [segment(spec["reps"], meters=spec["meters"], fast=fast, slow=slow, recovery_seconds=120)]
     data = prescription(category, template["format"], segments, program=program_key(distance), phase=phase, level=level)
     data["easy_pace_sec_per_mile"] = paces.get("long_run_pace")
     data["base_pace_sec_per_mile"] = tp_sec if category == "threshold" else ip
+    if template.get("work_spec", {}).get("goal_pace"):
+        # Pace lever belongs to race-pace evidence (pace_calibrator), not interval pace.
+        data["goal_pace"] = True
     # Full numeric session distance includes easy bookends and jog recoveries.
     # Time-based work uses the faster bound, avoiding budget underestimation.
     easy = paces.get("long_run_pace", 540)
@@ -450,12 +511,17 @@ def get_workout_at_level(
     total_miles = math.ceil(total_meters / 1609.34 * 2) / 2
     data['total_distance_meters'] = round(total_meters, 2)
     structure = render(data)
+    purpose = template["purpose"]
+    if data.get("goal_pace"):
+        from app.core.goal_pace import step_note
+        note = step_note(distance, {**paces, "specific_pace": segments[0]["pace_range_sec_per_mile"]["slow"]})
+        purpose = f"{purpose} {note}".strip()
 
     return {
         "name": template["name"],
         "structure": structure,
         "prescription": data,
-        "purpose": template["purpose"],
+        "purpose": purpose,
         "program_key": program_key(distance),
         "category": category,
         "phase": phase,

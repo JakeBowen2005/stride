@@ -321,12 +321,6 @@ def _template_feedback(feedback, pw: PlannedWorkout, activities: list[Activity])
             "tomorrow, consider going shorter or taking the day off."
         )
 
-    actual_miles = 0
-    if activities:
-        actual_miles = sum(a.distance_meters for a in activities) / 1609.34
-
-    diff = actual_miles - pw.distance_miles if actual_miles > 0 else 0
-
     if feel >= 8 and pw.type == "workout":
         return (
             "Strong session. Nailing workouts like this builds both fitness and confidence. "

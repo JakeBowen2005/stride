@@ -18,15 +18,38 @@ Plan → expand an unrun day → Replace → Threshold, Intervals/light speed or
 
 The backend recomputes the menu from the active goal, phase, experience, eight weeks of actual history, current category pace evidence, recent recovery, progression state, existing week and stored budget. It is deterministic for identical context: it changes with actual training, not random novelty. Missing category pace evidence retains the approved numeric pace rather than speeding up from a display-label change. Warmups, recoveries and cooldowns count in the budget. Modified doses hold the full ladder level (`progression_eligible=False`).
 
-Initial **Stride heuristics**, not universally proven safety cutoffs:
+### Menu v2 (`core/session_catalog.py`)
 
-- Threshold work caps: beginner 12, intermediate 20, advanced 24, expert 30 minutes. Below 25 recent mpw, cap at 12. At 50+ mpw with two demonstrated primary successes, the upper cap can grow six minutes.
-- Full interval work caps: 8/12/16/20 minutes respectively, also bounded by the threshold envelope. Options span 400–1600m reps; base/taper restrict rep length. Base threshold dose cap12 and taper cap8. Deload cap12.
-- Therefore an experienced runner with suitable recent volume can select **3×8 minutes**, instead of being confined to the old 2×6 prescription. This is an athlete-chosen current-fitness session; it does not itself prove readiness for another weekly hard workout.
-- Earned single/support/dual stage limits substantial weekly work; support can offer a light second session instead of full intervals. Phase max-workouts, deload, inexperienced base and ultra B2B caps take precedence. A demanding long run consumes a substantial slot. Completed actual quality days also count. Low feel or demonstrated failure removes hard options.
-- Long-run length is capped at 110% of the recent 28-day longest run and 35% of the weekly budget. These are authored menu defaults. It offers shorter easy lengths, terrain/time/fueling-specific ultra content, and gated steady finishes for established half/marathon athletes. Final transformed ultra distance must still fit the cap. No second main long run is added and existing B2B structure is protected.
+The menu shows **at most three options, each a different shape**: cruise intervals by time, measured threshold reps by distance (1K, 1mi, 1.5mi, 2mi), continuous tempo (minutes or miles), threshold ladders; for intervals short reps (400–600m), 800m–1K reps, long reps (1200m–mile), time-based reps and pyramids. Trail/mountain goals get effort-based hill repeats first (their own `hills` category, so hill laps never calibrate flat interval pace). The athlete's time/distance preference picks which shape comes first; the remaining order rotates by calendar week so the menu varies without randomness.
+
+All options sit inside one **dose band** (minutes of hard work, excluding warmup, recoveries and cooldown):
+
+| | Floor (beginner / intermediate / advanced / expert) | Ceiling |
+|---|---|---|
+| Threshold | 10 / 15 / 20 / 24 min | 16 / 30 / 40 / 50 min |
+| Intervals | 8 / 12 / 15 / 18 min | 12 / 18 / 24 / 30 min |
+
+The top of the band is Daniels' per-session volume guidance (threshold ≈ 10% and I-pace ≈ 8% of weekly mileage, converted to minutes at the athlete's work pace), never below floor + 5 min. Low current volume pulls the floor down so a comeback is not overloaded. Taper and deload weeks keep pace but cut the dose; base weeks keep intervals short. Floors and ceilings are Stride heuristics so that a trained runner never sees a token 2×3min dose; they are not validated safety limits. Examples: an advanced runner at ~40 mi/week sees a 20–30 min threshold band (e.g. 3mi tempo / 3×1mi / 5×5min); a beginner sees 10–16 min.
+
+Unchanged gates: earned single/support/dual stage limits substantial weekly work (support offers up to three light second-stimulus sessions of different families instead of full intervals); phase max-workouts, deload, inexperienced base and ultra back-to-back caps take precedence; a demanding long run or completed quality day consumes a slot; low feel or a failed session removes hard options. Long runs offer up to three lengths (cap, cap−2, cap−4 mi) capped at 110% of the recent 28-day longest run and 35% of the weekly budget, plus a gated steady finish for established half/marathon athletes. Pace is unchanged by the menu: cruise reps use the broken-threshold pace and continuous tempo the slower tempo pace (deliberate relationship). Menu sessions hold the ladder level (`progression_eligible=False`).
 
 These choices interpret the personal Long Game research plus existing goal/phase/quality policies. They are intentionally explicit product policy and require future longitudinal evaluation; neither a fast PR nor an experience label removes recovery needs.
+
+### Goal pace and specific endurance (menu v3, `core/goal_pace.py`)
+
+Build and peak sessions now look more like the race. **Goal pace is a target, never a prescription by itself.** Every goal-pace session runs at `max(goal pace, demonstrated race pace − 5 s/mi)`. That is one step from what the athlete has shown, and never faster than the goal. Demonstrated race pace comes from calibrated goal-pace reps (`race_pace_<distance>`, two executed sessions as for every other calibrated pace). Without those, it comes from the training paces already in use. These are Stride heuristics after Daniels: 5K ≈ I + 5 s, 10K ≈ T − 10 s, MP ≈ T + 20 s. When the reps are completed and calibrate a faster pace, the next session steps again. Goal-pace reps calibrate only their own distance's race pace. They never move interval or threshold pace, and the feedback path holds instead of recalibrating them. The rule is deterministic: the same evidence always gives the same pace.
+
+| Goal | Where it opens (phase gate) | Sessions |
+|---|---|---|
+| 5K / 10K | Peak only, not deload | Goal-pace reps (5×1K, 6×1K, 8×800, 3–4×1mi, 3×2K, 2×3K; 10K: up to 8×1K, 5×1mi, 4×2K, 3×3K). The interval ladder in peak is now a 12-level goal-pace ladder instead of generic 800s at I pace. |
+| Marathon | Build and peak, not deload | Threshold menu: MP blocks (3×2mi … 2×4mi), continuous MP (4–8mi) and medium-long runs with an MP segment (10–15mi, capped at 25% of weekly volume). Long-run menu: MP-finish and, in peak, MP-block long runs, behind the existing steady-finish gate (two-workout stage, ≥40 mi/week, no other hard day). The plan engine's MP sessions and MP long runs use the same step. |
+| Trail/mountain ultras | Power-hike base–peak; downhill build–peak; never taper or deload | Power-hike climbs (6×4min … 3×12min) and climb + fast-descent repeats. Each has a climbing target estimated at ~700 m/h hiking or ~500 m/h running uphill. The plan engine alternates the two by calendar week in build/peak; base keeps short hill repeats. |
+
+Goal-specific shapes lead the menu, at most two of them, so one general shape (threshold, VO2 or hills) is always offered too. They have their own dose bands: goal-pace reps sit between Daniels' T and I caps, marathon pace near Pfitzinger's midweek MP runs, and climbing is measured in time. These bands are Stride heuristics.
+
+**One dosing system.** `quality_policy.secondary_quality` (the controlled second session at the two-workout stage) now picks from the same catalog and `dose_band`. It takes the smallest session that reaches the experience floor, so an advanced runner's secondary threshold is ≥20 minutes, not the old fixed 15–18. Marathoners in build or peak get a continuous MP run on alternate weeks in place of 600s.
+
+Not changed: race-week sharpeners still use exact goal pace, since the race is run at goal pace anyway. Half-marathon MP-finish long runs still use goal HMP as before; a half-marathon step is a follow-up.
 
 Every option is dry-run with its companion budget cuts in rolled-back savepoints through the common validator. A selected ID hashes the full athlete/training/schedule context and proposed changes. POST recomputes it under a write lock: new runs, feedback, goals or schedule edits reject stale choices. Every affected day records its original prescription and adjustment note, then the complete schedule is revalidated and committed atomically. Legacy category-only requests also use the validated menu.
 
