@@ -55,7 +55,7 @@ Every option is dry-run with its companion budget cuts in rolled-back savepoints
 
 The AI can select IDs from the **same** menu, including earned easy→quality choices. It cannot supply arbitrary pace/reps or bypass the menu limits. The client displays companion mileage cuts before acceptance. No automatic plan activation was added.
 
-## Three demo branches
+## Demo branches
 
 - `codex/demo-sub3-marathon`: advanced runner in sub-three shape, five calendar weeks before race week (about 4–6 weeks out), marathon peak phase.
 - `codex/demo-sub17-5k`: advanced sub-17 aspirant, deep in a six-week-to-race 5K build.
@@ -63,11 +63,32 @@ The AI can select IDs from the **same** menu, including earned easy→quality ch
 
 Each branch has the same reviewed application code and its own `demo/default-scenario.json`. Its launcher preloads twelve weeks of **entirely synthetic** activities, approved historical prescriptions, labeled work laps, recovery ratings, PRs, wellness and goal-scoped progression, then generates and approves a fresh block through the real API functions. The fixture history is designed to demonstrate established two-workout tolerance. It is not imported from Jake or another actual person.
 
+### Beginner demo branches
+
+- `codex/demo-beginner-marathon`: first marathon (~4:30), 18 weeks out, 12→16 mi/week history on 4 days, easy ~11:00/mi. Base phase.
+- `codex/demo-beginner-mileage`: mileage goal of 25 mi/week, 8→11 mi/week history on 4 days, easy ~11:30/mi. No race, so the phase is `general`.
+- `codex/demo-beginner-5k`: first 5K (~30:00), 8 weeks out, 5→8 mi/week history on 3 days, easy ~12:00/mi, rough 5K PR only.
+
+These use optional scenario keys in `seed_demo`. Omitting them reproduces the three advanced fixtures exactly:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `goal_type` / `target_weekly_mileage` | `race` / none | `mileage` goals get no race date |
+| `days_per_week`, `rest_days`, `long_run_day` | 6, `["sunday"]`, `saturday` | history runs on the non-rest days |
+| `workouts` | `true` | `false` = easy-only history: long run ≈30% of the week (never shorter than the other runs), optional `strides` once a week, no workout days or laps |
+| `years_running` | 8 | |
+| `prs` | all four | partial: only the given PersonalRecord rows / `pr_*` fields |
+| `ladder_level` | required | `null` seeds no progression; the plan API starts level 1 with no pace |
+
+The launcher and seed CLI accept any `demo/scenarios/*.json` filename.
+
+Beginner plans stay easy-only in week 1, at or under the single-workout quality stage, within ~10% of the recent 4-week average, with no back-to-back hard days and no more run days than the athlete chose (`test_beginner_scenarios_are_conservative`). The fixtures exposed one engine quirk: at very low volume, easy-day floors made the long run shorter than the easy runs. `fit_week_to_budget` now moves half miles from the longest easy day to the long run until it is at least as long, without changing the weekly total or the longest single run. A deload week whose easy days already sit at the 2 mi floor can still show a slightly shorter long run, because closing that gap would add load.
+
 After checking out a branch:
 
 ```sh
 ./start-demo.sh
-# Or select any of the three fixtures explicitly:
+# Or select any fixture explicitly:
 ./start-demo.sh sub17-5k
 ```
 
