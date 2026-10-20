@@ -235,6 +235,21 @@ def get_coach_feedback(
 
     Returns coach response string. Falls back to template if no API key.
     """
+    if settings.openai_api_key:
+        # The shared review also examines the upcoming plan and stores optional,
+        # validated suggestions. It never mutates training on a model's behalf.
+        try:
+            from app.services.coaching import review_training
+            from app.api.plans import _work_evidence_activity
+            activity = _work_evidence_activity(activities)
+            review = review_training(user_id, db, activity_id=activity.id if activity else None)
+            base = review['summary'] if review['status'] == 'ready' else _template_feedback(feedback, pw, activities)
+            return f"{base}\n\nStride's applied decision: {decision_summary}" if decision_summary else base
+        except Exception as exc:
+            db.rollback()
+            logger.warning('OpenAI feedback unavailable (%s); using saved training decision', type(exc).__name__)
+            base = _template_feedback(feedback, pw, activities)
+            return f"{base}\n\n{decision_summary}" if decision_summary else base
     # Get goal for context
     goal = db.query(Goal).filter(Goal.user_id == user_id, Goal.active == True).first()
 

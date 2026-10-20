@@ -175,7 +175,7 @@ def _format_activity(a: Activity) -> dict:
         "splits": splits,
         "feel_rating": a.feel_rating,
         "notes": a.feel_notes,
-        "coach_analysis": None,  # TODO: wire up LLM analysis
+        "coach_analysis": None,  # Stored reviews use /api/coaching so freshness is explicit
         "suffer_score": a.suffer_score,
         "strava_workout_type": a.strava_workout_type,
         "event_type": a.event_type,
