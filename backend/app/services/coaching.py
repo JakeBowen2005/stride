@@ -60,7 +60,7 @@ def _run(a):
             'anaerobic_training_effect': a.anaerobic_training_effect}
 
 
-def build_context(user_id, db, activity_id=None, plan_id=None):
+def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     from app.api.plans import _get_activities_for_date
     user = db.get(User, user_id)
     if not user:
@@ -125,6 +125,8 @@ def build_context(user_id, db, activity_id=None, plan_id=None):
         'progression': [{key: getattr(p, key) for key in ('category','program_key','current_level','current_pace_sec')}
                         for p in db.query(WorkoutProgression).filter_by(user_id=user_id).order_by(WorkoutProgression.id).all()],
         'candidates': options}
+    if concern:
+        context['athlete_request'] = concern
     if plan:
         snapshot_data = loads_json(plan.athlete_snapshot) or {}
         quality = snapshot_data.get('quality_policy') or {'stage': 'single', 'sessions': 1}
@@ -146,6 +148,11 @@ def build_context(user_id, db, activity_id=None, plan_id=None):
     return context, sources, fingerprint, plan
 
 
+def normalize_concern(concern):
+    """The athlete's own words, whitespace-collapsed; blank means no concern."""
+    return ' '.join((concern or '').split()) or None
+
+
 def loads_json(raw):
     try:
         return json.loads(raw) if raw else None
@@ -159,6 +166,7 @@ def serialize_review(row, *, stale=False):
     chosen = {s['candidate_id']: s['reason'] for s in result.get('suggestions', [])}
     return {'id': row.id, 'status': row.status, 'model': row.model, 'created_at': row.created_at.isoformat(),
             'stale': stale, 'applied_candidate_id': row.applied_candidate_id,
+            'athlete_concern': row.athlete_concern,
             'summary': result.get('summary', 'Review in progress. Check again shortly.'),
             'plan_fit': result.get('plan_fit', 'insufficient_evidence'),
             'observations': result.get('observations', []), 'uncertainties': result.get('uncertainties', []),
@@ -166,12 +174,13 @@ def serialize_review(row, *, stale=False):
             'suggestions': [{**c, 'reason': chosen[c['id']]} for c in candidates if c['id'] in chosen]}
 
 
-def review_training(user_id, db, activity_id=None, plan_id=None):
+def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     from app.api.plans import _begin_schedule_write
     # Reserve before calling OpenAI: concurrent retries reuse the same review;
     # quota checks and reservations share a SQLite write lock.
     _begin_schedule_write(db)
-    context, sources, fingerprint, plan = build_context(user_id, db, activity_id, plan_id)
+    concern = normalize_concern(concern)
+    context, sources, fingerprint, plan = build_context(user_id, db, activity_id, plan_id, concern)
     cached = db.query(CoachingReview).filter_by(user_id=user_id, context_hash=fingerprint).first()
     if cached and cached.status == 'pending' and cached.created_at < datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=2):
         cached.status = 'fallback'
@@ -188,7 +197,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None):
         raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
     row = cached or CoachingReview(user_id=user_id, activity_id=activity_id, plan_id=plan.id if plan else None,
         context_hash=fingerprint, status='pending', model=settings.openai_coach_model if configured else None,
-        candidates=json.dumps(context['candidates']))
+        candidates=json.dumps(context['candidates']), athlete_concern=concern)
     if retry:
         row.status = 'pending'
         row.attempts += 1
@@ -231,7 +240,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None):
     row.input_tokens, row.output_tokens = usage.get('input_tokens', 0), usage.get('output_tokens', 0)
     db.commit()
     try:
-        current_hash = build_context(user_id, db, activity_id, plan_id)[2]
+        current_hash = build_context(user_id, db, activity_id, plan_id, concern)[2]
     except HTTPException:
         current_hash = None
     return serialize_review(row, stale=current_hash != row.context_hash)

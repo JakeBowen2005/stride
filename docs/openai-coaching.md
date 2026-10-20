@@ -45,7 +45,7 @@ Local storage saves the structured advice, source paths, context fingerprint, pe
 
 ## APIs and UI
 
-- `POST /api/coaching/{user_id}/review`: `{activity_id? , plan_id?}`; defaults to current approved block if neither supplied.
+- `POST /api/coaching/{user_id}/review`: `{activity_id? , plan_id?, athlete_concern?}`; defaults to current approved block if neither supplied. `athlete_concern` (≤500 chars, from Plan → Plan options) is the athlete's "what isn't working". It is stored on the review, sent to the model as `athlete_request` (data, not instructions), and part of the fingerprint, so the same words reuse the same review. It never widens the candidate menu.
 - `GET /api/coaching/{user_id}/latest?activity_id=...` or `?plan_id=...`: stored review plus freshness, no OpenAI call.
 - `GET /api/coaching/{user_id}/status`: configured/model/local daily usage, never the key.
 - `POST /api/coaching/{user_id}/reviews/{id}/accept`: `{candidate_id}`.
