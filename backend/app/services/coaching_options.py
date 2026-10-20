@@ -117,7 +117,7 @@ def build_options(plan, db):
             break
     # The same personalized menu powers manual choices and model suggestions.
     # Include easy-to-quality options only when earned weekly slots allow them.
-    from app.services.session_options import context_for, build_session_options
+    from app.services.session_options import build_session_options, context_for
     context = context_for(plan, db)
     targets = [r for r in rows if r.date >= max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
                and r.type in {'easy','workout'} and not r.activity_id and not r.moved_to
@@ -128,9 +128,8 @@ def build_options(plan, db):
                 menu = build_session_options(plan,target,category,db,context)
             except HTTPException:
                 continue
-            pool=menu['options']
-            selected=([pool[0],pool[-1]]+[o for o in pool if o['title']=='3x8min Threshold']) if pool else []
-            for option in {o['id']:o for o in selected}.values():
+            # Menus already hold at most three distinct shapes; offer all of them.
+            for option in menu['options']:
                 change = next(c for c in option['changes'] if c['session_id']==target.id)
                 candidates.append({'id':'choice-'+option['id'],'date':target.date,'session_id':target.id,
                     'before':change['before'],'replacement':change['replacement'],'category':category,

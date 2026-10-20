@@ -4,6 +4,9 @@ import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { KindPill } from "@/components/cockpit/pill";
+import { StructureBar } from "@/components/cockpit/structure-bar";
+import { sessionKind } from "@/lib/workout-style";
 import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
@@ -36,19 +39,6 @@ function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units
 }
 
 const PACE_LABELS: Record<string, string> = { above: "Faster than target", on_target: "On target", below: "Slower than target", skipped: "Skipped" };
-
-/** Specific session label instead of a generic "Quality" badge. */
-export function sessionLabel(type: string, title: string): string | null {
-  if (type === "race") return "Race";
-  if (type === "long_run") return "Long run";
-  if (type !== "workout") return null;
-  const t = title.toLowerCase();
-  if (/light (fartlek|pickups|steady)|relaxed (repetitions|strides)|controlled short hills/.test(t)) return "Speed support";
-  if (/hill|climb/.test(t)) return "Hills";
-  if (/\d+x(200|300|400|600|800|1k|1200|1mi|1 mile)|\d+x1mi/.test(t) || /sharpener/.test(t)) return "Intervals";
-  if (/tempo|threshold|hard|sandwich|mp|pace run/.test(t)) return "Threshold";
-  return "Workout";
-}
 
 /**
  * Extract a workout title from an activity description (user notes or Garmin lap summary).
@@ -95,7 +85,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
         .filter(Boolean)
         .join(" · ")
     : null;
-  const label = sessionLabel(workout.type, workout.title);
+  const kind = sessionKind(workout.type, workout.title, workout.prescription?.category);
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
   const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
@@ -104,7 +94,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
     <div
       id={`session-${workout.id}`}
       className={cn(
-        "cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 hover:bg-secondary/50",
+        "cursor-pointer rounded-md border bg-card p-3 transition-colors hover:border-primary/30 hover:bg-secondary/50",
         isToday && "border-primary bg-primary/5",
         hasActual && "bg-secondary/30",
         !isPrescribed && !hasActual && "opacity-40",
@@ -127,11 +117,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium">{displayTitle}</span>
-              {label && (
-                <Badge variant="default" className="px-1.5 py-0 text-xs">
-                  {label}
-                </Badge>
-              )}
+              {workout.type !== "easy" && <KindPill kind={kind} />}
             </div>
             {actualLine && <div className="text-xs text-muted-foreground">{actualLine}</div>}
             {workout.adjustment_note && (
@@ -154,7 +140,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
             </span>
           )}
           {hasActual && (
-            <span className="text-xs font-medium text-green-600">Done</span>
+            <span className="text-xs font-medium" style={{ color: "var(--type-easy)" }}>Done</span>
           )}
           {isToday && !hasActual && (
             <Badge variant="secondary" className="text-xs">Today</Badge>
@@ -275,6 +261,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
           {/* Not completed yet: show the planned workout details */}
           {!hasActual && isPrescribed && (
             <>
+              {workout.type === "workout" && workout.prescription && <StructureBar prescription={workout.prescription} kind={kind} />}
               <p className="text-muted-foreground">{workout.description}</p>
               {workout.target_pace && (
                 <div>

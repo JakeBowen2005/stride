@@ -15,6 +15,9 @@ interface GarminStatus {
   full_sync_done: boolean;
 }
 
+/** Fired after a sync brings in new runs so every open view can reload. */
+export const SYNC_EVENT = "stride:synced";
+
 function timeAgo(iso: string | null): string {
   if (!iso) return "never";
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -34,10 +37,12 @@ export function GarminSync({
   onNewActivities,
   autoSync = true,
   label = "Sync Garmin",
+  variant = "default",
 }: {
   onNewActivities?: () => void;
   autoSync?: boolean;
   label?: string;
+  variant?: "default" | "sidebar";
 }) {
   const [status, setStatus] = useState<GarminStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -66,6 +71,7 @@ export function GarminSync({
           } else if ((data.new || 0) + (data.merged || 0) > 0) {
             setMessage(`${data.new + data.merged} new run${data.new + data.merged === 1 ? "" : "s"} from Garmin`);
             onNewActivities?.();
+            window.dispatchEvent(new Event(SYNC_EVENT));
           } else if (data.wellness?.status === "ok") {
             // No new run, but sleep/HRV/readiness refreshed — reload what's on screen
             onNewActivities?.();
@@ -109,6 +115,22 @@ export function GarminSync({
   }, [autoSync, loadStatus, sync]);
 
   const notConnected = status && !status.tokens_present;
+
+  if (variant === "sidebar") {
+    const healthy = status?.tokens_present && !status.last_error;
+    return (
+      <div className="space-y-1 text-xs text-[#c9c9c3]">
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="size-2 rounded-full" style={{ background: healthy ? "#34d399" : "#fb923c" }} />
+          <span>Garmin</span>
+        </div>
+        <div>{message ?? (notConnected ? "not connected" : `synced ${timeAgo(status?.last_sync_at ?? null)}`)}</div>
+        {notConnected ? <Link href="/settings" className="underline underline-offset-2 hover:text-white">Connect</Link> :
+          <button type="button" onClick={() => sync(true)} disabled={syncing}
+            className="underline underline-offset-2 hover:text-white disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-end gap-1">

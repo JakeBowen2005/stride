@@ -43,7 +43,7 @@ def render(data):
             rng = format_pace(pace['fast'])
             if pace['slow'] != pace['fast']:
                 rng += f"-{format_pace(pace['slow'])}"
-            if meters and reps > 1:
+            if meters and reps > 1 and abs(meters - MI) > 1:  # a 1mi rep's time IS its pace
                 times = format_pace(round(pace['fast'] * meters / MI))
                 if pace['slow'] != pace['fast']:
                     times += f"-{format_pace(round(pace['slow'] * meters / MI))}"
@@ -51,13 +51,16 @@ def render(data):
             else:
                 label += f" at {rng}/mi"
         if s.get('recovery_seconds'):
-            label += f" with {s['recovery_seconds'] / 60:g}min jog rest"
+            rest = int(s['recovery_seconds'])
+            label += f" with {rest // 60}min jog rest" if rest % 60 == 0 else f" with {rest // 60}:{rest % 60:02d} jog rest"
         elif s.get('recovery_meters'):
             label += f" with {s['recovery_meters']:g}m jog rest"
         pieces.append(label + '.')
+    text = ' Then '.join(pieces)
+    # The effort note is guidance, not another step of the workout.
     if data.get('note'):
-        pieces.append(data['note'])
-    return ' Then '.join(pieces)
+        text = f"{text} {data['note']}" if text else data['note']
+    return text
 
 
 def day_prescription(day):
