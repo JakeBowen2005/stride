@@ -582,7 +582,8 @@ def _build_week(
     b2b_idx = None
     if ultra and phase.back_to_back:
         for cand in (long_run_idx + 1, long_run_idx - 1):
-            if 0 <= cand < 7 and day_assignments.get(cand) == "easy":
+            if (0 <= cand < 7 and day_assignments.get(cand) == "easy"
+                    and abs((cand - start_date.weekday()) % 7 - (long_run_idx - start_date.weekday()) % 7) == 1):
                 b2b_idx = cand
                 break
         if b2b_idx is not None:
@@ -655,8 +656,9 @@ def _build_week(
     strides_placed = False
     days = []
 
-    for i in range(7):
-        day_date = start_date + timedelta(days=i)
+    for offset in range(7):
+        day_date = start_date + timedelta(days=offset)
+        i = day_date.weekday()
         assignment = day_assignments[i]
         day_name = DAY_NAMES[i]
 
@@ -755,13 +757,15 @@ def _build_week(
             })
 
     if b2b_idx is not None:
-        main = days[long_run_idx]
-        days[b2b_idx] = back_to_back_day(
-            start_date + timedelta(days=b2b_idx), main, current_paces, terrain, before_main=b2b_idx < long_run_idx,
+        main_offset = (long_run_idx - start_date.weekday()) % 7
+        second_offset = (b2b_idx - start_date.weekday()) % 7
+        main = days[main_offset]
+        days[second_offset] = back_to_back_day(
+            start_date + timedelta(days=second_offset), main, current_paces, terrain, before_main=second_offset < main_offset,
         )
         # Explicitly mark the planned pair: the only hard-after-hard the validator allows
         main["b2b"] = True
-        days[b2b_idx]["b2b"] = True
+        days[second_offset]["b2b"] = True
 
     # Easy-day sizing happens in generate_plan via fit_week_to_budget, which accounts
     # for every session actually placed (ultra long runs are sized by time).

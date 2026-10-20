@@ -101,7 +101,7 @@ def build_race_week(
     week_start: date, phase: WeekPhase, distance: str, target_time: float | None,
     target_mileage: float, rest_indices: list[int], paces: dict,
 ) -> list[dict]:
-    race_idx = phase.race_date.weekday()
+    race_idx = (phase.race_date - week_start).days
     race_miles = RACE_DISTANCE_MILES[distance]
     if target_time and not is_ultra(distance):
         # Sharpener at the exact goal pace (training paces are rounded to 5s)
@@ -111,12 +111,12 @@ def build_race_week(
 
     sharpener_idx = None
     for i in range(race_idx - 3, -1, -1):  # ≥3 days out, never right before the race
-        if i not in rest_indices:
+        if (week_start + timedelta(days=i)).weekday() not in rest_indices:
             sharpener_idx = i
             break
     sharp = _sharpener(distance, paces) if sharpener_idx is not None else None
 
-    pre_race_easy = [i for i in range(race_idx) if i not in rest_indices and i != sharpener_idx and i != race_idx - 1]
+    pre_race_easy = [i for i in range(race_idx) if (week_start + timedelta(days=i)).weekday() not in rest_indices and i != sharpener_idx and i != race_idx - 1]
     budget = max(target_mileage - (sharp["miles"] if sharp else 0) - 2.5, 0)
     per_easy = _round_half(min(max(budget / len(pre_race_easy), 2.0), 5.0)) if pre_race_easy else 0
 
@@ -126,7 +126,7 @@ def build_race_week(
         if i == race_idx:
             days.append(_race_day(d, distance, target_time, paces))
         elif i > race_idx:
-            if i == race_idx + 1 or long_ultra:
+            if i == race_idx + 1 or long_ultra or d.weekday() in rest_indices:
                 days.append(_rest(d, "Post-race rest. Walk, eat, sleep. No running."))
             else:
                 days.append(_day(d, "easy", "Recovery Jog", f"20-30min very easy ({easy_range}/mi or slower), or rest if sore.",
@@ -135,10 +135,10 @@ def build_race_week(
             days.append(_day(d, "workout", sharp["title"], sharp["description"],
                              "Keeps the legs sharp during the taper without adding fatigue.",
                              sharp["miles"], sharp["warmup"], sharp["cooldown"]))
-        elif i == race_idx - 1 and i not in rest_indices:
+        elif i == race_idx - 1 and d.weekday() not in rest_indices:
             days.append(_day(d, "easy", "Pre-Race Shakeout", f"15-20min very easy + 4x15sec relaxed strides. Lay out your gear tonight.",
                              "Loosen up and settle nerves. Nothing more.", 2.0))
-        elif i in rest_indices:
+        elif d.weekday() in rest_indices:
             days.append(_rest(d))
         else:
             days.append(_day(d, "easy", "Easy Run", f"Easy and short. ({easy_range}/mi or slower)",

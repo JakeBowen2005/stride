@@ -191,3 +191,33 @@ def test_small_remaining_allowance_cannot_force_long_run_over_budget(remaining):
     week = plan['weeks'][0]
     assert week['target_mileage'] <= week['budget_miles'] + .5
     assert sum(d['distance_miles'] for d in week['days'] if not d['prescribed']) == pytest.approx(20.3-remaining, abs=.02)
+
+
+@pytest.mark.parametrize('weekday', range(7))
+def test_revised_blocks_keep_calendar_weekdays_even_with_non_monday_start(weekday):
+    from app.core.plan_engine import generate_plan
+    start = date(2026, 10, 19) + timedelta(days=weekday)
+    result = generate_plan('mileage', None, None, 35, 75, 'advanced', 6, ['friday'], 'saturday', 540,
+                           start_date=start, num_weeks=2, first_prescribe_date=start, deload_is_due=False)
+    assert result['violations'] == []
+    for week in result['weeks']:
+        for day in week['days']:
+            actual_weekday = date.fromisoformat(day['date']).weekday()
+            assert day['day'] == ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'][actual_weekday]
+            if actual_weekday == 4:
+                assert day['type'] == 'rest'
+
+
+@pytest.mark.parametrize('weekday', range(7))
+def test_race_week_recovery_respects_preferred_rest_days(weekday):
+    from app.core.periodization import WeekPhase
+    from app.core.special_weeks import build_race_week
+    start = date(2026, 10, 19) + timedelta(days=weekday)
+    race = start + timedelta(days=1)
+    paces = {'threshold_pace': 410, 'easy_pace_low': 540, 'easy_pace_high': 595}
+    days = build_race_week(start, WeekPhase('race_week', race_date=race),
+                           '5k', None, 20, [4], paces)
+    assert [d['date'] for d in days if d['type'] == 'race'] == [race.isoformat()]
+    for day in days:
+        if date.fromisoformat(day['date']).weekday() == 4 and day['date'] != race.isoformat():
+            assert day['type'] == 'rest'
