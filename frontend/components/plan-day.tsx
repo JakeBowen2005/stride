@@ -102,9 +102,10 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
 
   return (
     <div
+      id={`session-${workout.id}`}
       className={cn(
-        "cursor-pointer rounded-md border p-3 transition-colors hover:bg-secondary/50",
-        isToday && "border-foreground",
+        "cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 hover:bg-secondary/50",
+        isToday && "border-primary bg-primary/5",
         hasActual && "bg-secondary/30",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
@@ -112,7 +113,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, onPlanChanged, r
       onClick={onToggle}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onToggle()}
+      aria-expanded={expanded}
+      onKeyDown={(e) => { if (e.target===e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onToggle(); } }}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

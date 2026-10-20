@@ -14,7 +14,7 @@ def sat(weeks_out: int) -> date:
 
 
 def plan(distance="5k", race_date=None, weeks=3, mpw=40.0, experience="advanced",
-         terrain=None, target=None, long_run_day="saturday", rest_days=("friday",)):
+         terrain=None, target=None, long_run_day="saturday", rest_days=("friday",), **kwargs):
     return generate_plan(
         goal_type="race" if race_date or distance else "general",
         goal_distance=distance,
@@ -30,7 +30,7 @@ def plan(distance="5k", race_date=None, weeks=3, mpw=40.0, experience="advanced"
         num_weeks=weeks,
         first_prescribe_date=MONDAY,
         race_date=race_date,
-        terrain=terrain,
+        terrain=terrain, **kwargs,
     )
 
 
@@ -138,7 +138,9 @@ def test_post_race_week_has_no_workouts():
 
 def test_100mi_plan_has_time_based_long_runs_with_fueling():
     race = MONDAY + timedelta(weeks=24, days=5)
-    p = plan("100mi", race, weeks=3, mpw=55, terrain="mountain", target=24 * 3600)
+    from tests.test_quality_transition import READY
+    p = plan("100mi", race, weeks=3, mpw=55, terrain="mountain", target=24 * 3600,
+             completed_weeks=[55]*8, weekly_run_days=[6]*4, recent_long_run_miles=15, quality_evidence=READY)
     longs = [d for d in all_days(p) if d["type"] == "long_run"]
     assert longs
     assert all("h" in d["description"].split()[0] for d in longs)

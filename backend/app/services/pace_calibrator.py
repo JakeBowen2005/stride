@@ -53,7 +53,7 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
     for row in prescribed_days:
         latest_days.setdefault(row.date, row)
     support_dates = {day for day, row in latest_days.items()
-                     if not row.swapped and (loads(row.prescription) or {}).get('category') == 'speed_support'}
+                     if not row.swapped and (loads(row.prescription) or {}).get('category') in {'speed_support','hills'}}
     seen.update(a.id for a in activities if a.date.date().isoformat() in support_dates)
     rows = db.query(PlannedWorkout).join(Plan).filter(Plan.user_id == user_id, PlannedWorkout.execution.isnot(None), PlannedWorkout.date >= cutoff.date().isoformat()).order_by(PlannedWorkout.id.desc()).all()
     for row in rows:

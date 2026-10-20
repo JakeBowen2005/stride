@@ -161,6 +161,9 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     quality_activities = db.query(Activity).filter(Activity.user_id == user_id,
         Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time()),
         Activity.date < datetime.combine(date.today() + timedelta(days=1), datetime.min.time())).all()
+    from app.services.quality_history import quality_history
+    quality_evidence = quality_history(user_id, db)
+    prior_quality = (json.loads(active.athlete_snapshot or '{}').get('quality_policy') or {}).get('stage') if active else None
     effective_assessment = "recovery" if req.lighter else assessment.decision if assessment else None
     plan_data = generate_plan(
         goal_type=goal.goal_type,
@@ -189,6 +192,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks,
         fatigue_recovery=bool(fatigue),
         workout_format=user.workout_format or 'distance',
+        quality_evidence=quality_evidence, previous_quality_stage=prior_quality,
         weekly_run_days=[len({a.date.date() for a in quality_activities
                              if monday - timedelta(weeks=i) <= a.date.date() < monday - timedelta(weeks=i-1)})
                          for i in range(4, 0, -1)],
@@ -213,6 +217,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     }
     athlete_snapshot = {
         "name": user.name,
+        "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
@@ -473,6 +478,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         "phase": _current_phase(weeks, today),
         "load": json.loads(db_plan.load) if db_plan.load else None,
         "assessment": json.loads(db_plan.assessment) if db_plan.assessment else None,
+        "quality_policy": json.loads(db_plan.athlete_snapshot or "{}").get("quality_policy"),
         "weeks": weeks,
         "pacing_guide": json.loads(db_plan.pacing_guide) if db_plan.pacing_guide else {},
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
@@ -752,11 +758,17 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
             )
             state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
             if prescribed and ev.decision == "advance" and (
-                prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
+                prescribed.get('progression_eligible') is False
+                or prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
                 or (state and prescribed.get('level', 1) < state.current_level)
             ):
                 ev.decision = "hold"
                 ev.reason = "Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated."
+            if prescribed and prescribed.get('progression_eligible') is False:
+                ev.new_pace_sec = None
+                if ev.decision == 'recalibrate':
+                    ev.decision = 'hold'
+                    ev.reason = 'Controlled secondary dose completed; use the full primary prescription before changing pace.'
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:

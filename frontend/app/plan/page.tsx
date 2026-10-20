@@ -1,6 +1,7 @@
 "use client";
 
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
+import { TrainingProgression, type QualityProgression } from "@/components/training-progression";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
 import { useState, useEffect, useCallback } from "react";
@@ -64,6 +65,7 @@ interface ApiWeek {
 interface ApiPlan {
   id: number;
   preview?: boolean;
+  quality_policy?: QualityProgression | null;
   start_date: string;
   end_date: string;
   block_number: number;
@@ -247,7 +249,8 @@ export default function PlanPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <p className="eyebrow">Your next training days</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
         <div className="py-20 text-center text-muted-foreground">
           Loading your plan...
         </div>
@@ -258,7 +261,8 @@ export default function PlanPage() {
   if (noPlan) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <p className="eyebrow">Your next training days</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="py-12 text-center">
@@ -276,7 +280,8 @@ export default function PlanPage() {
   if (!plan) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <p className="eyebrow">Your next training days</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             {error || "No plan available"}
@@ -299,7 +304,8 @@ export default function PlanPage() {
   if (plan.is_stale) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <p className="eyebrow">Your next training days</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
@@ -329,7 +335,8 @@ export default function PlanPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Current Plan</h1>
+        <p className="eyebrow">Your next training days</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">
             {plan.goal.description}
@@ -376,6 +383,7 @@ export default function PlanPage() {
         </div>
       </CardContent></Card>}
       {!plan.preview && <p className="text-sm text-muted-foreground">Approved block · log your runs and feel ratings to adjust it as you go.</p>}
+      {plan.quality_policy && <TrainingProgression key={`${plan.id}-${plan.quality_policy.stage}`} policy={plan.quality_policy} experience={plan.athlete?.experience_level} />}
       {plan.load && <BlockSummary plan={plan} units={units} />}
 
       {pastWeeks.length > 0 && (

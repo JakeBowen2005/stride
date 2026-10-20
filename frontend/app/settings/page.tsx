@@ -52,6 +52,7 @@ interface AnalysisData {
 interface UserData {
   name: string | null;
   age: number | null;
+  experience_level?: string | null;
   units: string;
   workout_format?: string;
   days_per_week: number;
@@ -152,7 +153,7 @@ export default function SettingsPage() {
             />
             <Row
               label="Experience"
-              value={analysis?.overview.experience_level || "—"}
+              value={user?.experience_level || analysis?.overview.experience_level || "—"}
             />
           </div>
         </CardContent>

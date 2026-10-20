@@ -157,7 +157,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
         experience = "beginner"
 
     profile = db.get(User, user_id)
-    if profile and profile.experience_level in {'beginner', 'intermediate', 'advanced'}:
+    if profile and profile.experience_level in {'beginner', 'intermediate', 'advanced', 'expert'}:
         experience = profile.experience_level
 
     # --- Injury Risk: Acute/Chronic Workload ---

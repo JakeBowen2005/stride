@@ -66,6 +66,7 @@ class ProfileUpdate(BaseModel):
     age: int | None = Field(default=None, ge=10, le=100)
     units: Literal["miles", "km"] | None = None
     workout_format: Literal["distance", "time"] | None = None
+    experience_level: Literal["beginner", "intermediate", "advanced", "expert"] | None = None
     years_running: float | None = Field(default=None, ge=0, le=80)
     current_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
     peak_weekly_mileage: float | None = Field(default=None, ge=0, le=250)

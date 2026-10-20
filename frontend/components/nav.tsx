@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, History, Settings, Sun } from "lucide-react";
+import { Activity, CalendarDays, History, Settings, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -18,8 +18,8 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
-        <Link href="/" className="font-heading text-lg font-bold tracking-tight">
-          STRIDE
+        <Link href="/" className="flex items-center gap-2 font-heading text-lg font-bold tracking-tight text-primary">
+          <Activity className="size-5" aria-hidden="true" /> STRIDE
         </Link>
         <nav className="hidden items-center gap-1 sm:flex">
           {links.map((link) => {
@@ -31,10 +31,11 @@ export function Nav() {
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                   active
-                    ? "bg-secondary text-foreground"
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -66,7 +67,7 @@ export function MobileNav() {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors",
-                active ? "text-foreground" : "text-muted-foreground"
+                active ? "text-primary" : "text-muted-foreground"
               )}
             >
               <link.icon className="size-5" aria-hidden="true" />

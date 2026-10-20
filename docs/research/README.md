@@ -26,3 +26,6 @@ Recent feedback is available; dedicated structured injury symptoms, strength exp
 ## Next: model suggestions
 
 OpenAI integration is deliberately deferred. A future model may receive a bounded athlete/context snapshot with evidence provenance, explain deterministic decisions, and propose typed workout alternatives. Any proposed change must pass the same budget, completion locks, rest-day, hard-spacing, goal/phase and preview-approval checks. Free-text reports must not silently become confirmed performance evidence. Keep pace and level progression evidence-gated, and test model failures without live provider calls.
+
+
+The later [quality-stage progression](quality-stage-progression.md) extends this rebuilding stage into two substantial goal-specific sessions with completed-work and recovery gates across four experience tiers. Earlier descriptions above document the initial support-stage implementation, not a permanent cap.

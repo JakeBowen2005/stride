@@ -23,3 +23,16 @@ test('pace ranges convert both endpoints with correct minute carry', () => {
   assert.equal(units.paceInUnits('9:00-9:55','km'),'5:36-6:10');
   assert.equal(units.paceInUnits('9:00-9:55','miles'),'9:00-9:55');
 });
+
+test('mileage range fills no-run weeks rather than compressing training breaks', () => {
+  const { calendarMileage }=moduleFrom('../lib/mileage-calendar.ts',{'@/lib/format':format});
+  const data=[{week_start:'2026-08-03',actual:50,planned:0},{week_start:'2026-10-05',actual:30,planned:0},{week_start:'2026-10-19',actual:5,planned:0}];
+  const weeks=calendarMileage(data,4,new Date(2026,9,20,12));
+  assert.equal(weeks.length,4);
+  assert.equal(weeks[0].week_start,'2026-09-28');
+  assert.equal(weeks[0].actual,0);
+  assert.equal(weeks[1].actual,30);
+  assert.equal(weeks[2].week_start,'2026-10-12');
+  assert.equal(weeks[2].actual,0);
+  assert.equal(weeks[3].actual,5);
+});
