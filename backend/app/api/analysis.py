@@ -1,11 +1,12 @@
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.activity import Activity, PersonalRecord
+from app.models.activity import Activity, PersonalRecord, activity_classification, is_walk
 from app.models.user import User
 from app.services.analyzer import analyze_athlete, detect_prs, compute_weekly_mileage, classify_activities
 from app.services.pace_calibrator import calibrate_paces
@@ -173,6 +174,7 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
             pass
 
     return {
+        "classification": activity_classification(a),
         "id": a.id,
         "external_id": a.external_id,
         "source": a.source,
@@ -222,3 +224,72 @@ def _format_time(total_seconds: float) -> str:
     if hours > 0:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes}:{secs:02d}"
+
+
+class ActivityKind(BaseModel):
+    kind: Literal['run', 'walk', 'auto']
+
+
+@router.put("/{user_id}/activities/{activity_id}/kind")
+def correct_activity_kind(user_id: int, activity_id: int, data: ActivityKind, db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    _begin_schedule_write(db)
+    activity = db.query(Activity).filter_by(id=activity_id, user_id=user_id).first()
+    if not activity:
+        raise HTTPException(404, "Activity not found")
+    activity.activity_kind_override = None if data.kind == 'auto' else data.kind
+    if data.kind == 'auto':
+        activity.workout_type = None  # return to provider semantics; no preserved legacy label
+    activity.workout_type = 'walk' if is_walk(activity) else 'race' if activity.event_type == 'race' else 'workout' if activity.has_workout_description else 'easy'
+    # A reclassified activity invalidates matched execution evidence, never replays
+    # progression or rewrites an approved prescription. The athlete may revise it.
+    from app.models.plan import PlannedWorkout
+    from app.models.plan import Plan
+    rows = db.query(PlannedWorkout).join(Plan).filter(Plan.user_id == user_id, PlannedWorkout.date == activity.date.date().isoformat()).all()
+    if activity.workout_type == 'walk':
+        for row in rows:
+            verdict = json.loads(row.evaluation) if row.evaluation else {}
+            ids = verdict.get('activity_ids') or []
+            if row.activity_id != activity.id and row.feedback_activity_id != activity.id and activity.id not in ids:
+                continue
+            history = json.loads(row.feedback_history or '[]')
+            history.append({'reason':'Source activity corrected to walking', 'activity_id':activity.id,
+                'feel_rating':row.feel_rating, 'feel_notes':row.feel_notes, 'pace_assessment':row.pace_assessment,
+                'evaluation':verdict, 'execution':row.execution, 'coach_response':row.coach_response})
+            row.feedback_history = json.dumps(history)
+            row.activity_id = row.feedback_activity_id = None
+            row.feel_rating = row.feel_notes = row.pace_assessment = None
+            row.evaluation = row.execution = row.coach_response = None
+            row.session_status = 'not_logged'
+            # Keep the effects claim: correcting identity must not replay past progression.
+    db.commit()
+    return _format_activity(activity)
+
+
+@router.get("/{user_id}/operations")
+def operations(user_id: int, db: Session = Depends(get_db)):
+    import os
+    from pathlib import Path
+    from sqlalchemy import func
+    from app.config import settings
+    from app.models.coaching import CoachingJob
+    from app.services.coaching import VERSION
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Athlete not found")
+    counts = dict(db.query(CoachingJob.status, func.count(CoachingJob.id)).filter_by(user_id=user_id).group_by(CoachingJob.status).all())
+    oldest = db.query(func.min(CoachingJob.available_at)).filter(CoachingJob.user_id == user_id, CoachingJob.status.in_(['queued','waiting_sync'])).scalar()
+    # Do not reveal backup filenames, table counts, credentials or bucket/key names.
+    folder = os.environ.get('STRIDE_BACKUP_DIR')
+    if not folder and settings.database_url.startswith('sqlite:///'):
+        from app.services.backups import database_path
+        folder = str(database_path(settings.database_url).parent / 'backups')
+    try:
+        info = json.loads((Path(folder) / 'status.json').read_text()) if folder else {}
+    except (OSError, ValueError, TypeError):
+        info = {}
+    return {'queue': {'queued': counts.get('queued',0)+counts.get('waiting_sync',0), 'running':counts.get('running',0),
+                      'failed':counts.get('failed',0), 'oldest_queued_at':oldest.isoformat() if oldest else None},
+            'backup': {'configured': bool(info.get('last_local_success')), 'offsite_configured':bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET')),
+                       'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
+                       'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
+                       'last_error_type':info.get('last_error_type')}, 'app': {'policy_version':VERSION}}

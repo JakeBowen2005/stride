@@ -11,7 +11,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.coaching import CoachingReview, CoachingJob
 from app.models.plan import PlannedWorkout
-from app.services.coaching import build_context, review_training, serialize_review
+from app.services.coaching import VERSION, build_context, review_training, serialize_review
 
 router = APIRouter(prefix='/api/coaching', tags=['coaching'])
 
@@ -35,7 +35,7 @@ def status(user_id: int, db: Session = Depends(get_db)):
         CoachingReview.user_id == user_id, CoachingReview.created_at >= day,
         CoachingReview.model.is_not(None)).scalar()
     return {'configured': bool(settings.openai_api_key), 'model': settings.openai_coach_model,
-            'reviews_today': used, 'daily_limit': settings.openai_coach_daily_limit}
+            'policy_version': VERSION, 'reviews_today': used, 'daily_limit': settings.openai_coach_daily_limit}
 
 
 @router.post('/{user_id}/review')

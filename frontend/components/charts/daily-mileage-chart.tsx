@@ -1,5 +1,8 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceValueInUnits, unitLabel } from "@/lib/units";
+
 import {
   BarChart,
   Bar,
@@ -18,6 +21,8 @@ interface DailyMileageData {
 }
 
 export function DailyMileageChart({ activities }: { activities: Activity[] }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
   // Build last 7 days
   const days: DailyMileageData[] = [];
   const now = new Date();
@@ -28,9 +33,9 @@ export function DailyMileageChart({ activities }: { activities: Activity[] }) {
     const dateStr = localDateStr(d);
     const label = d.toLocaleDateString("en-US", { weekday: "short" });
     const miles = activities
-      .filter((a) => a.date.startsWith(dateStr))
+      .filter((a) => a.date.startsWith(dateStr) && a.type !== "walk")
       .reduce((sum, a) => sum + a.distance_miles, 0);
-    days.push({ label, miles: Math.round(miles * 10) / 10 });
+    days.push({ label, miles: Math.round(distanceValueInUnits(miles, units) * 10) / 10 });
   }
 
   return (
@@ -50,7 +55,7 @@ export function DailyMileageChart({ activities }: { activities: Activity[] }) {
             borderRadius: "var(--radius-md)",
             fontSize: 12,
           }}
-          formatter={(value) => [`${value} mi`, "Miles"]}
+          formatter={(value) => [`${value} ${unit}`, "Completed"]}
         />
         <Bar
           dataKey="miles"

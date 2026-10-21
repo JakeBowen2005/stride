@@ -15,6 +15,43 @@ os.environ["OPENAI_AUTO_REVIEWS"] = "false"
 
 import pytest  # noqa: E402
 
+# STRIDE_TEST_DATE=2026-10-21 (or a weekday name, e.g. "wed") freezes the whole
+# suite to that day, so weekday-sensitive plan logic can be checked on all 7
+# days: `for d in mon tue wed thu fri sat sun; do STRIDE_TEST_DATE=$d pytest -q; done`
+# Travel starts here, at conftest import, so module-level `date.today()` in test
+# files (evaluated at collection) sees the frozen day too.
+_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _test_date():
+    from datetime import date, timedelta
+
+    raw = os.environ.get("STRIDE_TEST_DATE", "").strip().lower()
+    if not raw:
+        return None
+    if raw[:3] in _WEEKDAYS:  # fixed reference week: Mon 2026-10-19 .. Sun 2026-10-25
+        return date(2026, 10, 19) + timedelta(days=_WEEKDAYS.index(raw[:3]))
+    return date.fromisoformat(raw)
+
+
+_traveller = None
+if (_day := _test_date()) is not None:
+    import datetime as _dt
+
+    import time_machine
+
+    _traveller = time_machine.travel(_dt.datetime.combine(_day, _dt.time(9)), tick=True)
+    _traveller.start()
+
+
+def pytest_report_header(config):
+    return f"STRIDE_TEST_DATE: {_day:%a %Y-%m-%d}" if _traveller else None
+
+
+def pytest_unconfigure(config):
+    if _traveller:
+        _traveller.stop()
+
 
 @pytest.fixture(autouse=True)
 def fresh_db():
