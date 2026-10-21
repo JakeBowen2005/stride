@@ -13,7 +13,7 @@ import anthropic
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import PlannedWorkout
 from app.models.user import Goal, User
 
@@ -60,7 +60,7 @@ def _build_recent_training(user_id: int, db: Session, days: int = 14) -> str:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id, Activity.date >= cutoff)
+        .filter(Activity.user_id == user_id, Activity.date >= cutoff, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )

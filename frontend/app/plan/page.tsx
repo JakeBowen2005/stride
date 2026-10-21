@@ -1,6 +1,8 @@
 "use client";
 
 import { CoachingReview } from "@/components/coaching-review";
+import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
+import type { AthletePreferences } from "@/components/profile-preferences";
 import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
@@ -35,6 +37,7 @@ interface ApiPlanDay {
   moved_to?: string | null;
   adjustment_note?: string | null;
   prescription?: Workout["prescription"];
+  walks?: import("@/lib/types").ActivityLine[];
   actual?: {
     workout?: ExecutedWorkout | null;
     distance_miles: number;
@@ -45,6 +48,9 @@ interface ApiPlanDay {
     feel_rating: number | null;
     name: string | null;
     activity_count?: number;
+    total_distance_miles?: number;
+    other_runs?: import("@/lib/types").ActivityLine[];
+    walks?: import("@/lib/types").ActivityLine[];
     activities?: { name: string; distance_miles: number; avg_pace: string | null; duration_seconds: number }[];
   } | null;
   comparison?: {
@@ -107,6 +113,9 @@ interface ApiPlan {
     peak_weekly_mileage: number;
     experience_level: string;
     injury_risk: string;
+    baseline_as_of?: string;
+    baseline_definition?: string;
+    schedule_preferences?: SchedulePreferences;
   };
 }
 
@@ -132,6 +141,7 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       moved_to: d.moved_to,
       prescribed: d.prescribed !== false,
       actual: d.actual || null,
+      walks: d.walks ?? [],
       comparison: d.comparison || null,
       feedback: d.feedback || null,
       adjustment_note: d.adjustment_note ?? null,
@@ -159,6 +169,8 @@ function pacingRows(g: Record<string, string>): [string, string, string][] {
 }
 
 export default function PlanPage() {
+  const [currentPreferences, setCurrentPreferences] = useState<AthletePreferences | null>(null);
+  const [moveRequest, setMoveRequest] = useState<{ date: string; nonce: number } | null>(null);
   const [units, setUnits] = useState<Units>("miles");
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [activePlan, setActivePlan] = useState<ApiPlan | null>(null);
@@ -174,7 +186,7 @@ export default function PlanPage() {
   const [coachOpen, setCoachOpen] = useState(true);
 
   useEffect(() => {
-    getJson<{ units: Units }>(`/users/${USER_ID}`).then((u) => { if (u) setUnits(u.units); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
+    getJson<AthletePreferences>(`/users/${USER_ID}`).then((u) => { if (u) { setCurrentPreferences(u); setUnits(u.units === "km" ? "km" : "miles"); } }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
     getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`).then((s) => setAiConfigured(s?.configured ?? false)).catch(() => setAiConfigured(false));
   }, []);
 
@@ -322,9 +334,12 @@ export default function PlanPage() {
   const changes = allDays.filter((w) => w.adjustment_note);
   const weekTotals = plan.weeks.map((week) => ({
     planned: week.target_mileage,
-    actual: week.days.reduce((sum, d) => sum + (d.actual?.distance_miles ?? 0), 0),
+    actual: week.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0),
   }));
-  const refresh = () => { setLoading(true); fetchPlan(); };
+  const refresh = () => { setMoveRequest(null); setLoading(true); fetchPlan(); };
+  const movable = (w: Workout) => w.date >= today && !w.actual && w.prescribed !== false && !w.skipped && !w.moved_to && !["race", "rest"].includes(w.type);
+  const moveTarget = selected && movable(selected) ? selected : allDays.find(movable);
+  const preferenceMismatch = !!currentPreferences && scheduleChanged((activePlan ?? plan).athlete.schedule_preferences, currentPreferences);
 
   return (
     <div className="space-y-3">
@@ -354,6 +369,7 @@ export default function PlanPage() {
               setCoachOpen(true);
               requestAnimationFrame(() => document.getElementById("plan-coach")?.scrollIntoView({ behavior: "smooth", block: "start" }));
             }}
+            onMoveSession={moveTarget ? () => { setSelectedDate(moveTarget.date); setMoveRequest({ date: moveTarget.date, nonce: Date.now() }); requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" })); } : undefined}
             onLighter={() => generatePlan(true)}
             onRevise={() => generatePlan()}
             onNextBlock={() => generatePlan(false, "next")}
@@ -363,6 +379,7 @@ export default function PlanPage() {
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {preferenceMismatch && <p role="status" className="rounded-md border p-3 text-sm">Your saved training preferences differ from this approved block. Open Plan options → Revise with latest runs to review a schedule using those preferences.</p>}
       {plan.preview && <Panel label="Review this block" accent="var(--type-threshold)">
         <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -377,7 +394,7 @@ export default function PlanPage() {
           <StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
             sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} />
         ))}
-        <StatCell size="sm" label="4-wk avg" value={distance(plan.load?.baseline)} sub={`${unit}/week`} />
+        <StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} />
         <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
           sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} tone="var(--type-easy)" />
       </div>
@@ -439,9 +456,10 @@ export default function PlanPage() {
           {selected && (
             <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">
               <PlanDay
-                key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}`}
+                key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${moveRequest?.nonce ?? ""}`}
                 workout={selected}
                 units={units}
+                sessionAction={moveRequest?.date === selected.date ? "move" : undefined}
                 readOnly={!!plan.preview}
                 isToday={selected.date === today}
                 expanded

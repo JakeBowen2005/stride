@@ -16,7 +16,7 @@ export function concernText(reasons: string[], note: string): string {
 }
 
 /** One entry point for changing the block: tell the coach what isn't working, or rebuild it. */
-export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoach, onLighter, onRevise, onNextBlock }: {
+export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoach, onLighter, onRevise, onNextBlock, onMoveSession }: {
   aiConfigured: boolean | null;
   busy: boolean;
   /** Set when the next block can be previewed, e.g. "Starts after Nov 2" */
@@ -25,6 +25,7 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoa
   onLighter: () => void;
   onRevise: () => void;
   onNextBlock: () => void;
+  onMoveSession?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [reasons, setReasons] = useState<string[]>([]);
@@ -65,6 +66,7 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoa
               onChange={(e) => setNote(e.target.value)} />
             <p className="text-right text-xs text-muted-foreground">{note.length}/{CONCERN_LIMIT}</p>
           </div>
+          {reasons.includes("Schedule conflict") && <div className="rounded-md border p-3 text-sm"><p>Move an unrun session directly. Stride checks the destination, recovery spacing and mileage budget before saving.</p><Button variant="outline" className="mt-2" disabled={!onMoveSession || busy} onClick={() => run(() => onMoveSession?.())}>Move a session</Button>{!onMoveSession && <p className="text-xs text-muted-foreground">No unrun session is available to move in this block.</p>}</div>}
           <div className="space-y-1">
             <Button className="w-full" disabled={busy || !concern || aiConfigured !== true} onClick={() => run(() => onAskCoach(concern))}>
               Ask coach to adjust

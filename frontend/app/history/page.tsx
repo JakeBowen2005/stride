@@ -12,6 +12,7 @@ import type { Activity, WeeklyMileage } from "@/lib/types";
 type FilterType = "all" | "workouts" | "long_runs" | "easy";
 
 export default function HistoryPage() {
+  const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState<FilterType>("all");
   const [selected, setSelected] = useState<Activity | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -50,7 +51,7 @@ export default function HistoryPage() {
       }
     }
     load();
-  }, [filter]);
+  }, [filter, revision]);
 
   if (error) return <p role="alert" className="text-destructive">{error}</p>;
 
@@ -89,6 +90,7 @@ export default function HistoryPage() {
         activity={selected}
         open={!!selected}
         onClose={() => setSelected(null)}
+        onClassificationChanged={() => setRevision(value => value + 1)}
       />
     </div>
   );

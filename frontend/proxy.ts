@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { AUTH_COOKIE, authToken } from "@/lib/auth";
+import { AUTH_COOKIE, validAuthSession } from "@/lib/auth";
 
 // Password gate for the whole app (pages AND the /api proxy to the backend), because
 // start.sh serves on the LAN and the data is personal health data. Disabled when
@@ -14,7 +14,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (request.cookies.get(AUTH_COOKIE)?.value === authToken(password)) {
+  if (validAuthSession(request.cookies.get(AUTH_COOKIE)?.value, password)) {
     return NextResponse.next();
   }
   if (request.nextUrl.pathname.startsWith("/api/")) {
@@ -28,5 +28,5 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Everything except the login flow, the Render health check, Next internals and install
   // assets (the home-screen icon and manifest must load before sign-in).
-  matcher: ["/((?!login|auth|healthz|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
+  matcher: ["/((?!login|auth|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
 };

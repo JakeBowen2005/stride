@@ -11,9 +11,11 @@ import copy
 import hashlib
 import json
 import math
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from app.core.goal_pace import step_note
 from app.core.session_catalog import (
@@ -24,8 +26,8 @@ from app.core.session_catalog import (
     specific_bands,
 )
 from app.core.workout_data import MI, day_prescription, loads
-from app.models.activity import Activity
-from app.models.plan import PlannedWorkout
+from app.models.activity import Activity, runs_only
+from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
 from app.services.coaching_options import snapshot
@@ -89,6 +91,7 @@ def context_for(plan, db):
         Activity.user_id == plan.user_id,
         Activity.date >= datetime.combine(today - timedelta(days=56), datetime.min.time()),
         Activity.date < datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        runs_only(),
     ).order_by(Activity.id).all()
     recent_long = max((a.distance_meters / MI for a in acts if a.date.date() >= today - timedelta(days=28)), default=0)
     assessment = (_json(plan.assessment, {}) or {}).get('decision')
@@ -290,6 +293,22 @@ def _long_run_candidates(row, week, ctx, poor):
     return candidates, ['Long-run length is bounded by your recent longest run, the phase and 35% of this week’s budget (a Stride heuristic).']
 
 
+@contextmanager
+def read_only_trial(plan, db):
+    """Validate proposed ORM edits without a savepoint, flush or database write.
+
+    The separate identity map shares the caller's connection/snapshot. Queries
+    in the real budget and schedule validators see its edited objects, while
+    autoflush is disabled. Closing this rollback-only session leaves the caller's
+    transaction and objects untouched, including an acceptance write lock.
+    """
+    with Session(bind=db.connection(), autoflush=False,
+                 join_transaction_mode='rollback_only') as trial:
+        trial_plan = trial.get(Plan, plan.id)
+        rows = trial.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
+        yield trial_plan, rows, trial
+
+
 def _dry_run(plan, row, ctx, candidates, db):
     """Keep the first valid candidate per family, up to MAX_OPTIONS."""
     from app.api.plans import _fits_week_budget, _validate_schedule
@@ -302,16 +321,16 @@ def _dry_run(plan, row, ctx, candidates, db):
         if family in families or signature in seen:
             continue
         seen.add(signature)
-        with db.begin_nested() as trial:
+        with read_only_trial(plan, db) as (trial_plan, trial_rows, trial):
+            trial_row = next(r for r in trial_rows if r.id == row.id)
             try:
-                if not _fits_week_budget(plan, row, patch['distance_miles'], db):
+                if not _fits_week_budget(trial_plan, trial_row, patch['distance_miles'], trial):
                     continue
                 for key, value in patch.items():
-                    setattr(row, key, value)
-                db.flush()
-                _validate_schedule(plan, db)
+                    setattr(trial_row, key, value)
+                _validate_schedule(trial_plan, trial)
                 changes = [{'session_id': r.id, 'date': r.date, 'before': before[r.id], 'replacement': snapshot(r)}
-                           for r in ctx['rows'] if snapshot(r) != before[r.id]]
+                           for r in trial_rows if snapshot(r) != before[r.id]]
                 if not changes:
                     continue
                 option_id = hashlib.sha256((ctx['token'] + json.dumps(changes, sort_keys=True)).encode()).hexdigest()
@@ -324,8 +343,6 @@ def _dry_run(plan, row, ctx, candidates, db):
                 families.add(family)
             except HTTPException:
                 pass
-            finally:
-                trial.rollback()
     return options
 
 
