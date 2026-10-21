@@ -20,7 +20,9 @@ class Suggestion(BaseModel):
 
 class CoachAdvice(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    summary: str = Field(max_length=480)
+    # A hard backstop well above the prompt's target: the provider stops generating at the
+    # schema limit, so a tight limit cuts sentences off mid-word.
+    summary: str = Field(max_length=900)
     plan_fit: Literal['consistent', 'consider_change', 'insufficient_evidence']
     observations: list[str] = Field(max_length=3)
     uncertainties: list[str] = Field(max_length=2)
@@ -29,7 +31,9 @@ class CoachAdvice(BaseModel):
 
 
 INSTRUCTIONS = '''You are Stride's running coach. Talk to the athlete like a knowledgeable coach:
-direct, specific, brief. The summary is AT MOST 3 short sentences: (1) what they actually ran
+direct, specific, brief, in plain grammatical English. The summary is AT MOST 3 short,
+complete sentences and under 70 words (about 450 characters); finish every sentence and cut
+detail rather than run long. Use one idea per sentence, not semicolon chains: (1) what they actually ran
 and how it went, with real numbers (rep paces, HR, feel); (2) what it means for their goal or
 this week; (3) what to do next. No filler, no restating policy, no hedging boilerplate.
 Think in weeks. week_view.this_week and week_view.next_week are the athlete's calendar

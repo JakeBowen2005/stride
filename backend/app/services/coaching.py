@@ -2,6 +2,7 @@
 import hashlib
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v6'
+VERSION = 'openai-coach-v7'
 
 
 def research_context(goal):
@@ -341,16 +342,35 @@ def loads_json(raw):
         return None
 
 
+SENTENCE_END = re.compile(r'[.!?][)"\'’”]*(?=\s|$)')
+
+
+def finish_sentences(text):
+    """Never show a sentence the model was cut off in the middle of.
+
+    Drops a trailing fragment after the last complete sentence; text with no complete
+    sentence at all keeps its words and gets an ellipsis instead.
+    """
+    text = (text or '').strip()
+    if not text or text.rstrip('"\'’”)').endswith(('.', '!', '?')):
+        return text
+    ends = [m.end() for m in SENTENCE_END.finditer(text)]
+    if ends:
+        return text[:ends[-1]].strip()
+    return text.rstrip(' ,;:—–-') + '…'
+
+
 def serialize_review(row, *, stale=False):
     result = loads_json(row.result) or {}
     candidates = loads_json(row.candidates) or []
-    chosen = {s['candidate_id']: s['reason'] for s in result.get('suggestions', [])}
+    chosen = {s['candidate_id']: finish_sentences(s['reason']) for s in result.get('suggestions', [])}
     return {'id': row.id, 'status': row.status, 'model': row.model, 'created_at': row.created_at.isoformat(),
             'stale': stale, 'applied_candidate_id': row.applied_candidate_id,
             'athlete_concern': row.athlete_concern,
             'policy_version': row.policy_version or 'legacy', 'context_as_of': row.created_at.isoformat(),
-            'summary': result.get('summary', 'Review in progress. Check again shortly.'),
+            'summary': finish_sentences(result.get('summary', 'Review in progress. Check again shortly.')),
             'plan_fit': result.get('plan_fit', 'insufficient_evidence'),
+            # Bullets have no length cap, so the provider never cuts them off; leave them as written.
             'observations': result.get('observations', []), 'uncertainties': result.get('uncertainties', []),
             'research': result.get('research', []),
             'suggestions': [{**c, 'reason': chosen[c['id']]} for c in candidates if c['id'] in chosen]}

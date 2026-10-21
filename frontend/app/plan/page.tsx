@@ -1,7 +1,7 @@
 "use client";
 
 import { CoachingReview } from "@/components/coaching-review";
-import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
+import { describeSchedule, scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
 import type { AthletePreferences } from "@/components/profile-preferences";
 import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 
@@ -368,7 +368,9 @@ export default function PlanPage() {
       onPlanChanged={refresh}
     />
   );
-  const preferenceMismatch = !!currentPreferences && scheduleChanged((activePlan ?? plan).athlete.schedule_preferences, currentPreferences);
+  // Compare with the block on screen: a draft built from the new settings already resolves it.
+  const builtFor = plan.athlete.schedule_preferences;
+  const preferenceMismatch = !!currentPreferences && !!builtFor && scheduleChanged(builtFor, currentPreferences);
 
   return (
     <div className="space-y-3">
@@ -408,7 +410,10 @@ export default function PlanPage() {
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
-      {preferenceMismatch && <p role="status" className="rounded-md border p-3 text-sm">Your saved training preferences differ from this approved block. Open Plan options → Revise with latest runs to review a schedule using those preferences.</p>}
+      {preferenceMismatch && builtFor && currentPreferences && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+        <p>This block was built for {describeSchedule(builtFor.days_per_week, builtFor.rest_days)}. Your settings now say {describeSchedule(currentPreferences.days_per_week, (currentPreferences.rest_days || "").split(","))}.</p>
+        <Button size="sm" disabled={generating} onClick={() => generatePlan()}>{generating ? "Building…" : "Update my plan"}</Button>
+      </div>}
       {plan.preview && <Panel label="Review this block" accent="var(--type-threshold)">
         <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
         <div className="mt-3 flex flex-wrap gap-2">
