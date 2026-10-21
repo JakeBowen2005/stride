@@ -449,3 +449,22 @@ def test_coach_memory_keeps_latest_note_per_subject_and_is_bounded(monkeypatch):
         memory = coaching.prior_reviews(1, db, plan_id=plan_id)
     assert len(memory) == coaching.MEMORY_LIMIT
     assert [m['summary'] for m in memory] == [f'newer {r}' for r in runs[:coaching.MEMORY_LIMIT]]
+
+
+def test_cut_off_coach_text_is_never_shown_mid_sentence():
+    cut = ("This week is 17.0 of 39.5 miles so far. Next week's Tue tempo moves you toward threshold. "
+           "You asked for more, and if you want to sharpen the week without overreaching, the 6")
+    assert coaching.finish_sentences(cut) == "This week is 17.0 of 39.5 miles so far. Next week's Tue tempo moves you toward threshold."
+    assert coaching.finish_sentences('Strong session at 6:59/mi.') == 'Strong session at 6:59/mi.'
+    assert coaching.finish_sentences('It went "well."') == 'It went "well."'
+    assert coaching.finish_sentences('no sentence end here,') == 'no sentence end here…'
+    with SessionLocal() as db:
+        db.add(CoachingReview(user_id=1, context_hash='cut', status='ready', candidates='[]',
+                              result=json.dumps({'summary': cut, 'observations': ['Legs were', 'Done.'], 'suggestions': []})))
+        db.commit()
+        served = coaching.serialize_review(db.query(CoachingReview).filter_by(context_hash='cut').one())
+    assert served['summary'].endswith('toward threshold.') and served['observations'] == ['Legs were', 'Done.']  # uncapped bullets untouched
+    # The schema limit is a backstop far above the prompt's ~450-character target, so the
+    # provider's constrained decoding no longer stops mid-sentence at the limit.
+    assert openai_coach.CoachAdvice.model_fields['summary'].metadata[0].max_length >= 800
+    assert '70 words' in openai_coach.INSTRUCTIONS
