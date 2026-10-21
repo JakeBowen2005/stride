@@ -35,7 +35,13 @@ def test_synthetic_history_to_approved_block_feedback_and_revision(scenario,phas
             assert any('Hill' in r.title or 'Climb' in r.title for r in rows)
             assert any(r.b2b for r in rows)
             assert any('Fuel' in (r.description or '') for r in rows)
-        if scenario=='sub17-5k':assert sum(r.type=='workout' for r in rows)==4
+        if scenario=='sub17-5k':
+            # Dual stage = two sessions in every fully prescribed week; a week already
+            # under way only gets the sessions still ahead of today.
+            for week in {r.week_number for r in rows}:
+                week_rows=[r for r in rows if r.week_number==week]
+                ahead=sum(r.type=='workout' for r in week_rows if r.date>=date.today().isoformat())
+                assert ahead==2 if min(r.date for r in week_rows)>=date.today().isoformat() else ahead<=2
         # Today's run is real synthetic evidence, not a feel-only completion claim.
         today=db.query(PlannedWorkout).filter_by(plan_id=plan.id,date=date.today().isoformat()).one()
         db.add(Activity(user_id=1,source='manual',name='Synthetic new easy run',date=datetime.now(),distance_meters=max(3,today.distance_miles)*1609.34,duration_seconds=max(3,today.distance_miles)*profile['easy_pace'],workout_type='easy'))

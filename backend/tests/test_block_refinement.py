@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.load_policy import deload_due, plan_load
+from app.core.plan_engine import calculate_plan_params
 from app.database import SessionLocal
 from app.main import app
 from app.models.activity import Activity
@@ -53,7 +54,8 @@ def test_calendar_history_and_profile_experience_feed_preview():
     data = r.json()
     assert data['athlete']['experience_level'] == 'advanced'
     assert not data['is_deload']
-    assert data['load']['weekly_budgets'] == [40, 40]
+    # 2 weeks Mon-Wed, 3 weeks Thu-Sun (calculate_plan_params)
+    assert data['load']['weekly_budgets'] == [40] * calculate_plan_params()['num_weeks']
     assert data['violations'] == []
 
 
