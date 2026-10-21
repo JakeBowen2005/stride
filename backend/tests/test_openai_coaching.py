@@ -387,3 +387,23 @@ def test_concern_review_is_fresh_and_applicable(monkeypatch):
 def test_athlete_concern_is_bounded():
     plan,_,_=seed()
     assert concern_review(plan,'x'*501).status_code==422
+
+
+def test_plan_review_is_weekly_and_frames_this_and_next_week(monkeypatch):
+    plan_id, activity_id, monday = seed()
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source='manual', date=datetime.combine(date.today()-timedelta(days=40), datetime.min.time()),
+                        name='Old', distance_meters=4*MI, duration_seconds=2000))
+        db.commit()
+    calls = fake(monkeypatch)
+    assert review(plan_id).status_code == 200
+    ctx = calls[-1]
+    assert ctx['review_scope'] == 'week' and ctx['run'] is None
+    nxt = ctx['week_view']['next_week']
+    assert nxt['week_of'] == monday.isoformat() and nxt['planned_miles'] == 26
+    assert [s['weekday'] for s in nxt['key_sessions']] == ['Mon', 'Sat']
+    assert ctx['week_view']['this_week']['done_miles'] == 5.0
+    assert all(r['date'] >= (date.today()-timedelta(days=28)).isoformat() for r in ctx['recent_runs'])
+    assert 'review_scope' in openai_coach.INSTRUCTIONS and 'week_view' in openai_coach.INSTRUCTIONS
+    review(plan_id, activity_id)
+    assert calls[-1]['review_scope'] == 'run'

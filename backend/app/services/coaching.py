@@ -22,7 +22,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v4'
+VERSION = 'openai-coach-v5'
 
 
 def research_context(goal):
@@ -119,6 +119,37 @@ def _training_summary(user_id, runs, executed_by_id, today, plan_rows, goal):
             'this_week': {'done_miles': round(sum(r.distance_meters for r in this_week) / 1609.34, 1),
                           'planned_miles': round(sum(r.distance_miles for r in planned_week), 1) if planned_week else None},
             'recent_quality_sessions': quality}
+
+
+def _week_view(rows, runs, today):
+    """This calendar week and next, day by day: the frame the coach talks about first."""
+    monday = today - timedelta(days=today.weekday())
+    done_by_day = {}
+    for r in runs:
+        done_by_day.setdefault(r.date.date().isoformat(), []).append(r)
+    weeks = {}
+    for label, start in (('this_week', monday), ('next_week', monday + timedelta(days=7))):
+        days, planned_total, done_total = [], 0.0, 0.0
+        for offset in range(7):
+            day = start + timedelta(days=offset)
+            iso = day.isoformat()
+            planned = next((r for r in rows if r.date == iso and not r.moved_to), None)
+            done = done_by_day.get(iso, [])
+            done_miles = round(sum(a.distance_meters for a in done) / 1609.34, 1)
+            planned_total += (planned.distance_miles or 0) if planned else 0
+            done_total += done_miles
+            days.append({'date': iso, 'weekday': day.strftime('%a'), 'days_from_today': (day - today).days,
+                         'planned': {'type': planned.type, 'title': planned.title, 'miles': planned.distance_miles} if planned else None,
+                         'done_miles': done_miles or None,
+                         'feel': planned.feel_rating if planned else None})
+        quality = [d for d in days if d['planned'] and d['planned']['type'] in {'workout', 'long_run', 'race'}]
+        weeks[label] = {'week_of': start.isoformat(), 'planned_miles': round(planned_total, 1),
+                        'done_miles': round(done_total, 1) if label == 'this_week' else None,
+                        'remaining_planned_miles': round(sum((d['planned'] or {}).get('miles') or 0 for d in days
+                                                             if d['days_from_today'] >= 0 and not d['done_miles']), 1),
+                        'key_sessions': [{'weekday': d['weekday'], 'title': d['planned']['title']} for d in quality],
+                        'days': days}
+    return weeks
 
 
 def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
@@ -222,10 +253,13 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         # Stride's calibrated paces for the athlete's CURRENT fitness: judge reps against these, not PRs.
         'current_paces': {k: _pace(v) for k, v in (loads_json(plan.training_paces) or {}).items()
                           if isinstance(v, (int, float)) and v} if plan else None,
+        'review_scope': 'run' if activity else 'week',
+        'week_view': _week_view(rows, runs, today),
         'training_summary': _training_summary(user_id, runs, executed_by_id, today, rows, goal_data),
         'run': _run(activity, executed_run, matched) if activity else None,
         'run_vs_plan': off_plan_note or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
-        'recent_runs': [_brief_run(a, executed_by_id.get(a.id)) for a in runs[-60:]],
+        # Four weeks of single-line history; older trends are already in training_summary.last_6_weeks.
+        'recent_runs': [_brief_run(a, executed_by_id.get(a.id)) for a in runs if a.date.date() >= today - timedelta(days=28)],
         'quality_evidence': quality_history(user_id, db), 'recovery': wellness_data,
         'matched_prescription': snapshot(matched) if matched else None,
         'execution': execution, 'deterministic_evaluation': evaluation,
