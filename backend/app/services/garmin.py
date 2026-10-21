@@ -28,7 +28,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.garmin import GarminConnection
 from app.services.descriptions import is_workout_description
 from app.services.lap_analyzer import lap_pace_per_mile, summarize_workout
@@ -234,6 +234,7 @@ class EasyPaceIndex:
             Activity.distance_meters >= 4800,
             Activity.distance_meters <= 16000,
             Activity.duration_seconds > 0,
+            runs_only(),
         ).order_by(Activity.date).all()
         self.dates = [r[0] for r in rows]
         self.paces = [r[2] / (r[1] / METERS_PER_MILE) for r in rows]
@@ -491,7 +492,7 @@ def reanalyze_laps(user_id: int, db: Session) -> dict:
     from app.services.analyzer import classify_activities, detect_prs
 
     acts = db.query(Activity).filter(
-        Activity.user_id == user_id, Activity.source == "garmin", Activity.splits.isnot(None)
+        Activity.user_id == user_id, Activity.source == "garmin", Activity.splits.isnot(None), runs_only()
     ).all()
     easy_paces = EasyPaceIndex(user_id, db)
     changed = 0

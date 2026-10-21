@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import Plan
 from app.models.user import Goal, User
 
@@ -279,7 +279,7 @@ def get_candidate_workouts(user_id: int, db: Session = Depends(get_db)):
 
     all_activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id)
+        .filter(Activity.user_id == user_id, runs_only())
         .order_by(Activity.date.desc())
         .all()
     )

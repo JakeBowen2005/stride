@@ -26,6 +26,7 @@ function Wordmark({ className }: { className?: string }) {
 /** Desktop: fixed dark sidebar. Below 1024px: dark top bar (+ bottom tabs on phones). */
 export function Nav() {
   const pathname = usePathname();
+  if (pathname.startsWith("/login")) return <header className="bg-[var(--ink)] px-4 py-3 text-white"><Wordmark /></header>;
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-[184px] flex-col bg-[var(--ink)] px-3 py-4 text-white lg:flex">
@@ -44,6 +45,7 @@ export function Nav() {
         </nav>
         <div className="mt-auto border-t border-white/10 px-2 pt-3">
           <GarminSync variant="sidebar" autoSync={false} />
+          <form action="/auth/logout" method="post" className="mt-3"><button className="min-h-9 text-xs text-[#d4d4cf] underline underline-offset-2">Sign out</button></form>
         </div>
       </aside>
       <header className="sticky top-0 z-50 bg-[var(--ink)] text-white lg:hidden">
@@ -68,6 +70,7 @@ export function Nav() {
 
 export function MobileNav() {
   const pathname = usePathname();
+  if (pathname.startsWith("/login")) return null;
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--ink)] pb-[env(safe-area-inset-bottom)] sm:hidden" aria-label="Main">
       <div className="flex h-14 items-stretch">

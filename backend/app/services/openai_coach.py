@@ -35,7 +35,7 @@ this week; (3) what to do next. No filler, no restating policy, no hedging boile
 Ground every claim in run.detected_session, run.laps, run.athlete_feedback and
 training_summary. run.detected_session is Stride's reading of the Garmin laps (auto-lap
 remainders already merged into reps); trust it over the planned title. If run_vs_plan says
-OFF-PLAN, the athlete deliberately ran a different session: say so plainly and never call it
+OFF-PLAN, the recorded work differs from the plan: do not assume it was deliberate unless the athlete confirmed it, and never call it
 a failed or ambiguous version of the prescription. Judge rep paces against current_paces
 (Stride's calibrated paces for current fitness, not PRs or goal pace): within ~10s/mi of
 threshold_pace or broken_threshold_pace is on-target threshold; >15s/mi slower is steady or

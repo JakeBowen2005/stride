@@ -1,6 +1,8 @@
 import { formatDistance } from "@/lib/format";
 
 export type Units = "miles" | "km";
+export const distanceValueInUnits = (miles: number, units: Units) => miles * (units === "km" ? 1.60934 : 1);
+export const paceValueInUnits = (secondsPerMile: number, units: Units) => secondsPerMile / (units === "km" ? 1.60934 : 1);
 export const unitLabel = (units: Units) => units === "km" ? "km" : "mi";
 export const distanceInUnits = (miles: number, units: Units) => formatDistance(miles * (units === "km" ? 1.60934 : 1));
 export function paceInUnits(pace: string, units: Units): string {

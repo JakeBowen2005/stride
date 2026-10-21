@@ -1,11 +1,12 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   workoutTypeLabel,
   isHardWorkout,
-  formatDistance,
   formatDate,
 } from "@/lib/format";
 import type { Activity } from "@/lib/types";
@@ -16,6 +17,8 @@ interface RunListProps {
 }
 
 export function RunList({ activities, onSelect }: RunListProps) {
+  const units = useUnits();
+  const unit = unitLabel(units);
   // Group by month
   const grouped: Record<string, Activity[]> = {};
   for (const a of activities) {
@@ -53,7 +56,8 @@ export function RunList({ activities, onSelect }: RunListProps) {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{run.title}</span>
+                        <span className="text-sm font-medium">{run.session?.title ?? run.title}</span>
+                        {run.type === "walk" && <span className="text-xs text-muted-foreground">walk</span>}
                         {isHardWorkout(run.type) && (
                           <Badge
                             variant="default"
@@ -67,10 +71,10 @@ export function RunList({ activities, onSelect }: RunListProps) {
                   </div>
                   <div className="flex items-center gap-4 text-sm">
                     <span className="font-mono">
-                      {formatDistance(run.distance_miles)} mi
+                      {distanceInUnits(run.distance_miles, units)} {unit}
                     </span>
                     <span className="font-mono text-muted-foreground">
-                      {run.avg_pace}
+                      {paceInUnits(run.avg_pace.replace(/\/mi$/, ""), units)}/{unit}
                     </span>
                     {run.feel_rating && (
                       <span

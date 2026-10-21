@@ -17,8 +17,11 @@ FROM python:3.13-slim
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
 # tzdata: TZ=America/Los_Angeles must work (plan logic uses date.today()); trixie-slim omits it.
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata libstdc++6 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
+# The Node binary is copied without its source image's shared libraries. Fail at
+# build time if a base-image change leaves the runtime dependencies incomplete.
+RUN node --version
 WORKDIR /app
 
 COPY backend/requirements.txt backend/requirements.txt
@@ -27,10 +30,11 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Coaching code reads <repo>/docs at runtime, so keep the /app/backend + /app/docs layout.
 COPY backend/app backend/app
 COPY docs docs
+COPY demo demo
 COPY --from=frontend /src/frontend/.next/standalone frontend/
 COPY --from=frontend /src/frontend/.next/static frontend/.next/static
 COPY --from=frontend /src/frontend/public frontend/public
-COPY deploy/start.sh deploy/start.sh
+COPY deploy deploy
 
 # Runs as root: Render's persistent disk at /var/data is mounted root-owned.
 RUN mkdir -p /var/data
