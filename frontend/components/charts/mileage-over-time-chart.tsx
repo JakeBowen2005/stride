@@ -1,5 +1,8 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceValueInUnits, unitLabel } from "@/lib/units";
+
 import {
   LineChart,
   Line,
@@ -12,9 +15,11 @@ import {
 import type { WeeklyMileage } from "@/lib/types";
 
 export function MileageOverTimeChart({ data }: { data: WeeklyMileage[] }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
   const formatted = data.map((d) => ({
     ...d,
-    actual: d.actual ?? 0,
+    actual: distanceValueInUnits(d.actual ?? 0, units),
     // Noon local time so a YYYY-MM-DD week start doesn't shift a day west of UTC
     label: new Date(`${d.week_start.slice(0, 10)}T12:00:00`).toLocaleDateString("en-US", {
       month: "short",
@@ -52,7 +57,7 @@ export function MileageOverTimeChart({ data }: { data: WeeklyMileage[] }) {
           labelFormatter={() => ""}
           labelStyle={{ display: "none" }}
           formatter={(v, _name, item) => [
-            `${item.payload.label} · ${typeof v === "number" ? v.toFixed(1) : v} mi`,
+            `${item.payload.label} · ${typeof v === "number" ? v.toFixed(1) : v} ${unit}`,
             "",
           ]}
         />

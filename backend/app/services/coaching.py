@@ -10,7 +10,7 @@ from sqlalchemy import func
 
 from app.config import settings
 from app.core.workout_data import execution_from_activities, loads
-from app.models.activity import Activity, runs_only
+from app.models.activity import Activity, runs_only, is_walk, activity_classification
 from app.models.coaching import CoachingReview
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
@@ -22,7 +22,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v3'
+VERSION = 'openai-coach-v4'
 
 
 def research_context(goal):
@@ -77,21 +77,24 @@ def _run(a, executed=None, planned=None):
                      'hr': round(hr) if isinstance(hr, (int, float)) else None,
                      'intensity': lap.get('intensity'), 'elev_ft': lap.get('elevation_diff_ft')})
     miles = a.distance_meters / 1609.34
+    feedback_matches = bool(planned and planned.feedback_activity_id == a.id)
     run = {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(miles, 2),
            'duration': f"{int(a.duration_seconds // 60)}:{int(a.duration_seconds % 60):02d}" if a.duration_seconds else None,
            'avg_pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
            'average_hr': a.average_heartrate, 'max_hr': a.max_heartrate,
            'elevation_gain_ft': round(a.elevation_gain * 3.281) if a.elevation_gain else None,
+           'classification': activity_classification(a),
            'aerobic_training_effect': a.aerobic_training_effect,
            'anaerobic_training_effect': a.anaerobic_training_effect,
            'laps': laps,
            'detected_session': None,
-           'athlete_feedback': {'feel_1_to_10': planned.feel_rating if planned and planned.feel_rating is not None else a.feel_rating,
-                                'notes': ((planned.feel_notes if planned else None) or a.feel_notes or '')[:700] or None,
-                                'pace_vs_target': planned.pace_assessment if planned else None,
-                                'said_swapped': bool(planned.swapped) if planned else False}}
+           'athlete_feedback': {'feel_1_to_10': planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating,
+                                'notes': ((planned.feel_notes if feedback_matches else None) or a.feel_notes or '')[:700] or None,
+                                'pace_vs_target': planned.pace_assessment if feedback_matches else None,
+                                'said_swapped': bool(planned.swapped) if feedback_matches else False}}
     if executed:
         run['detected_session'] = {'title': executed.get('title'), 'category': executed['category'],
+            'matched_activity_ids': [executed['activity_id']],
             'reps': [{'miles': round(r['distance_m'] / 1609.34, 2), 'time_s': round(r['duration_s']),
                       'pace': _pace(r['pace_sec_per_mile']), 'avg_hr': r['average_hr']} for r in executed['reps']],
             'recovery_s': executed['recovery_seconds'], 'work_miles': executed['work_miles']}
@@ -127,6 +130,8 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     activity = db.query(Activity).filter_by(user_id=user_id, id=activity_id).first() if activity_id else None
     if activity_id and not activity:
         raise HTTPException(404, 'Run not found')
+    if activity and is_walk(activity):
+        raise HTTPException(409, 'This is a walking activity; select the running session to review it.')
     if activity and activity.date.date() > date.today():
         raise HTTPException(409, 'Future activities cannot be reviewed as completed runs')
     plan = db.query(Plan).filter_by(user_id=user_id, id=plan_id).first() if plan_id else db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
@@ -165,14 +170,24 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     execution = None
     evaluation = None
     if matched:
+        from app.api.plans import _work_evidence_activity
+        primary = _work_evidence_activity(_get_activities_for_date(matched.date, user_id, db))
+        if not primary or primary.id != activity.id:
+            matched = None  # a double/shakeout is not the primary workout's execution
+    if matched:
         contract = loads(matched.prescription)
         evaluation = loads_json(matched.evaluation)
+        if evaluation and activity.id not in evaluation.get('activity_ids', []):
+            evaluation = None
         if contract:
-            execution = execution_from_activities(_get_activities_for_date(matched.date, user_id, db), contract)
-            if evaluation is None and contract['category'] in {'threshold', 'intervals'}:
-                from app.core.workout_evaluator import evaluate_workout
-                evaluation = evaluate_workout(None, None, None, matched.type, None, matched.title,
-                    matched.feel_rating if matched.feel_rating is not None else activity.feel_rating, contract, execution).to_dict()
+            execution = execution_from_activities([activity], contract)
+            if (evaluation is None or evaluation.get('decision') == 'off_plan') and contract['category'] in {'threshold', 'intervals'}:
+                from app.core.workout_evaluator import evaluate_workout, gate_progression
+                from app.api.plans import _plan_program
+                state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=contract["category"], program_key=_plan_program(plan)).first()
+                provisional = evaluate_workout(None, None, None, matched.type, None, matched.title,
+                    matched.feel_rating if matched.feedback_activity_id == activity.id and matched.feel_rating is not None else activity.feel_rating, contract, execution)
+                evaluation = gate_progression(provisional, contract, state.current_level if state else None).to_dict()
                 evaluation['provisional'] = True  # explanation only; no progression or feedback effects applied
     wellness = db.query(DailyWellness).filter(DailyWellness.user_id == user_id,
         DailyWellness.date >= (today-timedelta(days=6)).isoformat(), DailyWellness.date <= today.isoformat()).order_by(DailyWellness.date).all()
@@ -184,8 +199,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     off_plan_note = None
     if activity:
         spec = loads(matched.prescription) if matched else None
-        executed_run = executed_session(_get_activities_for_date(activity.date.date().isoformat(), user_id, db),
-                                        easy_pace_for(spec, user_id, db))
+        executed_run = executed_session([activity], easy_pace_for(spec, user_id, db))
         if executed_run:
             executed_run = executed_run | {'title': session_title(executed_run)}
         if matched and matched.type == 'workout' and off_plan(spec, executed_run):
@@ -201,7 +215,8 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
                              "It REPLACED that day's planned quality session; it is not an extra session. "
                              f"Work: {done_min} min of {executed_run['category']} run vs {planned_min} min of "
                              f"{spec.get('category')} planned ({dose}).")
-    context = {'version': VERSION, 'today': today.isoformat(), 'model': settings.openai_coach_model,
+    from app.services.load_history import completed_week_load
+    context = {'workload': completed_week_load(user_id, db), 'version': VERSION, 'today': today.isoformat(), 'model': settings.openai_coach_model,
         'athlete': {key: getattr(user, key) for key in ('age','experience_level','days_per_week','rest_days','long_run_day','workout_format','units')},
         'goal': goal_data,
         # Stride's calibrated paces for the athlete's CURRENT fitness: judge reps against these, not PRs.
@@ -263,6 +278,7 @@ def serialize_review(row, *, stale=False):
     return {'id': row.id, 'status': row.status, 'model': row.model, 'created_at': row.created_at.isoformat(),
             'stale': stale, 'applied_candidate_id': row.applied_candidate_id,
             'athlete_concern': row.athlete_concern,
+            'policy_version': row.policy_version or 'legacy', 'context_as_of': row.created_at.isoformat(),
             'summary': result.get('summary', 'Review in progress. Check again shortly.'),
             'plan_fit': result.get('plan_fit', 'insufficient_evidence'),
             'observations': result.get('observations', []), 'uncertainties': result.get('uncertainties', []),
@@ -293,7 +309,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
         raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
     row = cached or CoachingReview(user_id=user_id, activity_id=activity_id, plan_id=plan.id if plan else None,
         context_hash=fingerprint, status='pending', model=settings.openai_coach_model if configured else None,
-        candidates=json.dumps(context['candidates']), athlete_concern=concern)
+        candidates=json.dumps(context['candidates']), athlete_concern=concern, policy_version=VERSION)
     if retry:
         row.status = 'pending'
         row.attempts += 1

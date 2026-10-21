@@ -11,7 +11,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <CardContent className="space-y-4 pt-6">
           <div>
             <h1 className="text-xl font-semibold">Stride</h1>
-            <p className="text-sm text-muted-foreground">Enter your Stride password. You&apos;ll stay signed in on this device.</p>
+            <p className="text-sm text-muted-foreground">Enter your Stride password. Sessions last seven days on this device.</p>
           </div>
           <form action="/auth" method="post" className="space-y-3">
             <input type="hidden" name="next" value={next} />
@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               Sign in
             </Button>
           </form>
-          <p className="text-xs text-muted-foreground">The password is in frontend/.env.local (STRIDE_PASSWORD) on your computer.</p>
+          {!process.env.RENDER && <p className="text-xs text-muted-foreground">The app owner can find the local password in frontend/.env.local.</p>}
         </CardContent>
       </Card>
     </div>

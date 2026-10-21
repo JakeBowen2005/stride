@@ -73,6 +73,9 @@ class Activity(Base):
     user_highlighted: Mapped[bool] = mapped_column(Boolean, default=False)  # user flagged as representative of fitness
     user_workout_notes: Mapped[str | None] = mapped_column(Text)  # user's description of splits/effort
 
+    # Athlete correction takes precedence over provider mode and pace heuristics.
+    activity_kind_override: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     # Workout classification
     workout_type: Mapped[str | None] = mapped_column(String(30))  # easy, tempo, interval, long, recovery, etc.
 
@@ -101,11 +104,31 @@ WALK_PACE_SEC_PER_MILE = 990  # 16:30/mi: slower than the slowest easy jog Strid
 
 
 def is_walk(activity) -> bool:
+    override = getattr(activity, "activity_kind_override", None)
+    if override:
+        return override == "walk"
     subtype = (activity.activity_subtype or "").lower()
+    # Running races and outdoor running may include hiking, technical terrain,
+    # run/walk or slow recovery. Speed alone is never grounds for exclusion.
+    if activity.event_type == "race" or ("run" in subtype and "treadmill" not in subtype):
+        return False
     if "walk" in subtype or "hik" in subtype:
         return True
+    # Preserve old treadmill/unknown walk labels until the athlete corrects them.
+    return activity.workout_type == "walk"
+
+
+def activity_classification(activity) -> dict:
     miles = (activity.distance_meters or 0) / 1609.34
-    return bool(miles > 0 and activity.duration_seconds and activity.duration_seconds / miles > WALK_PACE_SEC_PER_MILE)
+    slow = bool(miles and activity.duration_seconds and activity.duration_seconds / miles > WALK_PACE_SEC_PER_MILE)
+    override = getattr(activity, "activity_kind_override", None)
+    walk = is_walk(activity)
+    uncertain = not override and slow and (activity.activity_subtype or "") not in {"walking", "hiking"} and activity.event_type != "race"
+    reason = ("Athlete-confirmed classification." if override else
+              "Provider identifies walking/hiking, or a preserved walk label; you can correct it." if walk else
+              "Slow pace can reflect running, hiking or walking. Confirm the activity type; it remains in running load." if uncertain else
+              "Running activity; pace does not determine whether it counts.")
+    return {"kind": "walk" if walk else "run", "needs_review": uncertain, "reason": reason, "override": override}
 
 
 def runs_only():

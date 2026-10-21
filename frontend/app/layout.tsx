@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Nav, MobileNav } from "@/components/nav";
 import "./globals.css";
+import { UnitPreferences } from "@/components/unit-preferences";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {process.env.STRIDE_DEMO_SCENARIO && <div role="status" className="bg-primary px-4 py-2 lg:pl-[200px] text-center text-xs text-primary-foreground">Synthetic demo: {process.env.STRIDE_DEMO_SCENARIO} · Garmin and AI calls disabled · Your personal database is separate</div>}
+        <UnitPreferences>
         <Nav />
         <div className="flex flex-1 flex-col lg:pl-[184px]">
           <main className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-4 py-5 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-6">
@@ -47,6 +49,7 @@ export default function RootLayout({
           </main>
         </div>
         <MobileNav />
+        </UnitPreferences>
       </body>
     </html>
   );

@@ -61,3 +61,11 @@ jobs:
       - run: node --test tests/*.test.mjs
       - run: npm run lint
       - run: npm run build
+
+  container:
+    # Test the shipped composition and persistent volume, not just its two parts.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t stride-ci .
+      - run: python3 deploy/container_smoke.py stride-ci

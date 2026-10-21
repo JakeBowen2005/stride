@@ -184,13 +184,19 @@ def _past_block(run_fraction: float, feel: int | None = None):
         d = start + timedelta(days=i)
         kind = "rest" if d.weekday() == 4 else ("long_run" if d.weekday() == 5 else ("workout" if d.weekday() in (1, 3) else "easy"))
         miles = 0 if kind == "rest" else (10 if kind == "long_run" else 5)
+        from app.core.workout_data import prescription, segment
+        from tests.test_workout_data import run_work
+        import json
+        contract = prescription("threshold", "time_intervals", [segment(2, seconds=360, fast=435, slow=435, recovery_seconds=120)]) if kind == "workout" else None
         db.add(PlannedWorkout(plan_id=plan.id, date=d.isoformat(), day_name="x", week_number=i // 7 + 1,
-                              type=kind, title=kind, distance_miles=miles, feel_rating=feel if miles else None))
+                              type=kind, title=kind, distance_miles=miles, feel_rating=feel if miles else None,
+                              prescription=json.dumps(contract) if contract else None))
         if miles and (i % 10) / 10 < run_fraction:
             db.add(Activity(user_id=1, source="garmin", external_id=f"b{i}", name="Run",
                             date=datetime.combine(d, datetime.min.time()).replace(hour=7),
                             distance_meters=miles * MI, duration_seconds=miles * 540,
-                            average_pace_per_km=540 / 1.60934))
+                            average_pace_per_km=540 / 1.60934,
+                            splits=run_work(contract).splits if contract else None))
     db.commit()
     db.close()
 

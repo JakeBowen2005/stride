@@ -28,7 +28,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.activity import WALK_PACE_SEC_PER_MILE, Activity, runs_only
+from app.models.activity import Activity, runs_only
 from app.models.garmin import GarminConnection
 from app.services.descriptions import is_workout_description
 from app.services.lap_analyzer import lap_pace_per_mile, summarize_workout
@@ -148,8 +148,7 @@ def parse_activity(raw: dict) -> dict | None:
         "avg_ground_contact_time": raw.get("avgGroundContactTime"),
         "avg_vertical_oscillation": raw.get("avgVerticalOscillation"),
         "calories": raw.get("calories"),
-        "workout_type": "race" if event == "race" else (
-            "walk" if distance > 0 and moving / (distance / 1609.34) > WALK_PACE_SEC_PER_MILE else None),
+        "workout_type": "race" if event == "race" else None,
     }
 
 

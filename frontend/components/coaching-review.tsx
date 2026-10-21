@@ -5,6 +5,9 @@ import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDateShort } from "@/lib/format";
+import { coachingState } from "@/lib/coaching-state";
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 interface Review {
@@ -12,6 +15,8 @@ interface Review {
   created_at: string;
   status: "pending" | "ready" | "fallback";
   model: string | null;
+  policy_version?: string | null;
+  context_as_of?: string | null;
   stale: boolean;
   applied_candidate_id: string | null;
   athlete_concern?: string | null;
@@ -35,17 +40,18 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 
 const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, autoRefresh = false }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
   /** Draw its own card border (when not already inside a card) */
   bordered?: boolean;
   /** The "Coach" label; off when a surrounding header already names it */
   showLabel?: boolean;
-  /** Refresh once when stale. Only for today's run, so browsing old runs never spends AI calls. */
-  autoRefresh?: boolean;
   /** The athlete's "what isn't working" from Plan options; a new nonce asks the coach again. */
   request?: { concern: string; nonce: number } | null;
 }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const distance = (miles: number) => distanceInUnits(miles, units);
   const [review, setReview] = useState<Review | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,6 +61,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   const query = activityId ? `activity_id=${activityId}` : `plan_id=${planId}`;
   const load = useCallback(async () => {
     try {
+      setError(null);
       const [saved, status, job] = await Promise.all([
         getJson<Review>(`/coaching/${USER_ID}/latest?${query}`),
         getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`),
@@ -81,15 +88,6 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     catch (e) { setError(e instanceof Error ? e.message : "Coach review failed. Your plan is unchanged."); }
     finally { setBusy(false); }
   }, [activityId, planId]);
-  // A run's review that predates newer training data refreshes itself once, so the athlete
-  // never reads advice about a stale picture of their run.
-  const autoRefreshed = useRef(false);
-  useEffect(() => {
-    if (!autoRefresh || !activityId || !review?.stale || configured !== true || busy || autoRefreshed.current || review.applied_candidate_id) return;
-    autoRefreshed.current = true;
-    const timer = setTimeout(() => generate(review.athlete_concern), 0);
-    return () => clearTimeout(timer);
-  }, [autoRefresh, activityId, review, configured, busy, generate]);
   const handled = useRef<number | null>(null);
   useEffect(() => {
     if (!request || handled.current === request.nonce) return;
@@ -112,12 +110,14 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
   return <section className={cn("space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
     <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
-      {showLabel && <span className="stat-label">Coach</span>}
+      {showLabel && <span className="stat-label">{activityId ? "Run review" : "Block review"}</span>}
       <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
         title={PRIVACY} onClick={() => generate(review?.athlete_concern)}>
         <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden /> {refreshLabel}
       </Button>
     </div>
+    <p role="status" className={cn("text-xs", review?.stale ? "rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-950" : "text-muted-foreground")}>{coachingState(review, autoJob?.status ?? null, busy)}</p>
+    {review && <p className="text-[11px] text-muted-foreground">{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{review.model ? ` · ${review.model}` : " · rules only"} · policy {review.policy_version ?? "legacy"}{review.context_as_of ? ` · evidence as of ${review.context_as_of}` : ""}</p>}
     {configured === false && !review && <p className="text-xs text-muted-foreground">AI coach isn&apos;t configured. Your training rules and feedback still work.</p>}
     {busy && request && <p role="status" className="text-xs text-muted-foreground">Coach is reviewing your request…</p>}
     {autoPending && <p role="status" className="text-xs text-muted-foreground">New run received · {autoJob?.status === "running" ? "coach is reviewing it" : "review queued"}.</p>}
@@ -125,11 +125,12 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     {!review && configured === true && !busy && !autoPending && <p className="text-xs text-muted-foreground">No review yet.</p>}
     {review && <>
       {review.athlete_concern && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
-      <p className={cn("leading-relaxed", !expanded && "line-clamp-3", busy && review.stale && "opacity-50")}>{review.summary}</p>
-      {(hasDetails || review.summary.length > 220) && (
+      {(!review.stale || expanded) && <p className={cn("leading-relaxed", !expanded && "line-clamp-3", review.stale && "text-muted-foreground")}>{review.summary}</p>}
+      {review.stale && <p className="text-xs text-muted-foreground">This advice predates newer evidence. Refresh explicitly to review it; browsing never starts a paid refresh.</p>}
+      {(review.stale || hasDetails || review.summary.length > 220) && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
           className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
-          {expanded ? "Less" : "More"}
+          {expanded ? "Less" : review.stale ? "Show previous advice" : "More"}
         </button>
       )}
       {expanded && <div className="space-y-2 text-xs text-muted-foreground">
@@ -138,11 +139,10 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
         {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
         <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
       </div>}
-      {review.stale && review.suggestions.length > 0 && !review.applied_candidate_id && <p role="status" className="text-xs text-muted-foreground">Training changed since this review. Refresh before applying a change.</p>}
       {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
-        <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({option.replacement.distance_miles} mi)</span></p>
+        <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({distance(option.replacement.distance_miles)} {unit})</span></p>
         <p className="text-xs text-muted-foreground">{option.reason}</p>
-        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {change.before.distance_miles} → {change.replacement.distance_miles} mi to keep the weekly budget.</p>)}
+        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {distance(change.before.distance_miles)} → {distance(change.replacement.distance_miles)} {unit} to keep the weekly budget.</p>)}
         <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply"}</Button>
       </div>)}
       {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
