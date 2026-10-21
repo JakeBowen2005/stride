@@ -12,7 +12,6 @@ from datetime import date, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-import app.services.coach as coach
 from app.config import settings
 from app.core.load_policy import RECOVERY_FACTOR, ramp_rate
 from app.core.plan_validator import validate_plan
@@ -337,9 +336,7 @@ def test_coach_unavailable_still_persists_feedback_and_adjustments(monkeypatch):
     contract = _contract("intervals")
     _plan([(0, "workout", "Intervals", 7, contract), (2, "workout", "Threshold", 8, _contract("threshold"))])
     act = _workout_run(contract, pace_offset=25)
-    # Every model path down: Anthropic client errors, OpenAI configured but failing.
-    monkeypatch.setattr(coach.settings, "anthropic_api_key", "test-key")
-    monkeypatch.setattr(coach, "_client", lambda: (_ for _ in ()).throw(RuntimeError("anthropic down")))
+    # The only model path (OpenAI) is configured but failing.
     monkeypatch.setattr(settings, "openai_api_key", "unit-test-secret")
 
     def down(*a, **k):

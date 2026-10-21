@@ -32,7 +32,7 @@ The request contains selected numeric run/lap metrics, recent training, subjecti
 
 A bounded research pack includes the quality-stage policy, training principles, support-workout research, the two original personal coaching documents and relevant race-distance material. Long originals are excerpts, not full-document retrieval. The originals remain untouched. Personal ChatGPT retrospectives are explicitly labeled contextual claims rather than confirmed logs or independently validated science. Only supplied source IDs can be cited. OpenAI receives `store=False`; that does not imply zero provider retention under its separate data policies.
 
-Local storage saves the structured advice, source paths, context fingerprint, permitted candidate snapshots, model, token usage and accepted option. It does not save the entire prompt or API key. Provider failures log exception **types only**, without payloads or exception messages. The previous Anthropic pathway remains available only when OpenAI is not configured; OpenAI failures use deterministic/template feedback rather than silently sending the same personal data to another provider.
+Local storage saves the structured advice, source paths, context fingerprint, permitted candidate snapshots, model, token usage and accepted option. It does not save the entire prompt or API key. Provider failures log exception **types only**, without payloads or exception messages. The previous Anthropic pathway was removed in coach v5 (Oct 21 2026). Without OpenAI, or when it fails, feedback uses deterministic/template text; personal data never goes to a second provider. See `ai-call-inventory.md` for every field each review sends.
 
 ## Enforced boundary
 

@@ -441,7 +441,7 @@ export default function PlanPage() {
       <div id="plan-coach" className="panel min-w-0 scroll-mt-16">
         <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
           className="panel-head w-full text-left hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
-          <span>Coach perspective</span>
+          <span>Coach perspective · this week &amp; next</span>
           <span aria-hidden="true" className="meta inline-flex items-center gap-1">
             {coachOpen ? "Hide" : "Show"}<span className={cn("inline-block transition-transform", coachOpen && "rotate-180")}>▾</span>
           </span>
