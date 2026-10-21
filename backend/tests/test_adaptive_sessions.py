@@ -182,3 +182,60 @@ def test_high_mileage_easy_runs_are_not_replaced_by_short_workout_average_paces(
         db.commit();analysis=analyze_athlete(1,db)
         assert analysis['paces']['recent_easy_pace']=='8:30'
         assert analysis['paces']['easy_pace']=='8:30'
+
+
+def test_concurrent_menu_and_latest_review_are_read_only():
+    """Listing alternatives must work beside a SQLite writer, without DML/savepoints."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from sqlalchemy import event
+
+    from app.database import engine
+    from app.models.coaching import CoachingReview
+    from app.services.coaching_options import snapshot
+
+    plan_id, day = seed()
+    with SessionLocal() as db:
+        db.add(CoachingReview(user_id=1, plan_id=plan_id, context_hash='old-context',
+                              status='fallback', result='{}'))
+        db.commit()
+        before = [(row.id, snapshot(row), row.original_prescription, row.adjustment_note)
+                  for row in db.query(PlannedWorkout).order_by(PlannedWorkout.id)]
+
+    def reject_writes(conn, cursor, statement, parameters, context, executemany):
+        verb = statement.lstrip().split()[0].upper()
+        assert verb not in {'UPDATE', 'INSERT', 'DELETE', 'SAVEPOINT', 'RELEASE'}, statement
+
+    barrier = Barrier(2)
+
+    def get_menu():
+        barrier.wait(timeout=10)
+        return client.get(f'/api/plans/1/sessions/{day+timedelta(days=1)}/options?category=threshold')
+
+    def get_latest():
+        barrier.wait(timeout=10)
+        return client.get(f'/api/coaching/1/latest?plan_id={plan_id}')
+
+    # An unrelated open writer makes any attempted dry-run UPDATE fail, rather
+    # than relying on thread timing to reproduce SQLITE_BUSY_SNAPSHOT.
+    with engine.connect() as writer:
+        writer.exec_driver_sql('BEGIN IMMEDIATE')
+        event.listen(engine, 'before_cursor_execute', reject_writes)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                first = pool.submit(get_menu)
+                second = pool.submit(get_latest)
+                menu_response = first.result(timeout=30)
+                latest_response = second.result(timeout=30)
+            assert menu_response.status_code == 200, menu_response.text
+            assert menu_response.json()['options']
+            assert latest_response.status_code == 200, latest_response.text
+            assert latest_response.json()['stale'] is True
+        finally:
+            event.remove(engine, 'before_cursor_execute', reject_writes)
+            writer.rollback()
+    with SessionLocal() as db:
+        after = [(row.id, snapshot(row), row.original_prescription, row.adjustment_note)
+                 for row in db.query(PlannedWorkout).order_by(PlannedWorkout.id)]
+    assert before == after

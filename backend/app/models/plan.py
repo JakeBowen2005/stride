@@ -50,6 +50,9 @@ class PlannedWorkout(Base):
     day_name: Mapped[str] = mapped_column(String(10))  # monday, tuesday, etc.
     week_number: Mapped[int] = mapped_column(Integer)
 
+    feedback_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # audit identity, retained after source reclassification
+    feedback_history: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Workout prescription
     type: Mapped[str] = mapped_column(String(30))  # easy, workout, long_run, rest
     title: Mapped[str] = mapped_column(String(200))

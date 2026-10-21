@@ -16,7 +16,10 @@ def seed():
         for i in range(1, 35):
             db.add(Activity(user_id=1, source='manual', date=datetime.now() - timedelta(days=i), distance_meters=8000,
                             duration_seconds=2700, average_pace_per_km=337.5))
-        old = Plan(user_id=1, start_date=date.today().isoformat(), end_date=(date.today() + timedelta(days=1)).isoformat())
+        # A normal rolling block (this Monday + 2 weeks), so a revision always has a
+        # full unstarted week whatever weekday the suite runs on.
+        monday = date.today() - timedelta(days=date.today().weekday())
+        old = Plan(user_id=1, start_date=monday.isoformat(), end_date=(monday + timedelta(days=13)).isoformat())
         db.add(old)
         db.commit()
         return old.id

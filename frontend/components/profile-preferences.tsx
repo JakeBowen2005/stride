@@ -1,5 +1,6 @@
 "use client";
 
+import { PREFERENCES_EVENT } from "@/components/unit-preferences";
 import { useState } from "react";
 import Link from "next/link";
 import { apiUrl, USER_ID } from "@/lib/api";
@@ -41,7 +42,7 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
         const body = await res.json().catch(() => ({}));
         throw new Error(typeof body.detail === "string" ? body.detail : "Could not save preferences. Check your selections and try again.");
       }
-      onSaved(draft); setEditing(false); setSaved(true);
+      onSaved(draft); window.dispatchEvent(new Event(PREFERENCES_EVENT)); setEditing(false); setSaved(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save preferences."); }
     finally { setSaving(false); }
   }

@@ -149,3 +149,16 @@ def execution_from_activities(activities, prescribed):
     if index < len(work):
         result['confidence'] = 'low'
     return result
+
+
+def demanding_long_run(row):
+    """A long run with prescribed quality cannot be verified by distance alone."""
+    kind = row.get('type') if isinstance(row, dict) else row.type
+    if kind != 'long_run':
+        return False
+    value = lambda key: row.get(key) if isinstance(row, dict) else getattr(row, key, None)
+    data = loads(value('prescription')) or {}
+    if any(s.get('category') in {'threshold', 'intervals', 'race_pace'} for s in data.get('segments', [])):
+        return True
+    title = (value('title') or '').lower()
+    return any(term in title for term in ('mp ', 'marathon pace', 'marathon-pace', 'race-effort', 'steady', 'sandwich', 'progressive', 'progression'))

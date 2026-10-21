@@ -9,7 +9,7 @@ from sqlalchemy import or_, and_
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.activity import Activity
+from app.models.activity import Activity, is_walk
 from app.models.coaching import CoachingJob
 
 logger = logging.getLogger('stride.coaching_jobs')
@@ -17,7 +17,7 @@ logger = logging.getLogger('stride.coaching_jobs')
 
 def enqueue_synced_run(activity, db):
     """Caller owns the import transaction. Never enqueue paid historical backfill."""
-    if not settings.openai_auto_reviews or activity.date.date() < date.today()-timedelta(days=2) or activity.date.date() > date.today():
+    if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < date.today()-timedelta(days=2) or activity.date.date() > date.today():
         return
     db.flush()
     if not db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version='sync-v1').first():
@@ -45,8 +45,8 @@ def process_one():
         if not job:
             db.commit(); return False
         activity = db.get(Activity, job.activity_id)
-        if not activity or activity.date.date() < date.today()-timedelta(days=7):
-            job.status, job.last_error = 'failed', 'Activity too old for automatic review'
+        if not activity or is_walk(activity) or activity.date.date() < date.today()-timedelta(days=7):
+            job.status, job.last_error = 'failed', 'Activity is not eligible for an automatic running review'
             db.commit(); return True
         if job.attempts >= 3:
             job.status, job.last_error = 'failed', 'Automatic retry limit reached; manual review remains available'

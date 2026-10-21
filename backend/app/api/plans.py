@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.workout_data import day_prescription, execution_from_activities, loads, render
+from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, render
 from app.core.plan_engine import calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
-    evaluate_workout,
+    evaluate_workout, gate_progression,
 )
 from app.database import get_db
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
@@ -158,7 +158,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Load or initialize workout progression state
     progression_state = _load_progression_state(user_id, db, goal.race_distance or goal.goal_type)
 
-    quality_activities = db.query(Activity).filter(Activity.user_id == user_id,
+    quality_activities = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time()),
         Activity.date < datetime.combine(date.today() + timedelta(days=1), datetime.min.time())).all()
     from app.services.quality_history import quality_history
@@ -219,11 +219,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "name": user.name,
         "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
+        "baseline_as_of": date.today().isoformat(), "baseline_definition": "four completed calendar weeks",
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
         "schedule_preferences": {'rest_days': rest_days, 'days_per_week': user.days_per_week or 6,
-                                 'long_run_day': user.long_run_day or 'saturday'},
+                                 'long_run_day': user.long_run_day or 'saturday', 'workout_format': user.workout_format or 'distance'},
     }
 
     # Persist atomically: the previous plan is only deactivated in the same commit
@@ -299,7 +300,7 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
     user = db.get(User, user_id)
     goals = db.query(Goal).filter_by(user_id=user_id, active=True).all()
     active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
-    activities = db.query(Activity).filter_by(user_id=user_id).order_by(Activity.id).all()
+    activities = db.query(Activity).filter(Activity.user_id == user_id, runs_only()).order_by(Activity.id).all()
     completed_dates = {a.date.date().isoformat() for a in activities}
     def stable_day(workout):
         snapshot = json.loads(_snapshot(workout))
@@ -379,6 +380,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
     # One query for every activity in the plan window, grouped by local date
     by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
+    walks_by_date = _walks_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
 
     # Match past days to actual activities (store primary activity_id for backwards compat)
     for pw in planned_workouts:
@@ -415,7 +417,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         if pw.activity_id:
             activities = by_date.get(pw.date)
             if activities:
-                actual = _build_actual_aggregated(activities)
+                actual = _build_actual_aggregated(activities, walks_by_date.get(pw.date))
                 actual["workout"] = _executed_summary(pw, activities, user_id, db, easy_cache)
                 if is_prescribed:
                     comparison = _build_comparison_aggregated(pw, activities)
@@ -440,6 +442,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             "original_prescription": json.loads(pw.original_prescription) if pw.original_prescription else None,
             "actual": actual,
             "comparison": comparison,
+            "walks": [_activity_line(a) for a in walks_by_date.get(pw.date, [])],
             "feedback": {
                 "feel_rating": pw.feel_rating,
                 "feel_notes": pw.feel_notes,
@@ -465,7 +468,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         actual_mileage = 0
         for d in wk["days"]:
             if d["actual"]:
-                actual_mileage += d["actual"]["distance_miles"]
+                actual_mileage += d["actual"]["total_distance_miles"]  # doubles count; walks never do
         wk["actual_mileage"] = round(actual_mileage, 1)
         weeks.append(wk)
 
@@ -688,6 +691,7 @@ def submit_feedback(
 
     evidence_act = _work_evidence_activity(activities)
     if evidence_act:
+        pw.feedback_activity_id = evidence_act.id
         evidence_act.feel_rating = req.feel_rating
         evidence_act.feel_notes = req.feel_notes
 
@@ -742,6 +746,10 @@ def _work_evidence_activity(activities: list[Activity]) -> Activity | None:
         d = a.description or ""
         return bool(extract_splits_from_description(d)) or bool(_extract_paced_reps(d)[1])
 
+    from app.core.session_match import executed_session
+    detected = executed_session(activities, None)
+    if detected:
+        return next(a for a in activities if a.id == detected['activity_id'])
     with_work = [a for a in activities if has_work(a)]
     return max(with_work or activities, key=lambda a: a.distance_meters or 0)
 
@@ -791,25 +799,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 prescription=prescribed, execution=execution,
             )
             state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
-            if prescribed and ev.decision == "advance" and (
-                prescribed.get('progression_eligible') is False
-                or prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
-                or (state and prescribed.get('level', 1) < state.current_level)
-            ):
-                ev.decision = "hold"
-                ev.reason = "Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated."
-            if prescribed and prescribed.get('progression_eligible') is False:
-                ev.new_pace_sec = None
-                if ev.decision == 'recalibrate':
-                    ev.decision = 'hold'
-                    ev.reason = 'Controlled secondary dose completed; use the full primary prescription before changing pace.'
-            elif prescribed and prescribed.get('goal_pace'):
-                # Goal-pace reps move race-pace evidence (calibrator), not interval/threshold pace.
-                ev.new_pace_sec = None
-                if ev.decision == 'recalibrate':
-                    ev.decision = 'hold'
-                    ev.reason = ('Goal-pace reps ran faster than the step with control. Logged as race-pace evidence; '
-                                 'the next goal-pace step uses it. Interval pace is unchanged.')
+            ev = gate_progression(ev, prescribed, state.current_level if state else None)
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:
@@ -1004,9 +994,39 @@ def _assess_previous_block(prev_plan: Plan, db: Session):
     for pw in prev_plan.planned_workouts:
         if not (start <= pw.date < today):
             continue
-        actual = sum(a.distance_meters for a in by_date.get(pw.date, [])) / 1609.34
+        activities = by_date.get(pw.date, [])
+        actual = sum(a.distance_meters for a in activities) / 1609.34
+        prescribed = loads(pw.prescription)
+        execution = execution_from_activities(activities, prescribed) if prescribed else None
+        evaluation = json.loads(pw.evaluation) if pw.evaluation else {}
+        verified = None
+        substituted = False
+        if pw.type == "workout" and prescribed:
+            from app.core.session_match import executed_session, off_plan
+            detected = executed_session(activities, easy_pace_for(prescribed, prev_plan.user_id, db))
+            substituted = off_plan(prescribed, detected, substitution_confirmed=bool(pw.swapped))
+            if execution and execution.get("confidence") in {"high", "medium"}:
+                completion = execution.get("completion")
+                verified = completion >= 1 if completion is not None else None
+                # Stored verdicts may precede improved matching; recompute execution fairly.
+                if prescribed.get("category") in {"threshold", "intervals"}:
+                    evaluation = evaluate_workout(None, None, None, pw.type, None, pw.title,
+                                                  pw.feel_rating, prescribed, execution).to_dict()
+                    targets = execution.get("target_paces_sec_per_mile", [])
+                    if verified and (not targets or any(t is None for t in targets)):
+                        verified = None  # Full distance/duration without intensity evidence is not verified quality.
+                    elif verified:
+                        verified = evaluation.get("pace_diff_sec", 0) <= 5 and evaluation.get("fade_sec", 0) < 10
+        elif pw.type == "race" and activities:
+            verified = (any(a.event_type == "race" or a.workout_type == "race" for a in activities)
+                        and actual >= (pw.distance_miles or 0) * .9)
+        feels = [a.feel_rating for a in activities if a.feel_rating is not None]
+        if pw.feel_rating is not None:
+            feels.append(pw.feel_rating)
         records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
-                                 actual_miles=actual, feel=pw.feel_rating))
+                                 actual_miles=actual, feel=min(feels) if feels else None,
+                                 execution_complete=verified, demanding_long_run=demanding_long_run(pw), evaluation_decision=evaluation.get("decision"),
+                                 session_status=pw.session_status, substituted=substituted))
     return assess_block(records)
 
 
@@ -1025,16 +1045,28 @@ def _activities_by_date(user_id: int, start: str, end: str, db: Session) -> dict
     lo = datetime.fromisoformat(start)
     hi = datetime.fromisoformat(end) + timedelta(days=1)
     grouped: dict[str, list[Activity]] = {}
-    for a in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= lo, Activity.date < hi):
+    for a in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= lo, Activity.date < hi, runs_only()):
+        grouped.setdefault(a.date.date().isoformat(), []).append(a)
+    return grouped
+
+
+def _walks_by_date(user_id: int, start: str, end: str, db: Session) -> dict[str, list[Activity]]:
+    """Walks in the window, for display only: they are never part of the running plan."""
+    lo = datetime.fromisoformat(start)
+    hi = datetime.fromisoformat(end) + timedelta(days=1)
+    grouped: dict[str, list[Activity]] = {}
+    for a in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= lo, Activity.date < hi,
+                                       Activity.workout_type == "walk"):
         grouped.setdefault(a.date.date().isoformat(), []).append(a)
     return grouped
 
 
 def _get_activities_for_date(date_str: str, user_id: int, db: Session) -> list[Activity]:
-    """Get all activities for a user on a specific date."""
+    """All runs for a user on a date (walks are never part of the running plan)."""
     return db.query(Activity).filter(
         Activity.user_id == user_id,
         func.date(Activity.date) == date_str,
+        runs_only(),
     ).all()
 
 
@@ -1074,89 +1106,51 @@ def _displayed_evaluation(pw: PlannedWorkout, actual: dict | None) -> dict | Non
     return stored
 
 
-def _build_actual_aggregated(activities: list[Activity]) -> dict:
-    """Build actual run data aggregated across all activities on this date."""
-    total_distance_m = sum(a.distance_meters for a in activities)
-    total_duration = sum(a.duration_seconds or 0 for a in activities)
-    distance_miles = round(total_distance_m / 1609.34, 2)
+def _activity_line(a: Activity) -> dict:
+    miles = (a.distance_meters or 0) / 1609.34
+    return {"id": a.id, "name": a.name, "distance_miles": round(miles, 2),
+            "avg_pace": _format_pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
+            "duration_seconds": a.duration_seconds, "average_heartrate": a.average_heartrate}
 
-    # Weighted average pace
-    avg_pace = None
-    if total_distance_m > 0 and total_duration > 0:
-        pace_per_mile = total_duration / (total_distance_m / 1609.34)
-        avg_pace = _format_pace(pace_per_mile)
 
-    # Weighted average HR (by duration)
-    avg_hr = None
-    hr_activities = [(a.average_heartrate, a.duration_seconds or 0) for a in activities if a.average_heartrate]
-    if hr_activities:
-        total_hr_dur = sum(dur for _, dur in hr_activities)
-        if total_hr_dur > 0:
-            avg_hr = round(sum(hr * dur for hr, dur in hr_activities) / total_hr_dur, 1)
-
-    # Primary activity = longest one (for name/description)
-    primary = max(activities, key=lambda a: a.distance_meters)
-
-    result = {
-        "distance_miles": distance_miles,
-        "avg_pace": avg_pace,
-        "duration_seconds": total_duration,
-        "average_heartrate": avg_hr,
+def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] | None = None) -> dict:
+    """The day's run, never a blend: stats come from the run holding the prescribed work (or the
+    longest run). Other runs that day (a double) are listed with their own numbers and count toward
+    weekly miles; walks are listed but are never part of the running plan."""
+    primary = _work_evidence_activity(activities)
+    line = _activity_line(primary)
+    others = [a for a in sorted(activities, key=lambda a: a.date) if a.id != primary.id]
+    return {
+        "activity_id": primary.id,
+        "distance_miles": line["distance_miles"],
+        "avg_pace": line["avg_pace"],
+        "duration_seconds": primary.duration_seconds or 0,
+        "average_heartrate": primary.average_heartrate,
         "description": primary.description,
         "feel_rating": primary.feel_rating,
         "name": primary.name,
         "activity_count": len(activities),
+        "total_distance_miles": round(sum(a.distance_meters for a in activities) / 1609.34, 2),
+        "other_runs": [_activity_line(a) for a in others],
+        "walks": [_activity_line(a) for a in walks or []],
     }
-
-    # Include individual activities if more than one
-    if len(activities) > 1:
-        result["activities"] = [
-            {
-                "name": a.name,
-                "distance_miles": round(a.distance_meters / 1609.34, 2),
-                "avg_pace": _format_pace(a.average_pace_per_km * 1.60934) if a.average_pace_per_km else None,
-                "duration_seconds": a.duration_seconds,
-            }
-            for a in sorted(activities, key=lambda a: a.date)
-        ]
-
-    return result
 
 
 def _build_comparison_aggregated(pw: PlannedWorkout, activities: list[Activity]) -> dict | None:
-    """Build comparison between prescribed and actual (aggregated)."""
-    total_distance_m = sum(a.distance_meters for a in activities)
-    total_duration = sum(a.duration_seconds or 0 for a in activities)
-    actual_miles = round(total_distance_m / 1609.34, 2)
+    """The day's run against its prescription (a second run or a walk is not 'over prescribed')."""
+    primary = _work_evidence_activity(activities)
+    line = _activity_line(primary)
+    actual_miles = line["distance_miles"]
     distance_diff = round(actual_miles - pw.distance_miles, 2)
-
-    pace_str = ""
-    if total_distance_m > 0 and total_duration > 0:
-        pace_per_mile = total_duration / (total_distance_m / 1609.34)
-        pace_str = f"{_format_pace(pace_per_mile)}/mi"
-
-    hr_activities = [(a.average_heartrate, a.duration_seconds or 0) for a in activities if a.average_heartrate]
-    hr_str = ""
-    if hr_activities:
-        total_hr_dur = sum(dur for _, dur in hr_activities)
-        if total_hr_dur > 0:
-            avg_hr = sum(hr * dur for hr, dur in hr_activities) / total_hr_dur
-            hr_str = f", {int(avg_hr)}bpm"
-
+    pace_str = f"{line['avg_pace']}/mi" if line["avg_pace"] else ""
+    hr_str = f", {int(primary.average_heartrate)}bpm" if primary.average_heartrate else ""
     if distance_diff > 0:
         diff_label = f"+{distance_diff:.1f}mi over prescribed"
     elif distance_diff < 0:
         diff_label = f"{distance_diff:.1f}mi under prescribed"
     else:
         diff_label = "exact distance"
-
-    count_note = f" ({len(activities)} activities)" if len(activities) > 1 else ""
-    summary = f"{actual_miles}mi at {pace_str}{hr_str}. {diff_label}.{count_note}"
-
-    return {
-        "distance_diff_miles": distance_diff,
-        "summary": summary,
-    }
+    return {"distance_diff_miles": distance_diff, "summary": f"{actual_miles}mi at {pace_str}{hr_str}. {diff_label}."}
 
 
 def _parse_pace(pace_str: str) -> float:
@@ -1355,7 +1349,7 @@ def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
     def add(day, feel):
         if cutoff.isoformat() <= day <= date.today().isoformat() and feel is not None:
             ratings[day] = min(ratings.get(day, 10), feel)
-    for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), Activity.feel_rating.isnot(None)):
+    for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), Activity.feel_rating.isnot(None), runs_only()):
         add(act.date.date().isoformat(), act.feel_rating)
     if active:
         for day in active.planned_workouts:

@@ -39,7 +39,7 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
         <tbody>
           {weeks.map((week) => {
             const current = week.workouts.some((w) => w.date === today);
-            const logged = week.workouts.reduce((s, w) => s + (w.actual?.distance_miles ?? 0), 0);
+            const logged = week.workouts.reduce((s, w) => s + (w.actual?.total_distance_miles ?? w.actual?.distance_miles ?? 0), 0);
             const pct = week.total_miles > 0 ? Math.min(1, logged / week.total_miles) : 0;
             return (
               <tr key={week.week_number} className="border-t border-[#2a2a2a]/20 align-top">
@@ -58,7 +58,7 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                   const hard = QUALITY_KINDS.includes(kind);
                   const st = status(w, today);
                   const selected = selectedDate === w.date;
-                  const miles = w.actual ? w.actual.distance_miles : w.distance_miles;
+                  const miles = w.actual ? w.actual.total_distance_miles ?? w.actual.distance_miles : w.distance_miles;
                   return (
                     <td key={w.date} className="p-[3px]">
                       <button type="button" onClick={() => onSelect(w)} aria-pressed={selected}
@@ -114,7 +114,7 @@ function CompactCalendar({ weeks, units, selectedDate, onSelect, today }: {
   return (
     <div className="divide-y divide-border lg:hidden">
       {weeks.map((week) => {
-        const logged = week.workouts.reduce((sum, w) => sum + (w.actual?.distance_miles ?? 0), 0);
+        const logged = week.workouts.reduce((sum, w) => sum + (w.actual?.total_distance_miles ?? w.actual?.distance_miles ?? 0), 0);
         return (
           <div key={week.week_number} className="space-y-1.5 p-2">
             <div className="flex items-baseline justify-between font-mono text-xs">
@@ -132,7 +132,7 @@ function CompactCalendar({ weeks, units, selectedDate, onSelect, today }: {
                 const kind = ran ? sessionKind("workout", ran.title, ran.category) : sessionKind(w.type, w.title, w.prescription?.category);
                 const { color, tint } = kindColor(kind);
                 const hard = QUALITY_KINDS.includes(kind);
-                const miles = w.actual ? w.actual.distance_miles : w.distance_miles;
+                const miles = w.actual ? w.actual.total_distance_miles ?? w.actual.distance_miles : w.distance_miles;
                 const selected = selectedDate === w.date;
                 const day = new Date(`${w.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "narrow" });
                 return (

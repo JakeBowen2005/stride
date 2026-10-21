@@ -78,9 +78,17 @@ def seed_day(feel_notes="I did 3x8min threshold"):
         plan = Plan(user_id=1, start_date=monday.isoformat(), end_date=(monday + timedelta(days=13)).isoformat(),
                     prescribed_from=monday.isoformat(), is_active=True, load=json.dumps({"weekly_budgets": [30, 30]}))
         db.add(plan); db.flush()
+        types = ["rest" if i % 7 == 4 else "long_run" if i % 7 == 5 else "easy" for i in range(14)]
+        t = today.weekday()
+        if types[t] == "rest" and t:  # today's workout takes the rest slot: rest the day before
+            types[t - 1] = "rest"
+        for n in (t - 1, t + 1):  # never seed a long run next to today's workout
+            if 0 <= n < 14 and types[n] == "long_run":
+                types[n] = "easy"
+        types[t] = "workout"
         for i in range(14):
             d = monday + timedelta(days=i)
-            typ = "workout" if d == today else "rest" if i % 7 == 4 else "long_run" if i % 7 == 5 else "easy"
+            typ = types[i]
             miles = {"workout": 6.0, "rest": 0.0, "long_run": 8.0}.get(typ, 4.0)
             db.add(PlannedWorkout(plan_id=plan.id, date=d.isoformat(), day_name=d.strftime("%A").lower(), week_number=i // 7 + 1,
                                   type=typ, title="3x1200m Intervals" if typ == "workout" else typ, distance_miles=miles,
