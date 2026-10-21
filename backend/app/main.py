@@ -25,12 +25,19 @@ add_missing_columns()
 
 
 def _refresh_lap_summaries():
-    """Re-read stored lap summaries with the current analyzer. Never blocks startup."""
+    """Tag walks and re-read stored lap summaries with the current analyzer. Never blocks startup."""
     from app.database import SessionLocal
+    from app.models.activity import Activity, is_walk
     from app.services.garmin import refresh_lap_summaries
     try:
         with SessionLocal() as db:
+            walks = [a for a in db.query(Activity).filter(Activity.workout_type.is_distinct_from("walk")).all() if is_walk(a)]
+            for activity in walks:
+                activity.workout_type = "walk"
+            db.commit()
             changed = refresh_lap_summaries(db)
+        if walks:
+            logger.info("Tagged %d walks (not part of the running plan)", len(walks))
         if changed:
             logger.info("Refreshed %d stored Garmin lap summaries", changed)
     except Exception as e:  # noqa: BLE001 — a summary refresh must never stop the API

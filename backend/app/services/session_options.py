@@ -24,7 +24,7 @@ from app.core.session_catalog import (
     specific_bands,
 )
 from app.core.workout_data import MI, day_prescription, loads
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import PlannedWorkout
 from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
@@ -89,6 +89,7 @@ def context_for(plan, db):
         Activity.user_id == plan.user_id,
         Activity.date >= datetime.combine(today - timedelta(days=56), datetime.min.time()),
         Activity.date < datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        runs_only(),
     ).order_by(Activity.id).all()
     recent_long = max((a.distance_meters / MI for a in acts if a.date.date() >= today - timedelta(days=28)), default=0)
     assessment = (_json(plan.assessment, {}) or {}).get('decision')

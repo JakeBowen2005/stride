@@ -92,3 +92,23 @@ class PersonalRecord(Base):
     date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     activity_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("activities.id"), nullable=True)
     strava_activity_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+# ── Runs vs walks ───────────────────────────────────────────────
+# Watches record a walk as a "treadmill run" if that's the mode picked. A walk is never part of
+# the running plan: no mileage, no plan matching, no coaching. It still shows in history, labeled.
+WALK_PACE_SEC_PER_MILE = 990  # 16:30/mi: slower than the slowest easy jog Stride prescribes
+
+
+def is_walk(activity) -> bool:
+    subtype = (activity.activity_subtype or "").lower()
+    if "walk" in subtype or "hik" in subtype:
+        return True
+    miles = (activity.distance_meters or 0) / 1609.34
+    return bool(miles > 0 and activity.duration_seconds and activity.duration_seconds / miles > WALK_PACE_SEC_PER_MILE)
+
+
+def runs_only():
+    """Query filter: every activity except walks."""
+    from sqlalchemy import or_
+    return or_(Activity.workout_type.is_(None), Activity.workout_type != "walk")

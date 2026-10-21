@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cleanPurpose, formatDistance, secondsToPace, secondsToTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ExecutedWorkout } from "@/lib/types";
+import type { ActivityLine, ExecutedWorkout } from "@/lib/types";
 
 export interface PlanDayLite {
   date: string;
@@ -26,6 +26,9 @@ export interface PlanDayLite {
     duration_seconds?: number;
     average_heartrate?: number | null;
     workout?: ExecutedWorkout | null;
+    total_distance_miles?: number;
+    other_runs?: ActivityLine[];
+    walks?: ActivityLine[];
   } | null;
   feedback?: {
     feel_rating: number | null;
@@ -64,7 +67,20 @@ function ActualRun({ day }: { day: PlanDayLite }) {
           {hr.length > 1 && <span className="num text-muted-foreground">HR {hr[0]}→{hr[hr.length - 1]}</span>}
         </div>
       )}
+      <AlsoToday runs={actual.other_runs} walks={actual.walks} />
     </div>
+  );
+}
+
+/** Other activities that day, each with its own numbers: never blended into the run above. */
+export function AlsoToday({ runs = [], walks = [] }: { runs?: ActivityLine[]; walks?: ActivityLine[] }) {
+  if (!runs.length && !walks.length) return null;
+  const line = (a: ActivityLine) => [`${formatDistance(a.distance_miles)} mi`, a.avg_pace && `${a.avg_pace}/mi`, a.duration_seconds && secondsToTime(a.duration_seconds)].filter(Boolean).join(" · ");
+  return (
+    <ul className="space-y-0.5 text-xs text-muted-foreground">
+      {runs.map((a) => <li key={a.id}><span className="font-medium text-foreground">+ Run</span> {a.name ? `${a.name} · ` : ""}<span className="num">{line(a)}</span></li>)}
+      {walks.map((a) => <li key={a.id}><span className="font-medium text-foreground">+ Walk</span> <span className="num">{line(a)}</span> · not counted in your running</li>)}
+    </ul>
   );
 }
 

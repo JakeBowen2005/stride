@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from app.core.session_match import executed_session, off_plan
 from app.core.workout_data import execution_from_activities, loads
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import Plan, PlannedWorkout
 
 
@@ -15,7 +15,7 @@ def quality_history(user_id, db, today=None):
     today = today or date.today()
     cutoff = today - timedelta(days=56)
     calendar_monday = today - timedelta(days=today.weekday())
-    acts = db.query(Activity).filter(Activity.user_id == user_id,
+    acts = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(calendar_monday-timedelta(weeks=8), datetime.min.time()),
         Activity.date < datetime.combine(today+timedelta(days=1), datetime.min.time())).all()
     by_date = {}
