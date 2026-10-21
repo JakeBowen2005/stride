@@ -76,6 +76,18 @@ export default function TodayPage() {
     finally { setLoading(false); }
   }, []);
 
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const openTodayActivity = async (id: number) => {
+    setActivityError(null);
+    const existing = recentRuns.find((activity) => activity.id === id);
+    if (existing) { setSelectedRun(existing); return; }
+    try {
+      const activity = await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);
+      if (!activity) throw new Error("Could not load activity details.");
+      setSelectedRun({ ...activity, splits: activity.splits || [] });
+    } catch (error) { setActivityError(error instanceof Error ? error.message : "Could not load activity details."); }
+  };
+
   useEffect(() => {
     const id = setTimeout(load, 0);
     window.addEventListener(SYNC_EVENT, load);
@@ -144,15 +156,17 @@ export default function TodayPage() {
                   // Remount when the day or its saved feedback changes, so local state follows the data
                   key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
                   onFeedbackSaved={load}
+                  onOpenActivity={openTodayActivity}
                   today={todayPlan}
                   planStale={planStale || !plan}
                   recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
                   coach={todayRunId ? (
                     <CoachingReview
                       key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_rating}`}
-                      activityId={todayRunId} onPlanChanged={load} />
+                      activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />
+                {activityError && <p role="alert" className="mt-2 text-xs text-destructive">{activityError}</p>}
               </Section>
               {thisWeek && (
                 <Section label="This week" accent="var(--type-threshold)" className="order-2" meta="tap a day">

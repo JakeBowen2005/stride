@@ -5,7 +5,7 @@ import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { useState } from "react";
 import { FeedbackForm } from "@/components/feedback-form";
 import Link from "next/link";
-import { CircleCheck, ChevronDown } from "lucide-react";
+import { CircleCheck, ChevronDown, ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,39 +43,83 @@ export interface PlanDayLite {
 
 const RUN_TITLE: Record<string, string> = { easy: "Easy run", long_run: "Long run", recovery: "Recovery run", race: "Race", workout: "Run" };
 
-/** What was actually run: the headline once today's run is recorded. */
-function ActualRun({ day }: { day: PlanDayLite }) {
+/** Separate recordings stay separate; the total never becomes a workout or coach target. */
+function ActualRun({ day, onOpenActivity }: { day: PlanDayLite; onOpenActivity?: (id: number) => void }) {
   const units = useUnits();
   const unit = unitLabel(units);
-  const formatDistance = (miles: number) => distanceInUnits(miles, units);
+  const distance = (miles: number) => distanceInUnits(miles, units);
   const actual = day.actual!;
   const workout = actual.workout;
-  const hr = workout?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
-  const stats = [
-    `${formatDistance(actual.distance_miles)} ${unit}`,
-    actual.avg_pace && `${paceInUnits(actual.avg_pace, units)}/${unit}`,
-    actual.duration_seconds && secondsToTime(actual.duration_seconds),
-    actual.average_heartrate && `${Math.round(actual.average_heartrate)} bpm`,
-  ].filter(Boolean);
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <CircleCheck className="size-4 shrink-0" style={{ color: "var(--type-easy)" }} aria-hidden />
-        <span className="stat-label">Ran today</span>
-        {workout?.off_plan && <Badge variant="secondary" className="text-[11px]">Off plan</Badge>}
+  const [selected, setSelected] = useState("primary");
+  const activities = [
+    { key: "primary", id: actual.activity_id, kind: "Run", title: workout?.title ?? RUN_TITLE[day.type] ?? "Run", ...actual },
+    ...(actual.other_runs ?? []).map((a) => ({ ...a, key: `run-${a.id}`, kind: "Run", title: a.name ?? "Additional run" })),
+    ...(actual.walks ?? []).map((a) => ({ ...a, key: `walk-${a.id}`, kind: "Walk", title: a.name ?? "Walk" })),
+  ];
+  const activity = activities.find((a) => a.key === selected) ?? activities[0];
+  const total = selected === "total";
+  const runningMiles = actual.total_distance_miles ?? actual.distance_miles + (actual.other_runs ?? []).reduce((sum, a) => sum + a.distance_miles, 0);
+  const walkingMiles = (actual.walks ?? []).reduce((sum, a) => sum + a.distance_miles, 0);
+  const totalSeconds = activities.reduce((sum, a) => sum + (a.duration_seconds ?? 0), 0);
+  const primary = !total && activity.key === "primary";
+
+  return <div className="space-y-4">
+    {activities.length > 1 && <div className="-mx-4 -mt-4 flex overflow-x-auto border-b bg-muted/30" role="group" aria-label="Today's activities">
+      {activities.map((a, index) => <button key={a.key} type="button" aria-pressed={!total && activity.key === a.key}
+        onClick={() => setSelected(a.key)} className={cn("min-h-14 min-w-24 flex-1 border-r px-3 py-2 text-left text-xs transition-colors last:border-r-0 hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary", !total && activity.key === a.key && "bg-card shadow-[inset_0_-3px_0_var(--type-easy)]")}>
+        <span className="block font-medium">{a.kind}{activities.filter((other) => other.kind === a.kind).length > 1 ? ` ${activities.slice(0, index + 1).filter((other) => other.kind === a.kind).length}` : ""}</span>
+        <span className="num mt-0.5 block text-muted-foreground">{distance(a.distance_miles)} {unit}</span>
+      </button>)}
+      <button type="button" aria-pressed={total} onClick={() => setSelected("total")}
+        className={cn("min-h-14 min-w-24 flex-1 px-3 py-2 text-left text-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary", total && "bg-card shadow-[inset_0_-3px_0_var(--type-easy)]")}>
+        <span className="block font-medium">Day total</span><span className="num mt-0.5 block text-muted-foreground">{distance(runningMiles + walkingMiles)} {unit}</span>
+      </button>
+    </div>}
+
+    <div className="space-y-3" aria-live="polite">
+      <div className="flex items-center justify-between gap-2">
+        <span className="stat-label flex items-center gap-1.5"><CircleCheck className="size-4" style={{ color: "var(--type-easy)" }} aria-hidden />{total ? "All activities" : activity.kind === "Walk" ? "Walk recorded" : "Ran today"}</span>
+        {primary && workout?.off_plan && <Badge variant="secondary" className="text-[11px]">Off plan</Badge>}
       </div>
-      <div className="text-xl font-semibold leading-tight sm:text-2xl">{workout?.title ?? RUN_TITLE[day.type] ?? "Run"}</div>
-      <div className="num text-sm font-medium sm:text-base">{stats.join(" · ")}</div>
-      {workout && workout.reps.length > 1 && (
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-          <span className="text-muted-foreground">Reps</span>
-          <span className="num font-medium">{workout.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}<span className="text-muted-foreground">/{unit}</span></span>
-          {hr.length > 1 && <span className="num text-muted-foreground">HR {hr[0]}→{hr[hr.length - 1]}</span>}
-        </div>
-      )}
-      <AlsoToday runs={actual.other_runs} walks={actual.walks} />
+      {total ? <h3 className="text-xl font-semibold leading-tight">Today&apos;s total</h3> : <button type="button" disabled={activity.id == null || !onOpenActivity} onClick={() => activity.id != null && onOpenActivity?.(activity.id)}
+        className="group flex w-full items-start justify-between gap-3 text-left disabled:cursor-default">
+        <h3 className="text-xl font-semibold leading-tight group-enabled:group-hover:underline group-enabled:group-hover:underline-offset-4 sm:text-2xl">{activity.title}</h3>
+        {activity.id != null && onOpenActivity && <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />}
+      </button>}
+
+      <dl className="grid grid-cols-2 overflow-hidden rounded-md border min-[380px]:grid-cols-4">
+        {(total ? [
+          { label: `${unit} total`, value: distance(runningMiles + walkingMiles) },
+          { label: `${unit} running`, value: distance(runningMiles) },
+          { label: `${unit} walking`, value: distance(walkingMiles) },
+          { label: "Total time", value: totalSeconds > 0 ? secondsToTime(totalSeconds) : "—" },
+        ] : [
+          { label: unit === "mi" ? "Miles" : "Kilometers", value: distance(activity.distance_miles) },
+          { label: `Pace /${unit}`, value: activity.avg_pace ? paceInUnits(activity.avg_pace, units) : "—" },
+          { label: "Time", value: activity.duration_seconds ? secondsToTime(activity.duration_seconds) : "—" },
+          { label: "Avg BPM", value: activity.average_heartrate != null ? Math.round(activity.average_heartrate) : "—" },
+        ]).map((stat) => <div key={stat.label} className="min-w-0 border-r px-2.5 py-3 last:border-r-0 odd:bg-muted/20">
+          <dt className="stat-label text-[10px]">{stat.label}</dt><dd className="num mt-1 text-lg font-semibold leading-none">{stat.value}</dd>
+        </div>)}
+      </dl>
+
+      {primary && workout && workout.reps.length > 0 && <section aria-label="Work repetitions" className="overflow-hidden rounded-md border">
+        <div className="border-b bg-muted/30 px-3 py-2"><h4 className="stat-label">{workout.reps.length > 1 ? "Work reps" : "Work segment"}</h4></div>
+        <table className="w-full text-left text-xs">
+          <thead className="text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th scope="col" className="px-3 py-2 font-normal">Rep</th><th scope="col" className="py-2 font-normal">Time</th><th scope="col" className="py-2 font-normal">Pace /{unit}</th><th scope="col" className="px-3 py-2 text-right font-normal">Avg BPM</th></tr></thead>
+          <tbody>{workout.reps.map((rep, index) => <tr key={index} className="border-t odd:bg-muted/20">
+            <th scope="row" className="px-3 py-2.5 font-normal text-muted-foreground">{index + 1}</th>
+            <td className="num py-2.5">{secondsToTime(Math.round(rep.duration_s))}</td><td className="num py-2.5 font-medium">{paceInUnits(secondsToPace(Math.round(rep.pace_sec_per_mile)), units)}</td>
+            <td className="num px-3 py-2.5 text-right">{rep.average_hr != null ? Math.round(rep.average_hr) : "—"}</td>
+          </tr>)}</tbody>
+        </table>
+        {workout.recovery_seconds != null && <p className="border-t px-3 py-2 text-xs text-muted-foreground">Recovery between reps <span className="num ml-1 text-foreground">{secondsToTime(workout.recovery_seconds)}</span></p>}
+      </section>}
+      {total && <p className="text-xs leading-relaxed text-muted-foreground">Running and walking are shown separately. Only running mileage counts toward your training plan; no combined pace or heart rate is calculated.</p>}
+      {!total && activity.kind === "Walk" && <p className="text-xs leading-relaxed text-muted-foreground">Recorded separately. This walk is not counted in your running mileage.</p>}
+      {!total && activity.id != null && onOpenActivity && <button type="button" onClick={() => onOpenActivity(activity.id!)} className="flex min-h-9 items-center gap-1 text-xs font-medium underline underline-offset-4">View {activity.kind.toLowerCase()} details &amp; Garmin laps <ArrowUpRight className="size-3" aria-hidden /></button>}
     </div>
-  );
+  </div>;
 }
 
 /** Other activities that day, each with its own numbers: never blended into the run above. */
@@ -99,6 +143,7 @@ export function TodayCard({
   onFeedbackSaved,
   coach,
   recoveryCaution,
+  onOpenActivity,
 }: {
   today: PlanDayLite | null;
   planStale: boolean;
@@ -108,6 +153,7 @@ export function TodayCard({
   coach?: React.ReactNode;
   /** Recovery signals are down: suggest easing a hard day before it's run */
   recoveryCaution?: boolean;
+  onOpenActivity?: (id: number) => void;
 }) {
   const units = useUnits();
   const unit = unitLabel(units);
@@ -120,7 +166,8 @@ export function TodayCard({
   const offPlan = !!today?.actual?.workout?.off_plan;
 
   const details = today && open && (
-    <div className="mt-2 space-y-1.5 text-sm">
+    <div className="mt-3 space-y-3 rounded-md bg-muted/20 p-3 text-sm">
+      {done && cleanPurpose(today.purpose) && <div className="space-y-1"><h4 className="stat-label">Coach preview</h4><p className="leading-relaxed text-muted-foreground">{cleanPurpose(today.purpose)}</p></div>}
       {today.warmup && <p><span className="font-medium">Warmup:</span> {today.warmup}</p>}
       {today.description && <p className="leading-relaxed">{today.description}</p>}
       {today.cooldown && <p><span className="font-medium">Cooldown:</span> {today.cooldown}</p>}
@@ -128,8 +175,8 @@ export function TodayCard({
   );
 
   return (
-    <Card>
-      <CardContent className="space-y-3 pt-4">
+    <Card className={done ? "py-0" : undefined}>
+      <CardContent className={cn("space-y-4 pt-4", done && "pb-4")}>
         {planStale ? (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">Your last training block has ended.</p>
@@ -139,9 +186,10 @@ export function TodayCard({
           <p className="text-sm text-muted-foreground">No plan for today yet.</p>
         ) : done ? (
           <>
-            <ActualRun day={today} />
+            <ActualRun day={today} onOpenActivity={onOpenActivity} />
             {today.type !== "rest" && (
-              <div>
+              <div className="space-y-2 border-t pt-3">
+                <h3 className="stat-label">Training context · main run</h3>
                 <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
                   className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
                   <span className={cn(offPlan && "line-through decoration-muted-foreground/60")}>
@@ -161,7 +209,7 @@ export function TodayCard({
                 <div className="num text-base font-medium sm:text-lg">
                   {today.type === "rest" ? "Rest day" : `${formatDistance(today.distance_miles)} ${unit} planned`}
                 </div>
-                {cleanPurpose(today.purpose) && <p className="text-sm text-muted-foreground">{cleanPurpose(today.purpose)}</p>}
+
               </div>
               <div className="flex items-center gap-2">
                 {hardToday && <Badge variant="secondary" className="text-xs">Quality</Badge>}
@@ -179,21 +227,22 @@ export function TodayCard({
           </div>
         )}
         {feedback?.evaluation && (
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{feedback.evaluation.decision === "off_plan" ? "Logged: " : "Progression: "}</span>
+          <p className="rounded-md border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
+            <span className="mb-1 block stat-label text-foreground">{feedback.evaluation.decision === "off_plan" ? "Logged: " : "Progression: "}</span>
             {feedback.evaluation.reason}
           </p>
         )}
         {feedback?.changes?.map((c) => (
           <p key={`${c.change}-${c.date}`} className="text-xs text-muted-foreground">{c.reason}</p>
         ))}
+        {!done && today && cleanPurpose(today.purpose) && <section className="space-y-2 border-t pt-3" aria-label="Coach preview"><h3 className="stat-label">Coach preview</h3><p className="text-sm leading-relaxed text-muted-foreground">{cleanPurpose(today.purpose)}</p></section>}
         {hardToday && !done && recoveryCaution && (
           <p className="rounded-md bg-muted p-2 text-sm">
             Recovery signals are down and today is a hard day. Consider easy running or rest, and review a safe replacement or move in your plan.{" "}
             <Link href="/plan" className="font-medium underline underline-offset-2">Adjust in Plan →</Link>
           </p>
         )}
-        {coach && <div className="border-t pt-3">{coach}</div>}
+        {coach && <section className="space-y-3 border-t pt-4" aria-label="Coach analysis"><h3 className="stat-label">Coach analysis · main run</h3>{coach}</section>}
       </CardContent>
     </Card>
   );

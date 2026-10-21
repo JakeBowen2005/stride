@@ -40,12 +40,14 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 
 const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, presentation = "default" }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
   /** Draw its own card border (when not already inside a card) */
   bordered?: boolean;
   /** The "Coach" label; off when a surrounding header already names it */
   showLabel?: boolean;
+  /** A more spacious metadata layout, used only inside Today. */
+  presentation?: "default" | "today";
   /** The athlete's "what isn't working" from Plan options; a new nonce asks the coach again. */
   request?: { concern: string; nonce: number } | null;
 }) {
@@ -108,7 +110,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   const when = review ? new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")) : null;
   const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0);
   const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
-  return <section className={cn("space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
+  return <section className={cn(presentation === "today" ? "space-y-3 text-sm" : "space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
     <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
       {showLabel && <span className="stat-label">{activityId ? "Run review" : "Block review"}</span>}
       <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
@@ -117,7 +119,17 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       </Button>
     </div>
     <p role="status" className={cn("text-xs", review?.stale ? "rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-950" : "text-muted-foreground")}>{coachingState(review, autoJob?.status ?? null, busy)}</p>
-    {review && <p className="text-[11px] text-muted-foreground">{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{review.model ? ` · ${review.model}` : " · rules only"} · policy {review.policy_version ?? "legacy"}{review.context_as_of ? ` · evidence as of ${review.context_as_of}` : ""}</p>}
+    {review && (presentation === "today" ? <div className="space-y-1 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <p>{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
+      <details className="text-[11px]">
+        <summary className="cursor-pointer py-1 underline underline-offset-2">Review details</summary>
+        <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 break-words">
+          <dt>Model</dt><dd>{review.model ?? "Rules only"}</dd>
+          <dt>Policy</dt><dd>{review.policy_version ?? "legacy"}</dd>
+          {review.context_as_of && <><dt>Evidence as of</dt><dd>{review.context_as_of}</dd></>}
+        </dl>
+      </details>
+    </div> : <p className="text-[11px] text-muted-foreground">{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{review.model ? ` · ${review.model}` : " · rules only"} · policy {review.policy_version ?? "legacy"}{review.context_as_of ? ` · evidence as of ${review.context_as_of}` : ""}</p>)}
     {configured === false && !review && <p className="text-xs text-muted-foreground">AI coach isn&apos;t configured. Your training rules and feedback still work.</p>}
     {busy && request && <p role="status" className="text-xs text-muted-foreground">Coach is reviewing your request…</p>}
     {autoPending && <p role="status" className="text-xs text-muted-foreground">New run received · {autoJob?.status === "running" ? "coach is reviewing it" : "review queued"}.</p>}
