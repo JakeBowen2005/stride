@@ -41,7 +41,7 @@ export function WeekProgress({ days }: { days: PlanDayLite[] }) {
                 )}
                 style={d.actual ? { background: "var(--viz-series-1)" } : undefined}
               >
-                {d.type === "rest" ? "–" : Math.round(d.actual?.distance_miles ?? d.distance_miles)}
+                {d.type === "rest" ? "–" : Math.round(d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? d.distance_miles)}
               </span>
             </button>
           );

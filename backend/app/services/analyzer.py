@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.activity import Activity, PersonalRecord
+from app.models.activity import Activity, PersonalRecord, is_walk, runs_only
 from app.models.user import User
 
 
@@ -13,7 +13,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     """Analyze all of an athlete's running data to determine baseline fitness."""
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id)
+        .filter(Activity.user_id == user_id, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )
@@ -283,7 +283,7 @@ def detect_prs(user_id: int, db: Session) -> list[dict]:
     """
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id)
+        .filter(Activity.user_id == user_id, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )
@@ -407,13 +407,16 @@ def classify_activities(user_id: int, db: Session) -> dict:
         .all()
     )
 
-    counts = {"easy": 0, "workout": 0, "long_run": 0, "race": 0, "recovery": 0}
+    counts = {"easy": 0, "workout": 0, "long_run": 0, "race": 0, "recovery": 0, "walk": 0}
 
     for act in activities:
         dist_miles = act.distance_meters / 1609.34 if act.distance_meters else 0
 
-        # Explicit race / workout flags first (Garmin event type, legacy Strava workout_type)
-        if act.strava_workout_type == 1 or act.event_type == "race":
+        # Walks first: never part of the running plan, whatever the watch called them
+        if is_walk(act):
+            act.workout_type = "walk"
+        # Explicit race / workout flags (Garmin event type, legacy Strava workout_type)
+        elif act.strava_workout_type == 1 or act.event_type == "race":
             act.workout_type = "race"
         elif act.has_workout_description:
             act.workout_type = "workout"
@@ -449,7 +452,7 @@ def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[d
 
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id, Activity.date >= start)
+        .filter(Activity.user_id == user_id, Activity.date >= start, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )

@@ -1,5 +1,6 @@
 export type WorkoutType =
   | "easy"
+  | "walk"
   | "long_run"
   | "tempo"
   | "intervals"
@@ -73,6 +74,15 @@ export interface ExecutedWorkout {
   off_plan: boolean;
 }
 
+export interface ActivityLine {
+  id: number;
+  name: string | null;
+  distance_miles: number;
+  avg_pace: string | null;
+  duration_seconds: number;
+  average_heartrate: number | null;
+}
+
 export interface ActualRun {
   workout?: ExecutedWorkout | null;
   distance_miles: number;
@@ -83,6 +93,12 @@ export interface ActualRun {
   feel_rating: number | null;
   name: string | null;
   activity_count?: number;
+  /** All runs that day (a double counts; walks never do) */
+  total_distance_miles?: number;
+  /** Other runs that day, each with its own numbers (never blended into this run's stats) */
+  other_runs?: ActivityLine[];
+  /** Walks that day: shown, never part of the running plan */
+  walks?: ActivityLine[];
   activities?: {
     name: string;
     distance_miles: number;
@@ -126,6 +142,8 @@ export interface Workout {
   moved_to?: string | null;
   prescribed?: boolean;
   actual?: ActualRun | null;
+  /** Walks that day (shown even when no run was recorded; never part of the plan) */
+  walks?: ActivityLine[];
   comparison?: RunComparison | null;
   feedback?: DayFeedback | null;
   adjustment_note?: string | null;

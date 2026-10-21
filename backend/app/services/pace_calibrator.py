@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.plan import PlannedWorkout, Plan
 from app.core.workout_data import loads
 
@@ -41,7 +41,7 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
     cutoff = datetime.now() - timedelta(days=window)
     samples = {key: [] for key in ("interval_pace", "tempo_pace", "threshold_pace", "strides_pace")}
     seen = set()
-    activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff).order_by(Activity.date.desc()).all()
+    activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff, runs_only()).order_by(Activity.date.desc()).all()
     # Effort-based support is not evidence for threshold/VO2/flat sprint pace.
     # Use the latest APPROVED prescription per date, including historical blocks;
     # an unapproved/superseded draft must never suppress completed evidence.

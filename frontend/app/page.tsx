@@ -86,7 +86,7 @@ export default function TodayPage() {
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;
 
-  const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.distance_miles ?? 0), 0) : null;
+  const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0) : null;
   const weekPct = thisWeek && thisWeek.target_mileage > 0 && weekDone != null ? Math.round((weekDone / thisWeek.target_mileage) * 100) : null;
 
   return (
@@ -175,7 +175,7 @@ export default function TodayPage() {
                               <button type="button" className="flex min-h-8 max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
                                 onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>
                                 <span className="truncate">{run.session?.title ?? run.title}</span>
-                                {kind !== "easy" && <KindPill kind={kind} />}
+                                {run.type === "walk" ? <span className="text-xs font-normal text-muted-foreground">walk</span> : kind !== "easy" && <KindPill kind={kind} />}
                               </button>
                             </td>
                             <td className="r">{formatDistance(run.distance_miles)}</td>

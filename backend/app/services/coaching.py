@@ -10,7 +10,7 @@ from sqlalchemy import func
 
 from app.config import settings
 from app.core.workout_data import execution_from_activities, loads
-from app.models.activity import Activity
+from app.models.activity import Activity, runs_only
 from app.models.coaching import CoachingReview
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
@@ -136,7 +136,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         raise HTTPException(404, 'No run or plan to review')
     today = date.today()
     # Eight weeks establish quality/recovery context. Exclude future activities.
-    runs = db.query(Activity).filter(Activity.user_id == user_id,
+    runs = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(today-timedelta(days=56), datetime.min.time()),
         Activity.date < datetime.combine(today+timedelta(days=1), datetime.min.time())).order_by(Activity.date, Activity.id).all()
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all() if plan else []

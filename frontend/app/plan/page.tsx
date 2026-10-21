@@ -35,6 +35,7 @@ interface ApiPlanDay {
   moved_to?: string | null;
   adjustment_note?: string | null;
   prescription?: Workout["prescription"];
+  walks?: import("@/lib/types").ActivityLine[];
   actual?: {
     workout?: ExecutedWorkout | null;
     distance_miles: number;
@@ -45,6 +46,9 @@ interface ApiPlanDay {
     feel_rating: number | null;
     name: string | null;
     activity_count?: number;
+    total_distance_miles?: number;
+    other_runs?: import("@/lib/types").ActivityLine[];
+    walks?: import("@/lib/types").ActivityLine[];
     activities?: { name: string; distance_miles: number; avg_pace: string | null; duration_seconds: number }[];
   } | null;
   comparison?: {
@@ -132,6 +136,7 @@ function mapApiToWeek(apiWeek: ApiWeek): PlanWeekType {
       moved_to: d.moved_to,
       prescribed: d.prescribed !== false,
       actual: d.actual || null,
+      walks: d.walks ?? [],
       comparison: d.comparison || null,
       feedback: d.feedback || null,
       adjustment_note: d.adjustment_note ?? null,
@@ -322,7 +327,7 @@ export default function PlanPage() {
   const changes = allDays.filter((w) => w.adjustment_note);
   const weekTotals = plan.weeks.map((week) => ({
     planned: week.target_mileage,
-    actual: week.days.reduce((sum, d) => sum + (d.actual?.distance_miles ?? 0), 0),
+    actual: week.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0),
   }));
   const refresh = () => { setLoading(true); fetchPlan(); };
 
