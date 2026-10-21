@@ -2,6 +2,10 @@
 
 > Working name. Hyper-focused on running. Nothing else.
 
+## Current implementation (October 2026)
+
+The vision and later-phase stack sections below describe direction, not a claim that every component is deployed. Today this is a single-athlete FastAPI + Next.js application on SQLite, deployed together in one Render container. Plans and adaptations are deterministic; OpenAI is an optional bounded adviser, not an unrestricted plan generator. See `ARCHITECTURE.md`, `docs/coaching-trust-hardening.md` and `docs/deployment-recovery.md` for current behavior, policy limits and operational setup. Tests use disposable databases and disabled real providers. Never test against `backend/stride.db`.
+
 ## Vision
 
 Stride is an AI-powered training platform built exclusively for runners. It generates personalized, science-based training plans that adapt in real-time based on athlete performance data from Garmin. Unlike Garmin Coach, TrainingPeaks, or Runna, Stride focuses solely on running with deep specificity — real workouts that real competitive runners use, not generic cookie-cutter plans.

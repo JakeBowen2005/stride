@@ -29,6 +29,7 @@ interface PlanDayProps {
   pinned?: boolean;
   onPlanChanged?: () => void;
   readOnly?: boolean;
+  sessionAction?: "move";
 }
 
 function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units }) {
@@ -71,7 +72,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -341,7 +342,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
           )}
           {!readOnly && !hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
-            <SessionControls workout={workout} onChanged={onPlanChanged} />
+            <SessionControls workout={workout} onChanged={onPlanChanged} initialAction={sessionAction} />
           )}
           {/* Feedback form for completed days without feedback */}
           {showFeedbackForm && expanded && (

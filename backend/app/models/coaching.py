@@ -25,6 +25,7 @@ class CoachingReview(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     applied_candidate_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     athlete_concern: Mapped[str | None] = mapped_column(Text, nullable=True)  # "what isn't working", from Plan options
 
 

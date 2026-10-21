@@ -1,5 +1,7 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { useState } from "react";
 import { FeedbackForm } from "@/components/feedback-form";
 import Link from "next/link";
@@ -7,7 +9,7 @@ import { CircleCheck, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cleanPurpose, formatDistance, secondsToPace, secondsToTime } from "@/lib/format";
+import { cleanPurpose, secondsToPace, secondsToTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ActivityLine, ExecutedWorkout } from "@/lib/types";
 
@@ -21,6 +23,7 @@ export interface PlanDayLite {
   warmup?: string | null;
   cooldown?: string | null;
   actual?: {
+    activity_id?: number;
     distance_miles: number;
     avg_pace: string | null;
     duration_seconds?: number;
@@ -42,12 +45,15 @@ const RUN_TITLE: Record<string, string> = { easy: "Easy run", long_run: "Long ru
 
 /** What was actually run: the headline once today's run is recorded. */
 function ActualRun({ day }: { day: PlanDayLite }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const actual = day.actual!;
   const workout = actual.workout;
   const hr = workout?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const stats = [
-    `${formatDistance(actual.distance_miles)} mi`,
-    actual.avg_pace && `${actual.avg_pace}/mi`,
+    `${formatDistance(actual.distance_miles)} ${unit}`,
+    actual.avg_pace && `${paceInUnits(actual.avg_pace, units)}/${unit}`,
     actual.duration_seconds && secondsToTime(actual.duration_seconds),
     actual.average_heartrate && `${Math.round(actual.average_heartrate)} bpm`,
   ].filter(Boolean);
@@ -63,7 +69,7 @@ function ActualRun({ day }: { day: PlanDayLite }) {
       {workout && workout.reps.length > 1 && (
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
           <span className="text-muted-foreground">Reps</span>
-          <span className="num font-medium">{workout.reps.map((r) => secondsToPace(r.pace_sec_per_mile)).join(" · ")}<span className="text-muted-foreground">/mi</span></span>
+          <span className="num font-medium">{workout.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}<span className="text-muted-foreground">/{unit}</span></span>
           {hr.length > 1 && <span className="num text-muted-foreground">HR {hr[0]}→{hr[hr.length - 1]}</span>}
         </div>
       )}
@@ -74,8 +80,11 @@ function ActualRun({ day }: { day: PlanDayLite }) {
 
 /** Other activities that day, each with its own numbers: never blended into the run above. */
 export function AlsoToday({ runs = [], walks = [] }: { runs?: ActivityLine[]; walks?: ActivityLine[] }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
   if (!runs.length && !walks.length) return null;
-  const line = (a: ActivityLine) => [`${formatDistance(a.distance_miles)} mi`, a.avg_pace && `${a.avg_pace}/mi`, a.duration_seconds && secondsToTime(a.duration_seconds)].filter(Boolean).join(" · ");
+  const line = (a: ActivityLine) => [`${formatDistance(a.distance_miles)} ${unit}`, a.avg_pace && `${paceInUnits(a.avg_pace, units)}/${unit}`, a.duration_seconds && secondsToTime(a.duration_seconds)].filter(Boolean).join(" · ");
   return (
     <ul className="space-y-0.5 text-xs text-muted-foreground">
       {runs.map((a) => <li key={a.id}><span className="font-medium text-foreground">+ Run</span> {a.name ? `${a.name} · ` : ""}<span className="num">{line(a)}</span></li>)}
@@ -100,6 +109,9 @@ export function TodayCard({
   /** Recovery signals are down: suggest easing a hard day before it's run */
   recoveryCaution?: boolean;
 }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const hardToday = !!today && (today.type === "workout" || today.type === "long_run" || today.type === "race");
   const done = !!today?.actual;
   // Before the run, hard days open by default so the "why" is visible without a tap
@@ -133,7 +145,7 @@ export function TodayCard({
                 <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
                   className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
                   <span className={cn(offPlan && "line-through decoration-muted-foreground/60")}>
-                    Planned: {today.title} · {formatDistance(today.distance_miles)} mi
+                    Planned: {today.title} · {formatDistance(today.distance_miles)} {unit}
                   </span>
                   <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
                 </button>
@@ -147,7 +159,7 @@ export function TodayCard({
               <div className="min-w-0 space-y-1">
                 <div className="text-xl font-semibold leading-tight sm:text-2xl">{today.title}</div>
                 <div className="num text-base font-medium sm:text-lg">
-                  {today.type === "rest" ? "Rest day" : `${formatDistance(today.distance_miles)} mi planned`}
+                  {today.type === "rest" ? "Rest day" : `${formatDistance(today.distance_miles)} ${unit} planned`}
                 </div>
                 {cleanPurpose(today.purpose) && <p className="text-sm text-muted-foreground">{cleanPurpose(today.purpose)}</p>}
               </div>
@@ -177,7 +189,7 @@ export function TodayCard({
         ))}
         {hardToday && !done && recoveryCaution && (
           <p className="rounded-md bg-muted p-2 text-sm">
-            Recovery numbers are down and today is a hard day. Consider running easy and doing the session tomorrow.{" "}
+            Recovery signals are down and today is a hard day. Consider easy running or rest, and review a safe replacement or move in your plan.{" "}
             <Link href="/plan" className="font-medium underline underline-offset-2">Adjust in Plan →</Link>
           </p>
         )}

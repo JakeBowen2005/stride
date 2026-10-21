@@ -193,7 +193,8 @@ def test_rest_days_respected():
 def _block(completion: float, feels: list[int | None]) -> list[DayRecord]:
     plan_days = [("easy", 5), ("workout", 7), ("easy", 5), ("workout", 6), ("easy", 5), ("long_run", 10)] * 2
     return [DayRecord(date=f"2026-10-{i + 1:02d}", type=t, planned_miles=m, actual_miles=m * completion,
-                      feel=feels[i] if i < len(feels) else None) for i, (t, m) in enumerate(plan_days)]
+                      feel=feels[i] if i < len(feels) else None,
+                      execution_complete=completion >= .9 if t == "workout" else None) for i, (t, m) in enumerate(plan_days)]
 
 
 def test_successful_block_builds():

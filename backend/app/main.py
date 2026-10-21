@@ -19,6 +19,21 @@ import app.models  # noqa: F401 — registers all models so create_all picks the
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("stride")
 
+# Protect existing data BEFORE schema migration or stored-data reclassification,
+# including direct uvicorn/local startup. Tests point settings at disposable files.
+def _protect_existing_database():
+    import os
+    from app.services.backups import backup_once, database_path
+    if settings.database_url.startswith('sqlite:///'):
+        source = database_path(settings.database_url)
+        if source.exists():
+            from pathlib import Path
+            backup_once(source, Path(os.environ.get('STRIDE_BACKUP_DIR', str(source.parent / 'backups'))),
+                        keep=int(os.environ.get('STRIDE_BACKUP_KEEP', '28')), reason='before-app-migration')
+
+
+_protect_existing_database()
+
 # Create new tables, then add any new columns to existing ones
 Base.metadata.create_all(bind=engine)
 add_missing_columns()
@@ -31,7 +46,12 @@ def _refresh_lap_summaries():
     from app.services.garmin import refresh_lap_summaries
     try:
         with SessionLocal() as db:
-            walks = [a for a in db.query(Activity).filter(Activity.workout_type.is_distinct_from("walk")).all() if is_walk(a)]
+            rows = db.query(Activity).all()
+            # Repair old pace-only exclusions for explicit outdoor runs/races.
+            for activity in rows:
+                if activity.workout_type == "walk" and not is_walk(activity):
+                    activity.workout_type = "race" if activity.event_type == "race" else "easy"
+            walks = [a for a in rows if is_walk(a) and a.workout_type != "walk"]
             for activity in walks:
                 activity.workout_type = "walk"
             db.commit()
@@ -105,3 +125,17 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    """Bounded SQL readiness, distinct from process liveness (/health)."""
+    from fastapi import HTTPException
+    from sqlalchemy import text
+    from app.database import SessionLocal
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT id FROM users LIMIT 1")).first()
+    except Exception:
+        raise HTTPException(503, "Database unavailable") from None
+    return {"status": "ready"}

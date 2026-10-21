@@ -1,5 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { apiUrl, USER_ID } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { CoachingReview } from "@/components/coaching-review";
 
 import { SplitsTable } from "@/components/splits-table";
@@ -14,7 +19,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   workoutTypeLabel,
   isHardWorkout,
-  formatDistance,
   formatDateLong,
   secondsToTime,
 } from "@/lib/format";
@@ -24,6 +28,7 @@ interface RunDetailSheetProps {
   activity: Activity | null;
   open: boolean;
   onClose: () => void;
+  onClassificationChanged?: () => void;
 }
 
 function parseWorkoutDetails(desc: string): { type: string; details: string[] } | null {
@@ -98,7 +103,23 @@ function parseWorkoutDetails(desc: string): { type: string; details: string[] } 
   return { type, details };
 }
 
-export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps) {
+export function RunDetailSheet({ activity, open, onClose, onClassificationChanged }: RunDetailSheetProps) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const [savingKind, setSavingKind] = useState(false);
+  const [kindError, setKindError] = useState<string | null>(null);
+  async function correctKind(kind: "run" | "walk" | "auto") {
+    if (!activity) return;
+    setSavingKind(true); setKindError(null);
+    try {
+      const response = await fetch(apiUrl(`/analysis/${USER_ID}/activities/${activity.id}/kind`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save activity type");
+      onClassificationChanged?.();
+      onClose();
+    } catch (error) { setKindError(error instanceof Error ? error.message : "Could not save activity type"); }
+    finally { setSavingKind(false); }
+  }
   if (!activity) return null;
 
   const workoutAnalysis = activity.description
@@ -123,17 +144,29 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
         </SheetHeader>
 
         <div className="mt-6 space-y-4 px-4 pb-6">
+          {activity.classification && <section className="space-y-2 rounded-md border p-3 text-sm" aria-label="Activity classification">
+            <p className="font-medium">{activity.classification.kind === "walk" ? "Walk · excluded from running mileage" : "Run · included in running mileage"}{activity.classification.override ? " · corrected by you" : ""}</p>
+            <p className="text-xs text-muted-foreground">{activity.classification.reason}</p>
+            {activity.classification.needs_review && <p role="status" className="text-xs">Please confirm this activity. Slow pace alone cannot distinguish a walk from trail running or run/walk training.</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "run"} onClick={() => correctKind("run")}>Count as run</Button>
+              <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "walk"} onClick={() => correctKind("walk")}>Mark as walk</Button>
+              {activity.classification.override && <Button size="sm" variant="ghost" disabled={savingKind} onClick={() => correctKind("auto")}>Use automatic type</Button>}
+            </div>
+            <p className="text-xs text-muted-foreground">Corrections update running totals and future coaching evidence. They do not rewrite your approved plan.</p>
+            {kindError && <p role="alert" className="text-xs text-destructive">{kindError}</p>}
+          </section>}
           {/* Metrics grid */}
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <div className="font-mono text-lg font-semibold">
-                {formatDistance(activity.distance_miles)}
+                {distanceInUnits(activity.distance_miles, units)}
               </div>
-              <div className="text-xs text-muted-foreground">miles</div>
+              <div className="text-xs text-muted-foreground">{unit}</div>
             </div>
             <div>
               <div className="font-mono text-lg font-semibold">
-                {activity.avg_pace}
+                {paceInUnits(activity.avg_pace.replace(/\/mi$/, ""), units)}/{unit}
               </div>
               <div className="text-xs text-muted-foreground">avg pace</div>
             </div>
@@ -158,7 +191,7 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
               {activity.elevation_gain_ft && (
                 <div>
                   <div className="font-mono text-sm font-medium">
-                    {activity.elevation_gain_ft} ft
+                    {units === "km" ? `${Math.round(activity.elevation_gain_ft / 3.281)} m` : `${activity.elevation_gain_ft} ft`}
                   </div>
                   <div className="text-xs text-muted-foreground">elevation</div>
                 </div>
@@ -269,7 +302,7 @@ export function RunDetailSheet({ activity, open, onClose }: RunDetailSheetProps)
             </>
           )}
 
-          <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />
+          {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />}
 
           {activity.splits.length > 0 && (
             <>

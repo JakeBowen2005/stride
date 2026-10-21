@@ -36,3 +36,5 @@ Thumbs.db
 
 # Isolated synthetic demo data and copied frontend/build output
 .demo/
+
+backend/backups/

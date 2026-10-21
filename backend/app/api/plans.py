@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.workout_data import day_prescription, execution_from_activities, loads, render
+from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, render
 from app.core.plan_engine import calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
-    evaluate_workout,
+    evaluate_workout, gate_progression,
 )
 from app.database import get_db
 from app.models.activity import Activity, runs_only
@@ -219,11 +219,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "name": user.name,
         "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
+        "baseline_as_of": date.today().isoformat(), "baseline_definition": "four completed calendar weeks",
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
         "schedule_preferences": {'rest_days': rest_days, 'days_per_week': user.days_per_week or 6,
-                                 'long_run_day': user.long_run_day or 'saturday'},
+                                 'long_run_day': user.long_run_day or 'saturday', 'workout_format': user.workout_format or 'distance'},
     }
 
     # Persist atomically: the previous plan is only deactivated in the same commit
@@ -690,6 +691,7 @@ def submit_feedback(
 
     evidence_act = _work_evidence_activity(activities)
     if evidence_act:
+        pw.feedback_activity_id = evidence_act.id
         evidence_act.feel_rating = req.feel_rating
         evidence_act.feel_notes = req.feel_notes
 
@@ -744,6 +746,10 @@ def _work_evidence_activity(activities: list[Activity]) -> Activity | None:
         d = a.description or ""
         return bool(extract_splits_from_description(d)) or bool(_extract_paced_reps(d)[1])
 
+    from app.core.session_match import executed_session
+    detected = executed_session(activities, None)
+    if detected:
+        return next(a for a in activities if a.id == detected['activity_id'])
     with_work = [a for a in activities if has_work(a)]
     return max(with_work or activities, key=lambda a: a.distance_meters or 0)
 
@@ -793,25 +799,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 prescription=prescribed, execution=execution,
             )
             state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
-            if prescribed and ev.decision == "advance" and (
-                prescribed.get('progression_eligible') is False
-                or prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
-                or (state and prescribed.get('level', 1) < state.current_level)
-            ):
-                ev.decision = "hold"
-                ev.reason = "Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated."
-            if prescribed and prescribed.get('progression_eligible') is False:
-                ev.new_pace_sec = None
-                if ev.decision == 'recalibrate':
-                    ev.decision = 'hold'
-                    ev.reason = 'Controlled secondary dose completed; use the full primary prescription before changing pace.'
-            elif prescribed and prescribed.get('goal_pace'):
-                # Goal-pace reps move race-pace evidence (calibrator), not interval/threshold pace.
-                ev.new_pace_sec = None
-                if ev.decision == 'recalibrate':
-                    ev.decision = 'hold'
-                    ev.reason = ('Goal-pace reps ran faster than the step with control. Logged as race-pace evidence; '
-                                 'the next goal-pace step uses it. Interval pace is unchanged.')
+            ev = gate_progression(ev, prescribed, state.current_level if state else None)
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:
@@ -1006,9 +994,39 @@ def _assess_previous_block(prev_plan: Plan, db: Session):
     for pw in prev_plan.planned_workouts:
         if not (start <= pw.date < today):
             continue
-        actual = sum(a.distance_meters for a in by_date.get(pw.date, [])) / 1609.34
+        activities = by_date.get(pw.date, [])
+        actual = sum(a.distance_meters for a in activities) / 1609.34
+        prescribed = loads(pw.prescription)
+        execution = execution_from_activities(activities, prescribed) if prescribed else None
+        evaluation = json.loads(pw.evaluation) if pw.evaluation else {}
+        verified = None
+        substituted = False
+        if pw.type == "workout" and prescribed:
+            from app.core.session_match import executed_session, off_plan
+            detected = executed_session(activities, easy_pace_for(prescribed, prev_plan.user_id, db))
+            substituted = off_plan(prescribed, detected, substitution_confirmed=bool(pw.swapped))
+            if execution and execution.get("confidence") in {"high", "medium"}:
+                completion = execution.get("completion")
+                verified = completion >= 1 if completion is not None else None
+                # Stored verdicts may precede improved matching; recompute execution fairly.
+                if prescribed.get("category") in {"threshold", "intervals"}:
+                    evaluation = evaluate_workout(None, None, None, pw.type, None, pw.title,
+                                                  pw.feel_rating, prescribed, execution).to_dict()
+                    targets = execution.get("target_paces_sec_per_mile", [])
+                    if verified and (not targets or any(t is None for t in targets)):
+                        verified = None  # Full distance/duration without intensity evidence is not verified quality.
+                    elif verified:
+                        verified = evaluation.get("pace_diff_sec", 0) <= 5 and evaluation.get("fade_sec", 0) < 10
+        elif pw.type == "race" and activities:
+            verified = (any(a.event_type == "race" or a.workout_type == "race" for a in activities)
+                        and actual >= (pw.distance_miles or 0) * .9)
+        feels = [a.feel_rating for a in activities if a.feel_rating is not None]
+        if pw.feel_rating is not None:
+            feels.append(pw.feel_rating)
         records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
-                                 actual_miles=actual, feel=pw.feel_rating))
+                                 actual_miles=actual, feel=min(feels) if feels else None,
+                                 execution_complete=verified, demanding_long_run=demanding_long_run(pw), evaluation_decision=evaluation.get("decision"),
+                                 session_status=pw.session_status, substituted=substituted))
     return assess_block(records)
 
 
@@ -1103,6 +1121,7 @@ def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] |
     line = _activity_line(primary)
     others = [a for a in sorted(activities, key=lambda a: a.date) if a.id != primary.id]
     return {
+        "activity_id": primary.id,
         "distance_miles": line["distance_miles"],
         "avg_pace": line["avg_pace"],
         "duration_seconds": primary.duration_seconds or 0,

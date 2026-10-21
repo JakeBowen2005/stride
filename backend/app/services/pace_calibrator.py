@@ -42,6 +42,7 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
     samples = {key: [] for key in ("interval_pace", "tempo_pace", "threshold_pace", "strides_pace")}
     seen = set()
     activities = db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= cutoff, runs_only()).order_by(Activity.date.desc()).all()
+    eligible_ids = {a.id for a in activities}
     # Effort-based support is not evidence for threshold/VO2/flat sprint pace.
     # Use the latest APPROVED prescription per date, including historical blocks;
     # an unapproved/superseded draft must never suppress completed evidence.
@@ -61,7 +62,7 @@ def calibrate_paces(user_id: int, db: Session, weeks_back: int = 12) -> dict:
         if not execution or not prescribed:
             continue
         ids = execution.get("matched_activity_ids", [])
-        if not ids or seen.intersection(ids):
+        if not ids or not set(ids).issubset(eligible_ids) or seen.intersection(ids):
             continue
         # An incomplete/uncertain structured execution must not bypass its gates
         # through the same activity's generated prose or an older plan match.

@@ -15,7 +15,7 @@ app, and the plan for scaling to many athletes.
                             │ asyncio poll loop (every 10 min)
                             ▼
                          Garmin Connect (garminconnect library, token login)
-                         Claude Haiku (coach feedback)
+                         OpenAI bounded adviser (template fallback when unavailable)
 ```
 
 | Layer | Responsibility | Key files |
@@ -80,7 +80,7 @@ Detailed policy numbers, sources and remaining evidence/UI limitations: `docs/co
 
 - `user_id` is part of the URL and is `1` in the frontend (`lib/api.ts`). There's no per-user auth;
   the LAN password gate protects the whole app.
-- In-process locks and an asyncio loop instead of a job queue. This is correct for one uvicorn worker only.
+- A durable local review-job table plus in-process Garmin locks and asyncio pollers. One uvicorn worker and one service instance are required; this is not a distributed queue.
 - SQLite with a small additive migration helper (`database.add_missing_columns`)
   instead of Alembic.
 - `analyze_athlete` recomputes from full history on each call (fine at ~600 runs).
@@ -131,3 +131,7 @@ See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/bl
 ## Synced-run jobs, session choices and demos
 
 See [automatic reviews and adaptive choices](docs/adaptive-sessions-and-demos.md). Garmin import transactionally queues recent new/merged runs; a durable local leased worker reviews them after sync/wellness. Feedback remains human evidence. A shared personalized session menu powers athlete replacement and AI IDs, enforcing earned weekly capacity, phase, dose, budgets and actual completed training. Synthetic scenario branches preload isolated databases and frontend copies via start-demo.sh; they never connect to Garmin/OpenAI or the personal database.
+
+## Coaching trust and cloud operations
+
+See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity identity, reversible classification, partial-work evidence, execution-aware block assessment, stale-advice handling and the shared completed-calendar-week workload definition. [Deployment recovery](docs/deployment-recovery.md) covers pre-migration backups, verified restores, scheduled snapshots and optional encrypted offsite export. Settings exposes operational status, and health/readiness have separate endpoints. Existing cookies require sign-in again after the expiring-session upgrade.

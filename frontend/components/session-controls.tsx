@@ -1,5 +1,7 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, unitLabel } from "@/lib/units";
 import { useEffect, useState } from "react";
 import { apiUrl, USER_ID } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -80,8 +82,11 @@ function defaultReplacement(workout: Workout): Replacement {
   return kind === "intervals" ? "intervals" : kind === "long" ? "long_run" : "threshold";
 }
 
-export function SessionControls({ workout, onChanged }: { workout: Workout; onChanged?: () => void }) {
-  const [action, setAction] = useState<Action>("replace");
+export function SessionControls({ workout, onChanged, initialAction = "replace" }: { workout: Workout; onChanged?: () => void; initialAction?: Action }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const distance = (miles: number) => distanceInUnits(miles, units);
+  const [action, setAction] = useState<Action>(initialAction);
   const [target, setTarget] = useState("");
   const [replacement, setReplacement] = useState<Replacement>(() => defaultReplacement(workout));
   const [reason, setReason] = useState("");
@@ -134,7 +139,7 @@ export function SessionControls({ workout, onChanged }: { workout: Workout; onCh
         <span className="stat-label">Change this session</span>
         <Segmented label="Change type" value={action} options={ACTIONS} disabled={busy} onChange={(v) => { setAction(v); setOptionId(""); }} />
       </div>
-      {action === "move" && <Input aria-label="Move to date" type="date" value={target} onChange={(e) => setTarget(e.target.value)} />}
+      {action === "move" && <Input autoFocus={initialAction === "move"} aria-label="Move to date" type="date" min={workout.date} value={target} onChange={(e) => setTarget(e.target.value)} />}
       {action === "replace" && (
         <Segmented label="Replacement session" value={replacement} options={REPLACEMENTS} disabled={busy}
           onChange={(v) => { setReplacement(v); setOptionId(""); }} />
@@ -161,7 +166,7 @@ export function SessionControls({ workout, onChanged }: { workout: Workout; onCh
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[10.5px] text-muted-foreground">{String.fromCharCode(65 + index)}</span>
-                        <span id={`opt-${option.id}-t`} className="font-semibold">{option.title}, {option.distance_miles} mi</span>
+                        <span id={`opt-${option.id}-t`} className="font-semibold">{option.title}, {distance(option.distance_miles)} {unit}</span>
                         {shapeLabel(option.shape) && <KindPill kind={kind} label={shapeLabel(option.shape)!} />}
                         
                       </span>
@@ -171,7 +176,7 @@ export function SessionControls({ workout, onChanged }: { workout: Workout; onCh
                       {(option.warmup || option.cooldown) && <span className="mt-1 block font-mono text-[11px] text-muted-foreground">WU {option.warmup ?? "—"} · CD {option.cooldown ?? "—"}</span>}
                       {option.changes.filter((c) => c.date !== workout.date).map((c) => (
                         <span key={c.date} className="mt-1 block text-xs" style={{ color: "var(--warn)" }}>
-                          Budget: {c.date} easy run {c.before.distance_miles} → {c.replacement.distance_miles} mi
+                          Budget: {c.date} easy run {distance(c.before.distance_miles)} → {distance(c.replacement.distance_miles)} {unit}
                         </span>
                       ))}
                     </span>

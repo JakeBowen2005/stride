@@ -79,11 +79,11 @@ def test_a_double_is_listed_separately_and_counts_toward_the_week():
 def test_walk_detection_and_sync_tagging():
     slow = Activity(distance_meters=0.89 * MI, duration_seconds=1127, activity_subtype="treadmill_running")
     jog = Activity(distance_meters=3 * MI, duration_seconds=3 * 780, activity_subtype="running")  # 13:00/mi beginner
-    assert is_walk(slow) and not is_walk(jog)
+    assert not is_walk(slow) and not is_walk(jog)  # speed alone cannot identify a walk
     assert is_walk(Activity(distance_meters=MI, duration_seconds=600, activity_subtype="walking"))
     parsed = parse_activity({"activityId": 1, "activityType": {"typeKey": "treadmill_running"}, "distance": 0.89 * MI,
                              "movingDuration": 1127, "startTimeLocal": "2026-10-20 18:00:00"})
-    assert parsed["workout_type"] == "walk"
+    assert parsed["workout_type"] is None  # athlete can confirm a misrecorded treadmill walk
 
 
 def test_walks_stay_out_of_weekly_mileage_and_feedback():

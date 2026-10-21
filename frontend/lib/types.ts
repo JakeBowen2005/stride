@@ -84,6 +84,7 @@ export interface ActivityLine {
 }
 
 export interface ActualRun {
+  activity_id?: number;
   workout?: ExecutedWorkout | null;
   distance_miles: number;
   avg_pace: string | null;
@@ -171,6 +172,7 @@ export interface Plan {
 }
 
 export interface Activity {
+  classification?: { kind: "run" | "walk"; needs_review: boolean; reason: string; override: "run" | "walk" | null };
   id: number;
   /** What the laps show was run on a quality day */
   session?: { title: string; category: ExecutedWorkout["category"] } | null;
