@@ -1,4 +1,4 @@
-# AI call inventory (coach v5, Oct 21 2026)
+# AI call inventory (coach v6, Oct 21 2026)
 
 Stride makes one kind of AI call: an OpenAI structured-output review. Training decisions are made in
 code first. The model explains them and may only pick from server-built, pre-validated candidates.
@@ -54,6 +54,7 @@ Typical size from Jake's data: ~62k chars ≈ 15.5k input tokens per review.
 | `run` (run scope only) | Distance, time, pace, HR, elevation, training effect, ≤60 laps, detected session, athlete feedback | ~700-4,000 |
 | `run_vs_plan`, `matched_prescription`, `execution`, `deterministic_evaluation` | How the run compares with what was prescribed, and Stride's decision | 0-2,000 |
 | `progression`, `quality_evidence`, `current_paces`, `goal`, `athlete` | Ladder levels, verified quality history, calibrated paces, goal and profile | ~1,500 |
+| `prior_reviews` (new, v6) | The coach's own completed notes from the last 14 days, newest first: latest note per run or weekly review, max 6, excluding the subject under review. Read from `coaching_reviews`; added after the fingerprint so it never makes another review stale | ~3,000 |
 | `review_scope` (new) | `run` or `week`; tells the prompt which shape the summary takes | — |
 | `athlete_request` | The athlete's own concern, treated as data | ≤500 |
 
@@ -68,5 +69,11 @@ Typical size from Jake's data: ~62k chars ≈ 15.5k input tokens per review.
 
 - `plan` is the biggest section. `week_view` now covers the near term, so older completed sessions
   could be summarised instead of listed.
-- Reviews forget everything after one day. Persisting earlier summaries (a coach memory for the
-  last two weeks) is the next step.
+
+## Coach memory (v6)
+
+Ready reviews were already stored permanently in `coaching_reviews`; v6 reads them back as
+`prior_reviews` (`services/coaching.prior_reviews`, `MEMORY_DAYS = 14`, `MEMORY_LIMIT = 6`).
+The prompt tells the model to stay consistent with its earlier notes and follow up on what it
+flagged, but current data always wins, and notes are never evidence of training. Memory is excluded
+from the context fingerprint, so a new note never stales or blocks another review's suggestions.

@@ -22,7 +22,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v5'
+VERSION = 'openai-coach-v6'
 
 
 def research_context(goal):
@@ -150,6 +150,39 @@ def _week_view(rows, runs, today):
                         'key_sessions': [{'weekday': d['weekday'], 'title': d['planned']['title']} for d in quality],
                         'days': days}
     return weeks
+
+
+MEMORY_DAYS = 14
+MEMORY_LIMIT = 6
+
+
+def prior_reviews(user_id, db, activity_id=None, plan_id=None):
+    """The coach's own completed notes from the last two weeks, newest first.
+
+    Only the latest note per subject (a run, or a plan's weekly review) is kept, and the
+    subject under review is left out so a refresh does not just echo itself.
+    """
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=MEMORY_DAYS)
+    rows = db.query(CoachingReview).filter(CoachingReview.user_id == user_id, CoachingReview.status == 'ready',
+        CoachingReview.created_at >= since).order_by(CoachingReview.created_at.desc(), CoachingReview.id.desc()).all()
+    current = ('run', activity_id) if activity_id else ('week', plan_id)
+    seen, notes = {current}, []
+    for row in rows:
+        subject = ('run', row.activity_id) if row.activity_id else ('week', row.plan_id)
+        result = loads_json(row.result) or {}
+        if subject in seen or not result.get('summary'):
+            continue
+        seen.add(subject)
+        run = db.get(Activity, row.activity_id) if row.activity_id else None
+        notes.append({'written': row.created_at.date().isoformat(), 'scope': subject[0],
+                      'run_date': run.date.date().isoformat() if run else None,
+                      'summary': result['summary'], 'plan_fit': result.get('plan_fit'),
+                      'observations': result.get('observations', [])[:3],
+                      'athlete_concern': row.athlete_concern,
+                      'athlete_accepted_a_suggestion': bool(row.applied_candidate_id)})
+        if len(notes) == MEMORY_LIMIT:
+            break
+    return notes
 
 
 def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
@@ -290,6 +323,9 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
             'matching': 'matched_prescription null means there is no genuine prescription to judge this run against. Never infer missed strides or incomplete work from a synthetic historical day.'}
     sources = research_context(goal)
     fingerprint = hashlib.sha256(json.dumps({'context': context, 'research': sources, 'instructions': INSTRUCTIONS, 'key_version': hashlib.sha256(settings.openai_api_key.encode()).hexdigest()}, sort_keys=True, default=str).encode()).hexdigest()
+    # Memory is added after hashing: it is the coach's own earlier opinion, not training data,
+    # so a new note elsewhere must not mark this review (or its suggestions) stale.
+    context['prior_reviews'] = prior_reviews(user_id, db, activity_id, plan.id if plan and not activity_id else plan_id)
     return context, sources, fingerprint, plan
 
 
