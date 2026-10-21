@@ -8,7 +8,7 @@ import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import { PlanWeek } from "@/components/plan-week";
 import { PlanDay } from "@/components/plan-day";
 import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SYNC_EVENT } from "@/components/garmin-sync";
 import { formatDateShort, localDateStr } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -168,6 +169,14 @@ function pacingRows(g: Record<string, string>): [string, string, string][] {
   return rows.filter((r): r is [string, string, string] => !!r[2]);
 }
 
+// Desktop shows the selected day in a side sheet; phones keep it inline under the calendar.
+const DESKTOP_QUERY = "(min-width: 1024px)";
+function subscribeDesktop(onChange: () => void) {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
 export default function PlanPage() {
   const [currentPreferences, setCurrentPreferences] = useState<AthletePreferences | null>(null);
   const [moveRequest, setMoveRequest] = useState<{ date: string; nonce: number } | null>(null);
@@ -184,6 +193,8 @@ export default function PlanPage() {
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
   const [coachRequest, setCoachRequest] = useState<{ concern: string; nonce: number } | null>(null);
   const [coachOpen, setCoachOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const isDesktop = useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP_QUERY).matches, () => false);
 
   useEffect(() => {
     getJson<AthletePreferences>(`/users/${USER_ID}`).then((u) => { if (u) { setCurrentPreferences(u); setUnits(u.units === "km" ? "km" : "miles"); } }).catch((e) => setError(e instanceof Error ? e.message : "Could not load display preferences."));
@@ -339,6 +350,24 @@ export default function PlanPage() {
   const refresh = () => { setMoveRequest(null); setLoading(true); fetchPlan(); };
   const movable = (w: Workout) => w.date >= today && !w.actual && w.prescribed !== false && !w.skipped && !w.moved_to && !["race", "rest"].includes(w.type);
   const moveTarget = selected && movable(selected) ? selected : allDays.find(movable);
+  const openDay = (date: string) => {
+    setSelectedDate(date);
+    if (isDesktop) setInspectorOpen(true);
+    else requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ block: "start" }));
+  };
+  const inspector = selected && (
+    <PlanDay
+      key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${moveRequest?.nonce ?? ""}`}
+      workout={selected}
+      units={units}
+      sessionAction={moveRequest?.date === selected.date ? "move" : undefined}
+      readOnly={!!plan.preview}
+      isToday={selected.date === today}
+      expanded
+      pinned
+      onPlanChanged={refresh}
+    />
+  );
   const preferenceMismatch = !!currentPreferences && scheduleChanged((activePlan ?? plan).athlete.schedule_preferences, currentPreferences);
 
   return (
@@ -369,7 +398,7 @@ export default function PlanPage() {
               setCoachOpen(true);
               requestAnimationFrame(() => document.getElementById("plan-coach")?.scrollIntoView({ behavior: "smooth", block: "start" }));
             }}
-            onMoveSession={moveTarget ? () => { setSelectedDate(moveTarget.date); setMoveRequest({ date: moveTarget.date, nonce: Date.now() }); requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" })); } : undefined}
+            onMoveSession={moveTarget ? () => { setMoveRequest({ date: moveTarget.date, nonce: Date.now() }); openDay(moveTarget.date); } : undefined}
             onLighter={() => generatePlan(true)}
             onRevise={() => generatePlan()}
             onNextBlock={() => generatePlan(false, "next")}
@@ -399,77 +428,70 @@ export default function PlanPage() {
           sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} tone="var(--type-easy)" />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="contents lg:block lg:min-w-0 lg:space-y-3">
-          <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-0">
-            <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => {
-              setSelectedDate(w.date);
-              if (!window.matchMedia("(min-width: 1024px)").matches) requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ block: "start" }));
-            }} />
-          </Panel>
-          <div id="plan-coach" className="panel order-3 min-w-0 scroll-mt-16 lg:order-none">
-            <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
-              className="panel-head w-full text-left hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
-              <span>Coach perspective · this week &amp; next</span>
-              <span aria-hidden="true" className="meta inline-flex items-center gap-1">
-                {coachOpen ? "Hide" : "Show"}<span className={cn("inline-block transition-transform", coachOpen && "rotate-180")}>▾</span>
-              </span>
-            </button>
-            {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
-            <div id="plan-coach-body" hidden={!coachOpen} className="px-3 py-2.5">
-              <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
-            </div>
-          </div>
-          {/* Reference panels sit under the coach so both columns end near the same height. */}
-          <div className="order-4 grid min-w-0 items-stretch gap-3 sm:grid-cols-2 lg:order-none [&>section]:h-full">
-            {changes.length === 0 && !plan.assessment?.reasons?.length ? (
-              <Panel label="Change log" meta="No changes yet" bodyClassName="hidden">{null}</Panel>
-            ) : <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined} bodyClassName="px-3 py-2">
-              <ul className="space-y-1.5 text-sm">
-                {changes.map((w) => (
-                  <li key={w.date}>
-                    <button type="button" className="text-left hover:underline" onClick={() => setSelectedDate(w.date)}>
-                      <span className="font-mono text-xs font-semibold">{formatDateShort(w.date)}</span>{" "}
-                      <span className="text-muted-foreground">{w.adjustment_note}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
-            </Panel>}
-            <Panel label="Pacing guide" meta={`per ${unit}`} bodyClassName="px-3 py-2">
-              <div className="space-y-0.5 text-[13px]">
-                {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
-                  <div key={label} className="flex items-baseline justify-between gap-3">
-                    <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
-                    <span className="num shrink-0">{paceInUnits(value, units)}/{unit}</span>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-          </div>
-        </div>
+      <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-0">
+        <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />
+      </Panel>
 
-        {/* On desktop the inspector stays in view and scrolls on its own, so an open Replace menu
-            never stretches the page and leaves the calendar column empty. */}
-        <div id="plan-inspector" className="order-2 min-w-0 scroll-mt-16 space-y-3 lg:sticky lg:top-3 lg:order-none lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:overscroll-contain">
-          {selected && (
-            <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">
-              <PlanDay
-                key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${moveRequest?.nonce ?? ""}`}
-                workout={selected}
-                units={units}
-                sessionAction={moveRequest?.date === selected.date ? "move" : undefined}
-                readOnly={!!plan.preview}
-                isToday={selected.date === today}
-                expanded
-                pinned
-                onPlanChanged={refresh}
-              />
-            </Panel>
-          )}
+      {!isDesktop && selected && (
+        <div id="plan-inspector" className="scroll-mt-16">
+          <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">{inspector}</Panel>
+        </div>
+      )}
+
+      <div id="plan-coach" className="panel min-w-0 scroll-mt-16">
+        <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
+          className="panel-head w-full text-left hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
+          <span>Coach perspective · this week &amp; next</span>
+          <span aria-hidden="true" className="meta inline-flex items-center gap-1">
+            {coachOpen ? "Hide" : "Show"}<span className={cn("inline-block transition-transform", coachOpen && "rotate-180")}>▾</span>
+          </span>
+        </button>
+        {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
+        <div id="plan-coach-body" hidden={!coachOpen} className="px-3 py-2.5">
+          <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
         </div>
       </div>
+      {/* Reference panels under the coach. */}
+      <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
+        {changes.length === 0 && !plan.assessment?.reasons?.length ? (
+          <Panel label="Change log" meta="No changes yet" bodyClassName="hidden">{null}</Panel>
+        ) : <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined} bodyClassName="px-3 py-2">
+          <ul className="space-y-1.5 text-sm">
+            {changes.map((w) => (
+              <li key={w.date}>
+                <button type="button" className="text-left hover:underline" onClick={() => openDay(w.date)}>
+                  <span className="font-mono text-xs font-semibold">{formatDateShort(w.date)}</span>{" "}
+                  <span className="text-muted-foreground">{w.adjustment_note}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
+        </Panel>}
+        <Panel label="Pacing guide" meta={`per ${unit}`} bodyClassName="px-3 py-2">
+          <div className="space-y-0.5 text-[13px]">
+            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+              <div key={label} className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
+                <span className="num shrink-0">{paceInUnits(value, units)}/{unit}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <Sheet open={isDesktop && inspectorOpen && !!selected} onOpenChange={setInspectorOpen}>
+        <SheetContent className="overflow-y-auto data-[side=right]:sm:max-w-lg">
+          {selected && (
+            <>
+              <SheetHeader className="pb-0">
+                <SheetTitle>Selected · {formatDateShort(selected.date)}</SheetTitle>
+              </SheetHeader>
+              <div className="px-4 pb-6">{inspector}</div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
