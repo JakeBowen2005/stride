@@ -15,7 +15,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   workoutTypeLabel,
   isHardWorkout,
@@ -128,7 +127,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent className="overflow-y-auto sm:max-w-md">
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl data-[side=right]:lg:max-w-4xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {activity.title}
@@ -143,52 +142,50 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
           </p>
         </SheetHeader>
 
-        <div className="mt-6 space-y-4 px-4 pb-6">
-          {activity.classification && <section className="space-y-2 rounded-md border p-3 text-sm" aria-label="Activity classification">
-            <p className="font-medium">{activity.classification.kind === "walk" ? "Walk · excluded from running mileage" : "Run · included in running mileage"}{activity.classification.override ? " · corrected by you" : ""}</p>
-            <p className="text-xs text-muted-foreground">{activity.classification.reason}</p>
-            {activity.classification.needs_review && <p role="status" className="text-xs">Please confirm this activity. Slow pace alone cannot distinguish a walk from trail running or run/walk training.</p>}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "run"} onClick={() => correctKind("run")}>Count as run</Button>
-              <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "walk"} onClick={() => correctKind("walk")}>Mark as walk</Button>
-              {activity.classification.override && <Button size="sm" variant="ghost" disabled={savingKind} onClick={() => correctKind("auto")}>Use automatic type</Button>}
-            </div>
-            <p className="text-xs text-muted-foreground">Corrections update running totals and future coaching evidence. They do not rewrite your approved plan.</p>
-            {kindError && <p role="alert" className="text-xs text-destructive">{kindError}</p>}
-          </section>}
-          {/* Metrics grid */}
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="font-mono text-lg font-semibold">
-                {distanceInUnits(activity.distance_miles, units)}
+        {/* Wide screens: numbers and laps on the left, notes and coaching on the right.
+            Phones keep a single column in the same reading order. */}
+        <div className="grid gap-x-8 gap-y-4 px-4 pb-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start">
+          <div className="min-w-0 space-y-4 lg:col-start-1">
+            {activity.classification && <section className="space-y-2 rounded-md border p-3 text-sm" aria-label="Activity classification">
+              <p className="font-medium">{activity.classification.kind === "walk" ? "Walk · excluded from running mileage" : "Run · included in running mileage"}{activity.classification.override ? " · corrected by you" : ""}</p>
+              <p className="text-xs text-muted-foreground">{activity.classification.reason}</p>
+              {activity.classification.needs_review && <p role="status" className="text-xs">Please confirm this activity. Slow pace alone cannot distinguish a walk from trail running or run/walk training.</p>}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "run"} onClick={() => correctKind("run")}>Count as run</Button>
+                <Button size="sm" variant="outline" disabled={savingKind || activity.classification.override === "walk"} onClick={() => correctKind("walk")}>Mark as walk</Button>
+                {activity.classification.override && <Button size="sm" variant="ghost" disabled={savingKind} onClick={() => correctKind("auto")}>Use automatic type</Button>}
               </div>
-              <div className="text-xs text-muted-foreground">{unit}</div>
-            </div>
-            <div>
-              <div className="font-mono text-lg font-semibold">
-                {paceInUnits(activity.avg_pace.replace(/\/mi$/, ""), units)}/{unit}
-              </div>
-              <div className="text-xs text-muted-foreground">avg pace</div>
-            </div>
-            <div>
-              <div className="font-mono text-lg font-semibold">
-                {secondsToTime(activity.duration_seconds)}
-              </div>
-              <div className="text-xs text-muted-foreground">time</div>
-            </div>
-          </div>
+              <p className="text-xs text-muted-foreground">Corrections update running totals and future coaching evidence. They do not rewrite your approved plan.</p>
+              {kindError && <p role="alert" className="text-xs text-destructive">{kindError}</p>}
+            </section>}
 
-          {(activity.avg_heart_rate || activity.elevation_gain_ft || activity.cadence) && (
-            <div className="grid grid-cols-3 gap-4 text-center">
-              {activity.avg_heart_rate && (
+            {/* Metrics grid */}
+            <div className="grid grid-cols-3 gap-x-4 gap-y-3 rounded-md border px-2 py-3 text-center">
+              <div>
+                <div className="font-mono text-lg font-semibold">
+                  {distanceInUnits(activity.distance_miles, units)}
+                </div>
+                <div className="text-xs text-muted-foreground">{unit}</div>
+              </div>
+              <div>
+                <div className="font-mono text-lg font-semibold">
+                  {paceInUnits(activity.avg_pace.replace(/\/mi$/, ""), units)}/{unit}
+                </div>
+                <div className="text-xs text-muted-foreground">avg pace</div>
+              </div>
+              <div>
+                <div className="font-mono text-lg font-semibold">
+                  {secondsToTime(activity.duration_seconds)}
+                </div>
+                <div className="text-xs text-muted-foreground">time</div>
+              </div>
+              {activity.avg_heart_rate != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">
-                    {activity.avg_heart_rate}
-                  </div>
+                  <div className="font-mono text-sm font-medium">{activity.avg_heart_rate}</div>
                   <div className="text-xs text-muted-foreground">avg HR</div>
                 </div>
               )}
-              {activity.elevation_gain_ft && (
+              {activity.elevation_gain_ft != null && (
                 <div>
                   <div className="font-mono text-sm font-medium">
                     {units === "km" ? `${Math.round(activity.elevation_gain_ft / 3.281)} m` : `${activity.elevation_gain_ft} ft`}
@@ -196,20 +193,13 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
                   <div className="text-xs text-muted-foreground">elevation</div>
                 </div>
               )}
-              {activity.cadence && (
+              {activity.cadence != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">
-                    {activity.cadence}
-                  </div>
+                  <div className="font-mono text-sm font-medium">{activity.cadence}</div>
                   <div className="text-xs text-muted-foreground">cadence</div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Garmin metrics */}
-          {(activity.aerobic_training_effect || activity.vo2max || activity.avg_ground_contact_time) && (
-            <div className="grid grid-cols-3 gap-4 text-center">
+              {/* Garmin metrics */}
               {activity.aerobic_training_effect != null && (
                 <div>
                   <div className="font-mono text-sm font-medium">
@@ -231,25 +221,21 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
                 </div>
               )}
             </div>
-          )}
+          </div>
 
-          {/* Notes / Garmin lap summary */}
-          {activity.description && (
-            <>
-              <Separator />
+          <div className="min-w-0 space-y-4 border-t pt-4 empty:hidden lg:col-start-2 lg:border-t-0 lg:pt-0 lg:row-span-2 lg:row-start-1 [&>*+*]:border-t [&>*+*]:pt-4">
+            {/* Notes / Garmin lap summary */}
+            {activity.description && (
               <div>
                 <h4 className="text-sm font-medium">Notes</h4>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
                   {activity.description}
                 </p>
               </div>
-            </>
-          )}
+            )}
 
-          {/* Workout Analysis */}
-          {workoutAnalysis && (
-            <>
-              <Separator />
+            {/* Workout Analysis */}
+            {workoutAnalysis && (
               <div>
                 <h4 className="text-sm font-medium flex items-center gap-2">
                   Workout Analysis
@@ -268,12 +254,9 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
                   ))}
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {activity.feel_rating && (
-            <>
-              <Separator />
+            {activity.feel_rating && (
               <div>
                 <h4 className="text-sm font-medium">How it felt</h4>
                 <div className="mt-1 flex items-center gap-2">
@@ -287,28 +270,24 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
                   )}
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {activity.coach_analysis && (
-            <>
-              <Separator />
+            {activity.coach_analysis && (
               <div>
                 <h4 className="text-sm font-medium">Coach Analysis</h4>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                   {activity.coach_analysis}
                 </p>
               </div>
-            </>
-          )}
+            )}
 
-          {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />}
+            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />}
+          </div>
 
           {activity.splits.length > 0 && (
-            <>
-              <Separator />
+            <div className="min-w-0 border-t pt-4 lg:col-start-1 lg:border-t-0 lg:pt-0">
               <SplitsTable splits={activity.splits} />
-            </>
+            </div>
           )}
         </div>
       </SheetContent>
