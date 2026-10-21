@@ -6,6 +6,7 @@ No production credentials, databases or remote providers are used.
 """
 import argparse
 import http.cookiejar
+import http.client
 import json
 from pathlib import Path
 import subprocess
@@ -15,6 +16,21 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from uuid import uuid4
+
+
+def wait_for_readiness(root, attempts=90):
+    """Published Docker ports may reset connections before Node starts listening."""
+    for _ in range(attempts):
+        try:
+            with urllib.request.urlopen(root + "/healthz", timeout=3) as response:
+                if response.status == 200:
+                    return
+        except (OSError, http.client.HTTPException):
+            # URLError/HTTPError, timeouts, resets and incomplete startup responses
+            # are retryable only within this bounded startup window.
+            pass
+        time.sleep(1)
+    raise RuntimeError("Container never became ready")
 
 
 def main():
@@ -38,14 +54,8 @@ def main():
                    "-e", "RENDER=true", "-e", f"STRIDE_PASSWORD={password}", args.image)
             port = docker("port", name, "10000/tcp").strip().split(":")[-1]
             root = f"http://127.0.0.1:{port}"
-            for _ in range(90):
-                try:
-                    with urllib.request.urlopen(root + "/healthz", timeout=3) as response:
-                        if response.status == 200:
-                            return root
-                except (urllib.error.URLError, TimeoutError):
-                    time.sleep(1)
-            raise RuntimeError("Container never became ready")
+            wait_for_readiness(root)
+            return root
 
         def inspect(root):
             try:
