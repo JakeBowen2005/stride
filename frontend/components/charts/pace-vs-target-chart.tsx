@@ -1,5 +1,8 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { paceValueInUnits, unitLabel } from "@/lib/units";
+
 import {
   LineChart,
   Line,
@@ -14,8 +17,12 @@ import { secondsToPace } from "@/lib/format";
 import type { PaceVsTarget } from "@/lib/types";
 
 export function PaceVsTargetChart({ data }: { data: PaceVsTarget[] }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
   const formatted = data.map((d) => ({
     ...d,
+    target_pace_seconds: paceValueInUnits(d.target_pace_seconds, units),
+    actual_pace_seconds: paceValueInUnits(d.actual_pace_seconds, units),
     label: new Date(d.date).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -47,7 +54,7 @@ export function PaceVsTargetChart({ data }: { data: PaceVsTarget[] }) {
             borderRadius: "var(--radius-md)",
             fontSize: 12,
           }}
-          formatter={(value) => secondsToPace(Number(value))}
+          formatter={(value) => `${secondsToPace(Number(value))}/${unit}`}
         />
         <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
         <Line

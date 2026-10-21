@@ -1,5 +1,7 @@
 "use client";
 
+import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
+import Link from "next/link";
 import { apiUrl, USER_ID } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { ProfilePreferences } from "@/components/profile-preferences";
@@ -17,7 +19,10 @@ interface PR {
   date: string | null;
 }
 
+interface Workload { acute_week_start?: string; acute_week_end?: string; acute_miles?: number; chronic_week_starts?: string[]; baseline_miles?: number; ratio?: number | null; label?: string; as_of?: string }
+interface Operations { queue: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; backup: { configured: boolean; offsite_configured: boolean; last_success_at: string | null; restore_verified: boolean; offsite_last_success_at?: string | null; offsite_error_type?: string | null; last_error_type: string | null }; app: { policy_version: string } }
 interface AnalysisData {
+  workload?: Workload;
   overview: {
     total_runs: number;
     total_miles: number;
@@ -43,7 +48,7 @@ interface AnalysisData {
     longest_run_date: string;
     long_runs_10plus: number;
   };
-  injury_risk: {
+  injury_risk: Workload & {
     acute_chronic_ratio: number;
     assessment: string;
   };
@@ -74,6 +79,8 @@ interface GoalData {
 
 
 export default function SettingsPage() {
+  const [approvedSchedule, setApprovedSchedule] = useState<SchedulePreferences | undefined>(undefined);
+  const [operations, setOperations] = useState<Operations | null>(null);
   const [prs, setPrs] = useState<PR[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [goal, setGoal] = useState<GoalData | null>(null);
@@ -85,14 +92,18 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [prRes, analysisRes, goalRes, userRes] = await Promise.all([
+        const [prRes, analysisRes, goalRes, userRes, planRes, operationsRes] = await Promise.all([
           fetch(apiUrl(`/analysis/${USER_ID}/prs`)),
           fetch(apiUrl(`/analysis/${USER_ID}/baseline`)),
           fetch(apiUrl(`/plans/${USER_ID}/goal`)),
           fetch(apiUrl(`/users/${USER_ID}`)),
+          fetch(apiUrl(`/plans/${USER_ID}/current`)).catch(() => null),
+          fetch(apiUrl(`/analysis/${USER_ID}/operations`)).catch(() => null),
         ]);
 
         if (![prRes, analysisRes, goalRes, userRes].every((r) => r.ok)) throw new Error("Could not load settings. Reload to retry.");
+        if (planRes?.ok) setApprovedSchedule((await planRes.json()).athlete?.schedule_preferences);
+        if (operationsRes?.ok) setOperations(await operationsRes.json());
         if (prRes.ok) setPrs(await prRes.json());
         if (userRes.ok) setUser(await userRes.json());
         if (analysisRes.ok) setAnalysis(await analysisRes.json());
@@ -123,9 +134,11 @@ export default function SettingsPage() {
 
   const unit = user?.units === 'km' ? 'km' : 'mi';
   const distance = (miles: number) => (miles * (unit === 'km' ? 1.60934 : 1)).toFixed(1);
+  const workload = analysis?.workload ?? analysis?.injury_risk;
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button variant="outline" size="sm">Sign out</Button></form></div>
+      {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="rounded-md border p-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
 
       {/* Profile */}
       <Card>
@@ -140,7 +153,7 @@ export default function SettingsPage() {
           <h2 className="text-sm font-medium">Training</h2>
           <div className="space-y-2 text-sm">
             <Row
-              label="Current mileage (4wk avg)"
+              label="Latest baseline (four completed calendar weeks)"
               value={analysis ? `${distance(analysis.current_fitness.weekly_mileage_4w_avg)} ${unit}/week` : "—"}
             />
             <Row
@@ -265,14 +278,14 @@ export default function SettingsPage() {
       {analysis && (
         <Card>
           <CardContent className="space-y-4 pt-4">
-            <h2 className="text-sm font-medium">Injury Risk</h2>
+            <h2 className="text-sm font-medium">Training load · Stride policy heuristic</h2>
             <div className="space-y-2 text-sm">
               <Row
-                label="Stride mileage ratio (last week vs 4-week avg)"
-                value={String(analysis.injury_risk.acute_chronic_ratio)}
+                label="Last completed week / four completed weeks"
+                value={workload?.ratio == null ? "Not enough baseline evidence" : String(workload.ratio)}
               />
               <p className="text-xs text-muted-foreground">
-                Based on miles. The &quot;Garmin Load&quot; tile on Today uses Garmin&apos;s training-load ratio, which weighs intensity, so the two can differ.
+                {workload?.acute_week_start && <>Week {workload.acute_week_start}–{workload.acute_week_end}: {distance(workload.acute_miles ?? 0)} {unit}; four-week baseline (including that week): {distance(workload.baseline_miles ?? 0)} {unit}/week. As of {workload.as_of}. </>}This compares running distance, not injury probability. Garmin Load uses a different intensity-weighted measure. A low ratio does not establish that increasing training is safe.
               </p>
               <div className="rounded-md bg-secondary/50 p-2 text-sm text-muted-foreground">
                 {analysis.injury_risk.assessment}
@@ -282,6 +295,15 @@ export default function SettingsPage() {
         </Card>
       )}
 
+      <Card><CardContent className="space-y-3 pt-4"><h2 className="text-sm font-medium">Operations</h2>
+        {!operations ? <p className="text-sm text-muted-foreground">Operational status is unavailable. Backup and review status could not be verified.</p> : <>
+          <p className="text-sm">Coaching jobs: {operations.queue.queued} queued · {operations.queue.running} running · {operations.queue.failed} failed{operations.queue.oldest_queued_at ? ` · oldest queued ${operations.queue.oldest_queued_at}` : ""}</p>
+          <p className="text-sm">Local backups: {operations.backup.configured ? "configured" : "not configured"}. Offsite export: {operations.backup.offsite_configured ? "configured" : "not configured"}.</p>
+          <p className="text-xs text-muted-foreground">Last successful backup: {operations.backup.last_success_at ?? "none reported"}. Restore verification: {operations.backup.restore_verified ? "passed for the last successful backup" : "not verified"}.{operations.backup.last_error_type ? ` Last backup error: ${operations.backup.last_error_type}.` : ""}</p>
+          <p className="text-xs text-muted-foreground">Last successful offsite export: {operations.backup.offsite_last_success_at ?? "none verified"}.{operations.backup.offsite_error_type ? ` Offsite export error: ${operations.backup.offsite_error_type}.` : ""}</p>
+          <p className="text-xs text-muted-foreground">Configuration alone does not prove recovery. Keep a verified offsite backup. Coaching policy {operations.app.policy_version}.</p>
+        </>}
+      </CardContent></Card>
       {/* Connections */}
       <GarminConnectionCard />
 

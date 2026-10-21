@@ -469,3 +469,26 @@ def determine_starting_level(
         return 1
 
     return 1
+
+
+def gate_progression(evaluation, prescribed, current_level=None):
+    """Same authorization for applied feedback and provisional model explanations.
+
+    Execution success is not permission to advance a shortened, secondary or
+    taper session. This helper never persists state or changes the prescription.
+    """
+    if not prescribed:
+        return evaluation
+    adapted = (prescribed.get('progression_eligible') is False
+               or prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
+               or (current_level is not None and prescribed.get('level', 1) is not None and prescribed.get('level', 1) < current_level))
+    if adapted and evaluation.decision == 'advance':
+        evaluation.decision = 'hold'
+        evaluation.reason = 'Completed the phase- or budget-adapted session well. Holding the program level until its full prescription is demonstrated.'
+    if adapted or prescribed.get('goal_pace'):
+        evaluation.new_pace_sec = None
+        if evaluation.decision == 'recalibrate':
+            evaluation.decision = 'hold'
+            evaluation.reason = ('Goal-pace evidence is separate from category pace; hold the training pace.' if prescribed.get('goal_pace') else
+                                 'Controlled adapted dose completed; use the full primary prescription before changing pace.')
+    return evaluation

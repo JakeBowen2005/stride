@@ -9,6 +9,7 @@ import { StructureBar } from "@/components/cockpit/structure-bar";
 import { sessionKind } from "@/lib/workout-style";
 import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
+import { AlsoToday } from "@/components/home/today-card";
 import {
   formatDate,
   secondsToTime,
@@ -28,6 +29,7 @@ interface PlanDayProps {
   pinned?: boolean;
   onPlanChanged?: () => void;
   readOnly?: boolean;
+  sessionAction?: "move";
 }
 
 function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units }) {
@@ -70,7 +72,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -224,19 +226,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 )}
 
 
-                {/* Multi-activity breakdown */}
-                {workout.actual.activity_count && workout.actual.activity_count > 1 && workout.actual.activities && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium">{workout.actual.activity_count} activities:</p>
-                    {workout.actual.activities.map((a, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground pl-2">
-                        <span>{a.name}</span>
-                        <span className="font-mono">{formatDistance(a.distance_miles)} {unit}</span>
-                        {a.avg_pace && <span className="font-mono">{paceInUnits(a.avg_pace, units)}/{unit}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* Other runs and walks that day: listed with their own numbers, never blended in */}
+                <AlsoToday runs={workout.actual.other_runs} walks={workout.actual.walks} />
 
                 {/* Feel rating from activity (only if no feedback submitted yet) */}
                 {!hasFeedback && workout.actual.feel_rating && (
@@ -346,11 +337,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             </div>
           )}
 
+          {!hasActual && !!workout.walks?.length && <AlsoToday walks={workout.walks} />}
           {workout.session_status && !hasActual && workout.session_status !== "not_logged" && (
             <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
           )}
           {!readOnly && !hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
-            <SessionControls workout={workout} onChanged={onPlanChanged} />
+            <SessionControls workout={workout} onChanged={onPlanChanged} initialAction={sessionAction} />
           )}
           {/* Feedback form for completed days without feedback */}
           {showFeedbackForm && expanded && (

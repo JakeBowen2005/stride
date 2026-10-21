@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.activity import Activity, PersonalRecord
+from app.models.activity import Activity, PersonalRecord, is_walk, runs_only
 from app.models.user import User
 
 
@@ -13,7 +13,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
     """Analyze all of an athlete's running data to determine baseline fitness."""
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id)
+        .filter(Activity.user_id == user_id, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )
@@ -79,9 +79,11 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
         weeks = min(window_weeks, history_weeks)
         return round(subset["distance_miles"].sum() / weeks, 1)
 
-    current_weekly_avg = weekly_avg(recent_4w, 4)
-    eight_week_avg = weekly_avg(recent_8w, 8)
-    twelve_week_avg = weekly_avg(recent_12w, 12)
+    from app.services.load_history import completed_week_load
+    workload = completed_week_load(user_id, db)
+    current_weekly_avg = workload['baseline_miles']
+    eight_week_avg = workload['eight_week_average']
+    twelve_week_avg = workload['twelve_week_average']
 
     # Peak mileage week ever
     peak_week = weekly.loc[weekly["miles"].idxmax()]
@@ -165,18 +167,10 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
         experience = profile.experience_level
 
     # --- Injury Risk: Acute/Chronic Workload ---
-    acute_load = recent_4w["distance_miles"].sum() / 4 if not recent_4w.empty else 0
-    chronic_load = twelve_week_avg if twelve_week_avg > 0 else 1
-    acwr = round(acute_load / chronic_load, 2) if chronic_load > 0 else 0
-
-    if acwr > 1.5:
-        injury_risk = "HIGH — mileage spike detected, ease back"
-    elif acwr > 1.3:
-        injury_risk = "MODERATE — building quickly, monitor closely"
-    elif acwr < 0.8:
-        injury_risk = "LOW — undertrained, room to build safely"
-    else:
-        injury_risk = "LOW — good balance of load"
+    acute_load = workload['acute_miles']
+    chronic_load = workload['baseline_miles']
+    acwr = workload['ratio']
+    injury_risk = workload['label']
 
     # --- Mileage Trend (last 8 weeks) ---
     weekly_recent = weekly[weekly["start"] >= now - timedelta(weeks=8)].sort_values("start")
@@ -200,6 +194,7 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
         },
         "current_fitness": {
             "weekly_mileage_4w_avg": current_weekly_avg,
+            "as_of": workload["as_of"], "baseline_start": workload["baseline_start"], "baseline_end": workload["baseline_end"],
             "weekly_mileage_8w_avg": eight_week_avg,
             "weekly_mileage_12w_avg": twelve_week_avg,
             "peak_weekly_mileage": peak_weekly_mileage,
@@ -231,7 +226,9 @@ def analyze_athlete(user_id: int, db: Session) -> dict:
             "average_easy_hr": avg_easy_hr,
             "avg_cadence_spm": avg_cadence,
         },
+        "workload": workload,
         "injury_risk": {
+            **workload,
             "acute_chronic_ratio": acwr,
             "assessment": injury_risk,
             "acute_weekly_avg": round(acute_load, 1),
@@ -283,7 +280,7 @@ def detect_prs(user_id: int, db: Session) -> list[dict]:
     """
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id)
+        .filter(Activity.user_id == user_id, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )
@@ -407,13 +404,16 @@ def classify_activities(user_id: int, db: Session) -> dict:
         .all()
     )
 
-    counts = {"easy": 0, "workout": 0, "long_run": 0, "race": 0, "recovery": 0}
+    counts = {"easy": 0, "workout": 0, "long_run": 0, "race": 0, "recovery": 0, "walk": 0}
 
     for act in activities:
         dist_miles = act.distance_meters / 1609.34 if act.distance_meters else 0
 
-        # Explicit race / workout flags first (Garmin event type, legacy Strava workout_type)
-        if act.strava_workout_type == 1 or act.event_type == "race":
+        # Walks first: never part of the running plan, whatever the watch called them
+        if is_walk(act):
+            act.workout_type = "walk"
+        # Explicit race / workout flags (Garmin event type, legacy Strava workout_type)
+        elif act.strava_workout_type == 1 or act.event_type == "race":
             act.workout_type = "race"
         elif act.has_workout_description:
             act.workout_type = "workout"
@@ -449,7 +449,7 @@ def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[d
 
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id, Activity.date >= start)
+        .filter(Activity.user_id == user_id, Activity.date >= start, runs_only())
         .order_by(Activity.date.asc())
         .all()
     )

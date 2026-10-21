@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { formatDistance, localDateStr } from "@/lib/format";
+import { localDateStr } from "@/lib/format";
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import type { PlanDayLite } from "@/components/home/today-card";
 
 const HARD = new Set(["workout", "long_run", "race"]);
 
 export function WeekProgress({ days }: { days: PlanDayLite[] }) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const today = localDateStr();
   const [selected, setSelected] = useState<string | null>(null);
   const sel = days.find((d) => d.date === selected);
@@ -41,7 +46,7 @@ export function WeekProgress({ days }: { days: PlanDayLite[] }) {
                 )}
                 style={d.actual ? { background: "var(--viz-series-1)" } : undefined}
               >
-                {d.type === "rest" ? "–" : Math.round(d.actual?.distance_miles ?? d.distance_miles)}
+                {d.type === "rest" ? "–" : formatDistance(d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? d.distance_miles)}
               </span>
             </button>
           );
@@ -51,8 +56,8 @@ export function WeekProgress({ days }: { days: PlanDayLite[] }) {
         <div className="rounded-lg border p-3 text-sm">
           <div className="font-medium">{sel.actual?.workout?.title ?? sel.title}</div>
           <div className="text-muted-foreground">
-            {sel.type === "rest" ? "Rest" : `${formatDistance(sel.distance_miles)} mi planned`}
-            {sel.actual && ` · ran ${formatDistance(sel.actual.distance_miles)} mi`}
+            {sel.type === "rest" ? "Rest" : `${formatDistance(sel.distance_miles)} ${unit} planned`}
+            {sel.actual && ` · ran ${formatDistance(sel.actual.distance_miles)} ${unit}`}
           </div>
           {sel.description && <p className="mt-1 text-muted-foreground">{sel.description}</p>}
         </div>

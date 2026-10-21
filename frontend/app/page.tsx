@@ -1,5 +1,8 @@
 "use client";
 
+import { useUnits } from "@/components/unit-preferences";
+import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
+import { primaryRunId } from "@/lib/activity-selection";
 import { CoachingReview } from "@/components/coaching-review";
 
 import { getJson, USER_ID } from "@/lib/api";
@@ -17,7 +20,7 @@ import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
-import { formatDate, formatDistance, localDateStr, secondsToTime } from "@/lib/format";
+import { formatDate, localDateStr, secondsToTime } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
 
@@ -36,6 +39,9 @@ interface PlanResponse {
 }
 
 export default function TodayPage() {
+  const units = useUnits();
+  const formatDistance = (miles: number) => distanceInUnits(miles, units);
+  const unit = unitLabel(units);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState<Activity[]>([]);
@@ -70,6 +76,18 @@ export default function TodayPage() {
     finally { setLoading(false); }
   }, []);
 
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const openTodayActivity = async (id: number) => {
+    setActivityError(null);
+    const existing = recentRuns.find((activity) => activity.id === id);
+    if (existing) { setSelectedRun(existing); return; }
+    try {
+      const activity = await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);
+      if (!activity) throw new Error("Could not load activity details.");
+      setSelectedRun({ ...activity, splits: activity.splits || [] });
+    } catch (error) { setActivityError(error instanceof Error ? error.message : "Could not load activity details."); }
+  };
+
   useEffect(() => {
     const id = setTimeout(load, 0);
     window.addEventListener(SYNC_EVENT, load);
@@ -82,11 +100,11 @@ export default function TodayPage() {
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
   const today = localDateStr();
   const planStale = !!plan?.is_stale;
-  const todayRun = recentRuns.find(run => run.date.startsWith(today));
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;
+  const todayRunId = primaryRunId(recentRuns, today, todayPlan?.actual?.activity_id);
 
-  const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.distance_miles ?? 0), 0) : null;
+  const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0) : null;
   const weekPct = thisWeek && thisWeek.target_mileage > 0 && weekDone != null ? Math.round((weekDone / thisWeek.target_mileage) * 100) : null;
 
   return (
@@ -107,7 +125,7 @@ export default function TodayPage() {
             <div className="text-right">
               <div className="stat-label">This week</div>
               <div className="num text-2xl font-semibold leading-none">
-                {formatDistance(weekDone)}<span className="text-base font-normal text-muted-foreground"> / {formatDistance(thisWeek.target_mileage)} mi</span>
+                {formatDistance(weekDone)}<span className="text-base font-normal text-muted-foreground"> / {formatDistance(thisWeek.target_mileage)} {unit}</span>
                 {weekPct != null && <span className="ml-2 text-sm font-medium" style={{ color: "var(--type-easy)" }}>{weekPct}%</span>}
               </div>
             </div>
@@ -133,20 +151,22 @@ export default function TodayPage() {
           <div className="grid gap-3 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start">
             <div className="contents lg:block lg:min-w-0 lg:space-y-3">
               <Section label="Today" accent="var(--type-easy)" className="order-1"
-                meta={todayPlan?.actual ? "done" : todayPlan && todayPlan.type !== "rest" ? `${formatDistance(todayPlan.distance_miles)} mi planned` : undefined}>
+                meta={todayPlan?.actual ? "done" : todayPlan && todayPlan.type !== "rest" ? `${formatDistance(todayPlan.distance_miles)} ${unit} planned` : undefined}>
                 <TodayCard
                   // Remount when the day or its saved feedback changes, so local state follows the data
                   key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
                   onFeedbackSaved={load}
+                  onOpenActivity={openTodayActivity}
                   today={todayPlan}
                   planStale={planStale || !plan}
                   recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
-                  coach={todayRun ? (
+                  coach={todayRunId ? (
                     <CoachingReview
-                      key={`coach-${todayRun.id}-${todayRun.feel_rating}-${todayRun.notes}`}
-                      activityId={todayRun.id} onPlanChanged={load} autoRefresh />
+                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_rating}`}
+                      activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />
+                {activityError && <p role="alert" className="mt-2 text-xs text-destructive">{activityError}</p>}
               </Section>
               {thisWeek && (
                 <Section label="This week" accent="var(--type-threshold)" className="order-2" meta="tap a day">
@@ -162,7 +182,7 @@ export default function TodayPage() {
                   <table className="data-table w-full table-fixed">
                     <thead><tr>
                       <th scope="col" className="w-[4.5rem]">Date</th><th scope="col">Run</th>
-                      <th scope="col" className="r w-12">Dist</th><th scope="col" className="r w-16">Pace</th>
+                      <th scope="col" className="r w-12">Dist ({unit})</th><th scope="col" className="r w-16">Pace</th>
                       <th scope="col" className="r hidden w-16 xl:table-cell">Time</th>
                     </tr></thead>
                     <tbody>
@@ -175,11 +195,11 @@ export default function TodayPage() {
                               <button type="button" className="flex min-h-8 max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
                                 onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>
                                 <span className="truncate">{run.session?.title ?? run.title}</span>
-                                {kind !== "easy" && <KindPill kind={kind} />}
+                                {run.type === "walk" ? <span className="text-xs font-normal text-muted-foreground">walk</span> : kind !== "easy" && <KindPill kind={kind} />}
                               </button>
                             </td>
                             <td className="r">{formatDistance(run.distance_miles)}</td>
-                            <td className="r">{run.avg_pace || "—"}</td>
+                            <td className="r">{run.avg_pace ? `${paceInUnits(run.avg_pace.replace(/\/mi$/, ""), units)}/${unit}` : "—"}</td>
                             <td className="r hidden xl:table-cell">{secondsToTime(run.duration_seconds)}</td>
                           </tr>
                         );
@@ -211,7 +231,7 @@ export default function TodayPage() {
         </>
       )}
 
-      <RunDetailSheet activity={selectedRun} open={!!selectedRun} onClose={() => setSelectedRun(null)} />
+      <RunDetailSheet activity={selectedRun} open={!!selectedRun} onClose={() => setSelectedRun(null)} onClassificationChanged={load} />
     </div>
   );
 }

@@ -137,11 +137,14 @@ def seed_completed_stage():
 
 def test_real_completed_evidence_unlocks_dual_and_persists_after_approval():
     from app.services.quality_history import quality_history
-    seed_completed_stage()
+    monday=seed_completed_stage()
+    # Long runs count over a rolling 28 days; the seed fills whole past weeks only,
+    # so on a Sunday the oldest of four Saturdays is 29 days back.
+    long_runs=sum(monday-timedelta(weeks=k,days=-5)>=date.today()-timedelta(days=28) for k in range(1,9))
     with SessionLocal() as db:
         evidence=quality_history(1,db)
         assert evidence['primary_successes']>=7 and evidence['support_successes']>=7
-        assert evidence['long_run_successes']==4
+        assert evidence['long_run_successes']==long_runs>=3
     a=client.post('/api/plans/1/preview').json()
     b=client.post('/api/plans/1/preview').json()
     assert a['quality_policy']['stage']==b['quality_policy']['stage']=='dual'
