@@ -100,3 +100,9 @@ test('sign-out expires only the Stride session cookie and redirects to login', a
   assert.equal(response.savedCookies[0][1], '');
   assert.equal(response.savedCookies[0][2].maxAge, 0);
 });
+test('schedule descriptions read naturally for the plan banner', () => {
+  const { describeSchedule } = load('../lib/plan-preferences.ts');
+  assert.equal(describeSchedule(7, ['']), '7 run days, no rest day');
+  assert.equal(describeSchedule(6, ['sunday']), '6 run days, rest Sunday');
+  assert.equal(describeSchedule(1, ['monday', ' friday']), '1 run day, rest Monday & Friday');
+});

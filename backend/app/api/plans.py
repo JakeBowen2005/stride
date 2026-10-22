@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -23,12 +24,16 @@ from app.services.analyzer import analyze_athlete
 from app.services.pace_calibrator import calibrate_paces
 
 router = APIRouter(prefix="/api/plans", tags=["plans"])
+logger = logging.getLogger("stride.plans")
 
 
 class PlanRequest(BaseModel):
     start_date: date | None = None  # ISO date, defaults to smart calculation
     lighter: bool = False
     scope: Literal["current", "next"] = "current"
+    # "schedule": only run days / rest days / long-run day changed; keep the approved block
+    # and move the fewest days (core/schedule_revision.py). "full" rebuilds the block.
+    mode: Literal["full", "schedule"] = "full"
 
 
 class FeedbackRequest(BaseModel):
@@ -53,6 +58,11 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     goal = db.query(Goal).filter(Goal.user_id == user_id, Goal.active == True).first()
     if not goal:
         raise HTTPException(status_code=400, detail="No active goal set. Set a goal first via POST /api/users/{user_id}/goal")
+
+    if req.mode == "schedule" and req.scope == "current" and not req.lighter and not req.start_date:
+        active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+        if active and active.start_date <= date.today().isoformat() <= active.end_date:
+            return _revise_schedule(user, active, db)
 
     analysis = analyze_athlete(user_id, db)
     if "error" in analysis:
@@ -274,6 +284,11 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     plan_data["assessment"] = assessment.to_dict() if assessment else None
+    if preview and active and active.start_date <= plan_data["end_date"] and plan_data["start_date"] <= active.end_date:
+        from app.core.change_guard import summarize_change
+        before = _guard_weeks(db.query(PlannedWorkout).filter_by(plan_id=active.id).order_by(PlannedWorkout.date).all(), "9999-12-31")
+        after = [{"week_number": w["week_number"], "days": w["days"]} for w in plan_data["weeks"]]
+        plan_data["change_summary"] = summarize_change(before, after)
     if preview:
         plan_data["id"] = db_plan.id
         plan_data["preview"] = True
@@ -293,6 +308,107 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     return plan_data
+
+
+SCHEDULE_FIELDS = ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown", "b2b")
+
+
+def _guard_weeks(rows: list[PlannedWorkout], editable_from: str) -> list[dict]:
+    """Plan rows as plain week/day dicts for core.schedule_revision and core.change_guard."""
+    weeks: dict[int, dict] = {}
+    for r in rows:
+        editable = (r.date >= editable_from and not r.activity_id and not r.moved_to and not r.moved_from
+                    and r.feel_rating is None and r.session_status not in ("completed", "skipped"))
+        weeks.setdefault(r.week_number, {"week_number": r.week_number, "days": []})["days"].append(
+            {**{k: getattr(r, k) for k in SCHEDULE_FIELDS}, "b2b": bool(r.b2b), "prescription": r.prescription,
+             "date": r.date, "day": r.day_name.lower(), "editable": editable})
+    return [weeks[n] for n in sorted(weeks)]
+
+
+def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
+    """A draft of the approved block with only the days a schedule change touches moved."""
+    from app.core.change_guard import review_change, summarize_change
+    from app.core.schedule_revision import SchedulePrefs, revise_for_schedule
+
+    snapshot = json.loads(active.athlete_snapshot or "{}")
+    old = SchedulePrefs.from_dict(snapshot.get("schedule_preferences"))
+    rest_days = ["sunday"] if user.rest_days is None else [d.strip().lower() for d in user.rest_days.split(",") if d.strip()]
+    preferences = {"rest_days": rest_days, "days_per_week": user.days_per_week or 6,
+                   "long_run_day": (user.long_run_day or "saturday").lower(), "workout_format": user.workout_format or "distance"}
+    new = SchedulePrefs.from_dict(preferences)
+    if (old.days_per_week, old.rest_days, old.long_run_day) == (new.days_per_week, new.rest_days, new.long_run_day):
+        raise HTTPException(409, "This block already uses your run days, rest days and long-run day.")
+
+    today = date.today()
+    first_open = today + timedelta(days=1) if _get_activities_for_date(today.isoformat(), user.id, db) else today
+    editable_from = max(first_open.isoformat(), active.prescribed_from or active.start_date)
+    rows = db.query(PlannedWorkout).filter_by(plan_id=active.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all()
+    before = _guard_weeks(rows, editable_from)
+    baseline = (json.loads(active.load or "{}") or {}).get("baseline") or snapshot.get("current_weekly_mileage") or 0
+    day_before = (date.fromisoformat(active.start_date) - timedelta(days=1)).isoformat()
+    prior_hard = any(_is_hard_activity(a, baseline) for a in _activities_by_date(user.id, day_before, day_before, db).get(day_before, []))
+    easy_desc = next((r.description for r in rows if r.type == "easy" and r.description),
+                     "Conversational effort: you should be able to talk in full sentences.")
+    revision = revise_for_schedule(before, old, new, experience=snapshot.get("experience_level"),
+                                   easy_desc=easy_desc, prior_hard=prior_hard)
+    if not revision.changes:
+        raise HTTPException(409, " ".join(revision.notes) or "No remaining day in this block can change; the next block uses your new schedule.")
+    problems = review_change(before, revision.weeks, new, kind="schedule", prior_hard=prior_hard)
+    if problems:
+        logger.warning("Schedule revision refused by change guard: %s", problems)
+        raise HTTPException(409, "Stride couldn't fit your new schedule into this block safely ("
+                                 + problems[0] + "). Use Revise with latest runs for a full rebuild.")
+
+    db.query(Plan).filter_by(user_id=user.id, preview_state="draft").update({"preview_state": "superseded"})
+    copied = {"id", "created_at", "is_active", "preview_data", "preview_context", "preview_state"}
+    draft = Plan(**{c.name: getattr(active, c.name) for c in Plan.__table__.columns if c.name not in copied}, is_active=False)
+    snapshot["schedule_preferences"] = preferences
+    draft.athlete_snapshot = json.dumps(snapshot)
+    load = json.loads(active.load or "{}") or {}
+    budgets = load.get("weekly_budgets") or []
+    for week in revision.weeks:
+        # A schedule change may add only the small, guard-checked allowance; record it in the budget.
+        if week["week_number"] - 1 < len(budgets):
+            budgets[week["week_number"] - 1] = round(max(budgets[week["week_number"] - 1], week["target_mileage"]), 1)
+    draft.load = json.dumps(load) if active.load else None
+    what = [f"{old.days_per_week} → {new.days_per_week} run days" if old.days_per_week != new.days_per_week else None,
+            "rest days " + (", ".join(d.title() for d in new.rest_days) or "none") if old.rest_days != new.rest_days else None,
+            f"long run on {new.long_run_day.title()}" if old.long_run_day != new.long_run_day else None]
+    headline = (f"Schedule change ({'; '.join(w for w in what if w)}). Workouts and long runs keep their sessions; "
+                "only the days your new schedule touches moved. The next block is rebuilt around the new schedule.")
+    draft.notes = json.dumps([headline] + revision.notes + (json.loads(active.notes or "[]") or []))
+    db.add(draft)
+    db.flush()
+
+    changes = {c["date"]: c for c in revision.changes}
+    revised = {d["date"]: d for w in revision.weeks for d in w["days"]}
+    draft_rows = []
+    for r in rows:
+        row = PlannedWorkout(**{c.name: getattr(r, c.name) for c in PlannedWorkout.__table__.columns if c.name not in ("id", "plan_id")},
+                             plan_id=draft.id)
+        if r.date in changes:
+            _mark_changed(row, changes[r.date]["reason"])
+            day = revised[r.date]
+            for key in SCHEDULE_FIELDS:
+                setattr(row, key, day.get(key))
+            row.prescription = day["prescription"] if day.get("prescription") else json.dumps(day_prescription(day))
+        db.add(row)
+        draft_rows.append(row)
+    db.flush()
+
+    payload = _plan_payload(draft, sorted(draft_rows, key=lambda r: r.date), user.id, db)
+    payload.update(id=draft.id, preview=True, revision="schedule", violations=[],
+                   training_paces=json.loads(active.training_paces or "{}"),
+                   change_summary=summarize_change(before, revision.weeks), changes=revision.changes)
+    draft.preview_data = json.dumps(payload)
+    draft.preview_state = "draft"
+    draft.preview_context = _preview_fingerprint(user.id, db)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return payload
 
 
 def _preview_fingerprint(user_id: int, db: Session) -> str:
@@ -380,7 +496,6 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
     # One query for every activity in the plan window, grouped by local date
     by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
-    walks_by_date = _walks_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
 
     # Match past days to actual activities (store primary activity_id for backwards compat)
     for pw in planned_workouts:
@@ -391,8 +506,14 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
             pw.activity_id = max(activities, key=lambda a: a.distance_meters).id
             pw.session_status = "completed"
     db.commit()
+    return _plan_payload(db_plan, planned_workouts, user_id, db)
 
-    # Build response
+
+def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id: int, db: Session) -> dict:
+    """The plan as the app shows it: actual runs on past days, prescriptions after prescribed_from."""
+    today = date.today().isoformat()
+    by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
+    walks_by_date = _walks_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
     # Days before generation were history, not prescriptions. Older plans fall back to
     # created_at (stored in UTC, so it can be a day ahead in the evening — hence the new column).
     plan_created_date = db_plan.prescribed_from or (

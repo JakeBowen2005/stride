@@ -20,7 +20,7 @@ import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
-import { formatDate, localDateStr, secondsToTime } from "@/lib/format";
+import { formatDate, localDateStr } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
 
@@ -177,35 +177,28 @@ export default function TodayPage() {
                   </Card>
                 </Section>
               )}
-              <Panel label="Recent runs" className="order-6" meta={recentRuns.length ? `${Math.min(recentRuns.length, 6)} latest` : undefined} bodyClassName="p-0">
+              <Panel label="Recent runs" className="order-6" meta={recentRuns.length ? `${Math.min(recentRuns.length, 5)} latest` : undefined} bodyClassName="p-0">
                 {recentRuns.length > 0 ? (
-                  <table className="data-table w-full table-fixed">
-                    <thead><tr>
-                      <th scope="col" className="w-[4.5rem]">Date</th><th scope="col">Run</th>
-                      <th scope="col" className="r w-12">Dist ({unit})</th><th scope="col" className="r w-16">Pace</th>
-                      <th scope="col" className="r hidden w-16 xl:table-cell">Time</th>
-                    </tr></thead>
-                    <tbody>
-                      {recentRuns.slice(0, 6).map((run) => {
-                        const kind = activityKind(run.session?.category === "fartlek" || run.session?.category === "speed" ? "intervals" : run.session?.category ?? run.type, run.title);
-                        return (
-                          <tr key={run.id} className="cursor-pointer" onClick={() => setSelectedRun(run)}>
-                            <td className="whitespace-nowrap text-muted-foreground">{formatDate(run.date).replace(/^\w+, /, "")}</td>
-                            <td className="min-w-0">
-                              <button type="button" className="flex min-h-8 max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-                                onClick={(e) => { e.stopPropagation(); setSelectedRun(run); }}>
-                                <span className="truncate">{run.session?.title ?? run.title}</span>
-                                {run.type === "walk" ? <span className="text-xs font-normal text-muted-foreground">walk</span> : kind !== "easy" && <KindPill kind={kind} />}
-                              </button>
-                            </td>
-                            <td className="r">{formatDistance(run.distance_miles)}</td>
-                            <td className="r">{run.avg_pace ? `${paceInUnits(run.avg_pace.replace(/\/mi$/, ""), units)}/${unit}` : "—"}</td>
-                            <td className="r hidden xl:table-cell">{secondsToTime(run.duration_seconds)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <ul className="divide-y divide-border">
+                    {recentRuns.slice(0, 5).map((run) => {
+                      const kind = activityKind(run.session?.category === "fartlek" || run.session?.category === "speed" ? "intervals" : run.session?.category ?? run.type, run.title);
+                      const pace = run.avg_pace ? paceInUnits(run.avg_pace.replace(/\/mi$/, ""), units) : null;
+                      return (
+                        <li key={run.id}>
+                          <button type="button" onClick={() => setSelectedRun(run)}
+                            className="block w-full px-3 py-2 text-left hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary">
+                            <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                              <span className="truncate">{run.session?.title ?? run.title}</span>
+                              {run.type === "walk" ? <span className="text-xs font-normal text-muted-foreground">walk</span> : kind !== "easy" && <KindPill kind={kind} />}
+                            </span>
+                            <span className="num mt-0.5 block text-xs text-muted-foreground">
+                              {formatDate(run.date).replace(/^\w+, /, "")} · {formatDistance(run.distance_miles)} {unit}{pace ? ` · ${pace} pace` : ""}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 ) : (
                   <p className="py-6 text-center text-muted-foreground">No runs yet — sync Garmin.</p>
                 )}

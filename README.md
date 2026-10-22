@@ -77,7 +77,7 @@ stride/
 │   │       └── workouts.py      # Workout library (threshold, intervals, long runs)
 │   ├── requirements.txt
 │   ├── garmin_login.py          # one-time Garmin login (saves tokens to .garmin/)
-│   └── .env                     # ANTHROPIC_API_KEY etc. (not committed)
+│   └── .env                     # OPENAI_API_KEY etc. (not committed)
 ├── frontend/
 │   ├── app/
 │   │   ├── page.tsx             # Dashboard (today page)
@@ -149,7 +149,7 @@ cd .. && ./start.sh
 - **Computer:** http://localhost:3000
 - **Phone (same Wi-Fi):** open the `http://<mac-ip>:3000` URL that `start.sh` prints → Share → **Add to Home Screen**. It opens full-screen like an app.
 - **Phone away from home:** install [Tailscale](https://tailscale.com) on the Mac and phone (free) and use the Tailscale URL that `start.sh` prints.
-- **AI coach:** add `ANTHROPIC_API_KEY=...` to `backend/.env` (without it, the coach uses template responses).
+- **AI coach:** add `OPENAI_API_KEY=...` to `backend/.env` (without it, the coach uses template responses). See `docs/ai-call-inventory.md` for exactly what each review sends.
 
 ### How Garmin sync works
 Garmin's official API is enterprise-only (and closed to new applicants), so Stride uses the
