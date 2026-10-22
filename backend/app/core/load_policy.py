@@ -49,6 +49,7 @@ class LoadPlan:
     reasons: list[str] = field(default_factory=list)
     recent_week_miles: float | None = None
     planning_anchor: float | None = None
+    training_level: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +61,7 @@ class LoadPlan:
             "reasons": self.reasons,
             "recent_week_miles": self.recent_week_miles,
             "planning_anchor": self.planning_anchor,
+            "training_level": self.training_level,
         }
 
 
@@ -84,6 +86,36 @@ def ramp_rate(baseline: float, peak: float, experience: str, goal_type: str) -> 
     if experience == "intermediate":
         return RATE_INTERMEDIATE
     return RATE_BEGINNER
+
+
+LEVEL_CAP = 1.35  # the training level never runs more than 35% ahead of the 4-week average
+SPIKE_RATIO = 1.20  # a latest week this far above the one before it is a spike, not a level
+
+
+def training_level(baseline: float, completed_weeks: list[float] | None) -> tuple[float, bool]:
+    """Where the athlete is actually training now, and whether last week was a down week.
+
+    The 4-week average includes any deload week, so building from it after every deload
+    nets to zero growth (a beginner deloads every third week). When the last four weeks
+    contain a down week, the level is the average of the full-volume weeks instead.
+    Everything else keeps the 4-week average: a missed (zero) week is a break, not a
+    deload, and a latest week far above the one before it is a spike, not a level.
+    """
+    weeks = [_finite(w) for w in (completed_weeks or [])][-4:]
+    if len(weeks) < 4 or any(w <= 0 for w in weeks):
+        return baseline, False
+    down = []
+    for i, miles in enumerate(weeks):
+        history = [_finite(w) for w in (completed_weeks or [])][:-4] + weeks[:i]
+        reference = max(history[-3:], default=0)
+        down.append(reference > 0 and miles <= reference * DOWN_WEEK_RATIO)
+    if not any(down):
+        return baseline, False
+    loaded = [w for w, is_down in zip(weeks, down) if not is_down]
+    if len(loaded) >= 2 and loaded[-1] > loaded[-2] * SPIKE_RATIO:
+        loaded = loaded[:-1]
+    level = sum(loaded) / len(loaded) if loaded else baseline
+    return round(min(max(baseline, level), baseline * LEVEL_CAP), 1), down[-1]
 
 
 def default_destination(goal_type: str, target_weekly_mileage: float | None) -> float | None:
@@ -148,8 +180,11 @@ def plan_load(
         return LoadPlan(baseline, destination, "start", [round(start, 1)] * num_weeks, rate, reasons)
 
     mode = "build"
-    growth = [rate * min(w + 1, 2) / 2 for w in range(num_weeks)]  # +½rate, +rate, then hold
-    budgets = [baseline * (1 + g) for g in growth]
+    level, after_down_week = training_level(baseline, completed_weeks)
+    # +½rate, +rate, then hold. Straight after a down week, first return to the pre-deload
+    # level, then grow: the week after a deload never jumps ahead of where training was.
+    growth = [rate * min(w + (0 if after_down_week else 1), 2) / 2 for w in range(num_weeks)]
+    budgets = [level * (1 + g) for g in growth]
     recent = _finite(completed_weeks[-1]) if completed_weeks else None
     anchor = baseline
     recent_build = False
@@ -166,6 +201,8 @@ def plan_load(
         rate = next_miles / recent - 1
         recent_build = True
     reasons.append(f"Baseline {baseline:g} mi/week (4-week average of completed runs).")
+    if level > baseline and not recent_build:
+        reasons.append(f"Training level {level:g} mi/week (your last two full-volume weeks; down weeks don't reset it).")
 
     if recent_build:
         reasons.append(f"Last full week {recent:g} mi, supported by another comparable recent week. "
@@ -173,7 +210,9 @@ def plan_load(
 
     if assessment in ("hold", "reduce", "recovery"):
         factor = {"hold": HOLD_FACTOR, "reduce": REDUCE_FACTOR, "recovery": RECOVERY_FACTOR}[assessment]
-        budgets = [baseline * factor] * num_weeks
+        # Holding keeps the current training level; reducing or recovering after fatigue
+        # starts from the more conservative 4-week average (fail safe).
+        budgets = [(level if assessment == "hold" else baseline) * factor] * num_weeks
         mode = assessment
         reasons.append(
             {"hold": "Last block's assessment says consolidate: holding volume steady.",
@@ -182,12 +221,12 @@ def plan_load(
         )
 
     if destination is not None:
-        if baseline > destination * 1.05:
+        if level > destination * 1.05:
             # Destination below current load: come down gradually, never below destination
-            budgets = [max(destination, baseline * (1 - REDUCE_STEP) ** (w + 1)) for w in range(num_weeks)]
+            budgets = [max(destination, level * (1 - REDUCE_STEP) ** (w + 1)) for w in range(num_weeks)]
             mode = "reduce"
             reasons.append(f"Your goal of {destination:g} mi/week is below current volume; easing down toward it.")
-        elif baseline >= destination * 0.97:
+        elif level >= destination * 0.97:
             budgets = [min(b, destination) for b in budgets] if mode != "build" else [destination] * num_weeks
             mode = "hold" if mode == "build" else mode
             reasons.append(f"At your {destination:g} mi/week goal: holding there.")
@@ -198,13 +237,13 @@ def plan_load(
             reasons.append(f"Working toward your {destination:g} mi/week goal; not prescribed all at once.")
 
     if deload_week is not None and 0 <= deload_week < num_weeks:
-        budgets[deload_week] = baseline * DELOAD_FACTOR
-        # The week after a deload returns to baseline rather than jumping ahead
+        budgets[deload_week] = level * DELOAD_FACTOR
+        # The week after a deload returns to the training level rather than jumping ahead
         for w in range(deload_week + 1, num_weeks):
-            budgets[w] = min(budgets[w], baseline)
+            budgets[w] = min(budgets[w], level)
         mode = "deload" if mode == "build" else mode
         reasons.append(f"Deload in week {deload_week + 1}: ~{1 - DELOAD_FACTOR:.0%} less volume to absorb training.")
 
     if mode == "build" and not recent_build:
         reasons.insert(1, f"Building up to {rate:.0%} over the block ({budgets[0]:.0f} → {budgets[-1]:.0f} mi/week).")
-    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor)
+    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor, level)

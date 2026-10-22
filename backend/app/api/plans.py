@@ -548,7 +548,10 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
             "day": pw.day_name,
             "type": pw.type,
             "title": pw.title,
-            "description": (render(loads(pw.prescription)) if loads(pw.prescription) else pw.description) if is_prescribed else None,
+            # Long runs keep their authored structure ("10mi easy, then 10mi at goal MP"); their numeric
+            # prescription exists to verify the hard part, not to replace the description.
+            "description": ((pw.description if pw.type == "long_run" and pw.description else render(loads(pw.prescription)))
+                            if loads(pw.prescription) else pw.description) if is_prescribed else None,
             "prescription": loads(pw.prescription) if is_prescribed else None,
             "execution": loads(pw.execution),
             "purpose": pw.purpose if is_prescribed else None,
@@ -1138,6 +1141,13 @@ def _assess_previous_block(prev_plan: Plan, db: Session):
                         verified = None  # Full distance/duration without intensity evidence is not verified quality.
                     elif verified:
                         verified = evaluation.get("pace_diff_sec", 0) <= 5 and evaluation.get("fade_sec", 0) < 10
+        elif pw.type == "long_run" and prescribed and prescribed.get("segments") and demanding_long_run(pw):
+            # Marathon-pace / steady / race-effort segments are checked like workout reps: every
+            # segment run at its distance, and paced ones no more than 10s/mi slower than target.
+            if execution and execution.get("confidence") in {"high", "medium"} and execution.get("completion") is not None:
+                verified = execution["completion"] >= 1 and all(
+                    rep <= target + 10 for rep, target in zip(execution.get("rep_paces_sec_per_mile", []),
+                                                              execution.get("target_paces_sec_per_mile", [])) if target)
         elif pw.type == "race" and activities:
             verified = (any(a.event_type == "race" or a.workout_type == "race" for a in activities)
                         and actual >= (pw.distance_miles or 0) * .9)
