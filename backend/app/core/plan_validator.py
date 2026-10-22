@@ -131,15 +131,31 @@ def fit_week_to_budget(
         # week's total and its longest single run never grow.
         if longs and longs[0]["type"] == "long_run" and longs[0]["distance_miles"] < max(d["distance_miles"] for d in e):
             lr = longs[0]
-            while lr["distance_miles"] < max(d["distance_miles"] for d in e):
+            folded = False
+            while e and lr["distance_miles"] < max(d["distance_miles"] for d in e):
                 d = max(e, key=lambda x: x["distance_miles"])
-                if d["distance_miles"] - 0.5 < MIN_EASY_FLOOR:
+                week_total = locked + sum(x["distance_miles"] for x in live)
+                if d["distance_miles"] - 0.5 >= MIN_EASY_FLOOR:
+                    d["distance_miles"] -= 0.5
+                    lr["distance_miles"] += 0.5
+                elif week_total + 0.5 <= budget + BUDGET_OVER_TOLERANCE:
+                    lr["distance_miles"] += 0.5  # within the half-mile rounding tolerance
+                elif len(e) > 1:
+                    # Easy days are already at the floor: fold the shortest into the long run,
+                    # same weekly total, one fewer run.
+                    shortest = min(e, key=lambda x: x["distance_miles"])
+                    lr["distance_miles"] += shortest["distance_miles"]
+                    shortest.update({"type": "rest", "title": "Rest Day", "description": "Rest (its miles moved to the long run).",
+                                     "purpose": "Recovery.", "distance_miles": 0, "warmup": None, "cooldown": None})
+                    e = [x for x in e if x is not shortest]
+                    folded = True
+                else:
                     break
-                d["distance_miles"] -= 0.5
-                lr["distance_miles"] += 0.5
             if restructure_long:
                 lr.update(restructure_long(lr["distance_miles"]))
-            notes.append(f"Long run set to {lr['distance_miles']:g} mi so it is not shorter than the easy days (same weekly total).")
+            if not e or lr["distance_miles"] >= max(d["distance_miles"] for d in e):
+                notes.append(f"Long run set to {lr['distance_miles']:g} mi so it is not shorter than the easy days"
+                             + (" (an easy day's miles moved into it)." if folded else "."))
 
     total = locked + sum(d["distance_miles"] for d in live)
     if total > budget + BUDGET_OVER_TOLERANCE:
