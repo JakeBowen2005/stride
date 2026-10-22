@@ -121,15 +121,13 @@ def test_concurrent_duplicate_submissions_apply_once():
 def test_coach_failure_keeps_feedback_and_decision(monkeypatch):
     _plan([(0, "workout", "6x800m", 7)])
     _run(0, 7, "Garmin laps: 6x800 (2:58, 2:59, 2:58, 2:57, 2:58, 2:59)")
-    monkeypatch.setattr(coach.settings, "anthropic_api_key", "test-key")
+    from app.services import coaching
+    monkeypatch.setattr(coach.settings, "openai_api_key", "test-key")
 
-    class Boom:
-        class messages:
-            @staticmethod
-            def create(**kw):
-                raise RuntimeError("LLM down")
+    def boom(*a, **k):
+        raise RuntimeError("LLM down")
 
-    monkeypatch.setattr(coach, "_client", lambda: Boom())
+    monkeypatch.setattr(coaching, "request_advice", boom)
     r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8})
     assert r.status_code == 200
     body = r.json()

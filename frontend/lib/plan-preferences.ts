@@ -1,4 +1,10 @@
 export interface SchedulePreferences { rest_days: string[]; days_per_week: number; long_run_day: string; workout_format?: string }
+/** "7 run days, no rest day" / "6 run days, rest Sunday" */
+export function describeSchedule(days: number, restDays: string[]): string {
+  const rest = restDays.map(d => d.trim()).filter(Boolean).map(d => d[0].toUpperCase() + d.slice(1));
+  return `${days} run day${days === 1 ? "" : "s"}, ${rest.length ? `rest ${rest.join(" & ")}` : "no rest day"}`;
+}
+
 export function scheduleChanged(saved: SchedulePreferences | undefined, current: { rest_days: string | null; days_per_week: number; long_run_day?: string | null; workout_format?: string }): boolean {
   if (!saved) return false; // Legacy blocks cannot prove what changed.
   const rest = (items: string[]) => items.map(d => d.trim()).filter(Boolean).sort().join(",");
