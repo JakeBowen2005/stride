@@ -171,8 +171,15 @@ def ultra_long_run(
     if phase.fueling_g_per_hr:
         parts.append(f"Fuel {phase.fueling_g_per_hr}g carbs/hr + 300-600mg sodium/hr with race-day products.")
     title = "Ultra Long Run" if phase.phase != "peak" else "Race-Effort Long Run"
-    return _day(day_date, "long_run", title, " ".join(parts),
-                "Builds durability and time on feet, and trains the gut to take in fuel while running.", miles)
+    day = _day(day_date, "long_run", title, " ".join(parts),
+               "Builds durability and time on feet, and trains the gut to take in fuel while running.", miles)
+    if phase.phase == "peak":
+        # The race-effort middle third as numbers (effort-based, so distance is what's checked).
+        from app.core.workout_data import long_run_prescription
+        third = _round_half(miles / 3)
+        day["prescription"] = long_run_prescription(
+            [("easy", third), ("race_effort", third, None), ("easy", _round_half(miles - 2 * third))], day["description"], pace)
+    return day
 
 
 def back_to_back_day(day_date: date, main: dict, paces: dict, terrain: str | None,
