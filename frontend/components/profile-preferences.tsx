@@ -49,8 +49,8 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
       const before = { rest_days: (user.rest_days || "").split(",").filter(Boolean), days_per_week: user.days_per_week,
         long_run_day: user.long_run_day || "saturday", workout_format: user.workout_format || "distance" };
       if (!scheduleChanged(before, draft)) { setSaved("saved"); return; }
-      // Run days changed: draft the updated block now. The approved block stays active until approved.
-      const preview = await fetch(apiUrl(`/plans/${USER_ID}/preview`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "current" }) }).catch(() => null);
+      // Run days changed: draft the smallest change to the approved block (workouts stay put). It stays a draft until approved.
+      const preview = await fetch(apiUrl(`/plans/${USER_ID}/preview`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "current", mode: "schedule" }) }).catch(() => null);
       if (!preview?.ok) {
         const body = await preview?.json().catch(() => ({}));
         setDraftProblem(typeof body?.detail === "string" ? body.detail : "");
