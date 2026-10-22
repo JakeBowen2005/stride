@@ -337,10 +337,12 @@ def generate_plan(
         )
 
     if is_deload:
+        has_quality = any(d["type"] == "workout" for w in plan["weeks"] for d in w["days"])
         plan["notes"].append(
             "Deload week — reduced volume so your body can absorb the training. "
-            "Keep 1 quality workout, stay sharp, but let the fatigue dissipate. "
-            "You'll come back stronger next block."
+            + ("Keep 1 quality workout, stay sharp, but let the fatigue dissipate. " if has_quality
+               else "Every run stays easy and conversational. ")
+            + "You'll come back stronger next block."
         )
 
     if not include_workouts:

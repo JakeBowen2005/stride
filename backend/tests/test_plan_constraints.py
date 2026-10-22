@@ -279,3 +279,17 @@ def test_mp_readiness_sessions_need_marathon_build_or_peak():
     assert not _eligible(mp, 55, "marathon", "base")
     assert not _eligible(mp, 45, "marathon", "peak")
     assert _eligible(mp, 55, "marathon", "peak")
+
+
+def test_low_volume_long_run_is_never_shorter_than_an_easy_day():
+    # Beginner deload: 5.6 mi over three runs. Easy days sit at the 2-mile floor, so the
+    # long run can't borrow from them; it must still not be the shortest run of the week.
+    from app.core.plan_validator import fit_week_to_budget
+    days = [{"date": "2026-10-27", "type": "easy", "title": "Easy Run", "distance_miles": 3},
+            {"date": "2026-10-29", "type": "easy", "title": "Easy Run", "distance_miles": 3},
+            {"date": "2026-10-31", "type": "long_run", "title": "Easy Long Run", "distance_miles": 1.5}]
+    notes = fit_week_to_budget(days, 5.6, "easy")
+    easy = [d["distance_miles"] for d in days if d["type"] == "easy"]
+    long_run = next(d["distance_miles"] for d in days if d["type"] == "long_run")
+    assert long_run >= max(easy) and sum(d["distance_miles"] for d in days) <= 5.6 + 0.5
+    assert all("not shorter than the easy days" not in n or long_run >= max(easy) for n in notes)
