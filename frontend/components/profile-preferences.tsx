@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { apiUrl, USER_ID } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { describeSchedule, scheduleChanged } from "@/lib/plan-preferences";
 
 export interface AthletePreferences {
   name: string | null;
@@ -26,12 +27,14 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
   const [draft, setDraft] = useState(user);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
+  // "drafted": the schedule changed and Stride built an updated block awaiting approval.
+  const [saved, setSaved] = useState<null | "saved" | "drafted" | "draft_failed">(null);
+  const [draftProblem, setDraftProblem] = useState("");
   const rest = (draft.rest_days || "").split(",").filter(Boolean);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    setSaving(true); setError(""); setSaved(false);
+    setSaving(true); setError(""); setSaved(null);
     try {
       const res = await fetch(apiUrl(`/users/${USER_ID}/profile`), {
         method: "PUT", headers: { "Content-Type": "application/json" },
@@ -42,7 +45,17 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
         const body = await res.json().catch(() => ({}));
         throw new Error(typeof body.detail === "string" ? body.detail : "Could not save preferences. Check your selections and try again.");
       }
-      onSaved(draft); window.dispatchEvent(new Event(PREFERENCES_EVENT)); setEditing(false); setSaved(true);
+      onSaved(draft); window.dispatchEvent(new Event(PREFERENCES_EVENT)); setEditing(false);
+      const before = { rest_days: (user.rest_days || "").split(",").filter(Boolean), days_per_week: user.days_per_week,
+        long_run_day: user.long_run_day || "saturday", workout_format: user.workout_format || "distance" };
+      if (!scheduleChanged(before, draft)) { setSaved("saved"); return; }
+      // Run days changed: draft the smallest change to the approved block (workouts stay put). It stays a draft until approved.
+      const preview = await fetch(apiUrl(`/plans/${USER_ID}/preview`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "current", mode: "schedule" }) }).catch(() => null);
+      if (!preview?.ok) {
+        const body = await preview?.json().catch(() => ({}));
+        setDraftProblem(typeof body?.detail === "string" ? body.detail : "");
+      }
+      setSaved(preview?.ok ? "drafted" : "draft_failed");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save preferences."); }
     finally { setSaving(false); }
   }
@@ -52,7 +65,9 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
       <h2 className="text-sm font-medium">Profile & training preferences</h2>
       {!editing && <Button variant="outline" size="sm" onClick={() => { setDraft(user); setError(""); setEditing(true); }}>Edit preferences</Button>}
     </div>
-    {saved && <p role="status" className="text-sm text-muted-foreground">Saved. Your approved block stays as it is. <Link className="underline" href="/plan">Review a revised block</Link> to use your new schedule.</p>}
+    {saved === "saved" && <p role="status" className="text-sm text-muted-foreground">Saved.</p>}
+    {saved === "drafted" && <p role="status" className="text-sm">Saved. Stride drafted an updated block for {describeSchedule(draft.days_per_week, rest)}. <Link className="font-medium underline" href="/plan">Review and approve it</Link>. Your current plan stays active until you do.</p>}
+    {saved === "draft_failed" && <p role="status" className="text-sm text-muted-foreground">Saved. Stride couldn&apos;t draft the updated block{draftProblem ? `: ${draftProblem}` : " just now."} <Link className="underline" href="/plan">Open your plan</Link> and choose Update my plan.</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {editing ? <form onSubmit={save} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">

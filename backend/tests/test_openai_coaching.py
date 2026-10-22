@@ -1,7 +1,7 @@
 """Model decisions are untrusted; exercise the full local review/acceptance boundary."""
 import json
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -387,3 +387,84 @@ def test_concern_review_is_fresh_and_applicable(monkeypatch):
 def test_athlete_concern_is_bounded():
     plan,_,_=seed()
     assert concern_review(plan,'x'*501).status_code==422
+
+
+def test_plan_review_is_weekly_and_frames_this_and_next_week(monkeypatch):
+    plan_id, activity_id, monday = seed()
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source='manual', date=datetime.combine(date.today()-timedelta(days=40), datetime.min.time()),
+                        name='Old', distance_meters=4*MI, duration_seconds=2000))
+        db.commit()
+    calls = fake(monkeypatch)
+    assert review(plan_id).status_code == 200
+    ctx = calls[-1]
+    assert ctx['review_scope'] == 'week' and ctx['run'] is None
+    nxt = ctx['week_view']['next_week']
+    assert nxt['week_of'] == monday.isoformat() and nxt['planned_miles'] == 26
+    assert [s['weekday'] for s in nxt['key_sessions']] == ['Mon', 'Sat']
+    assert ctx['week_view']['this_week']['done_miles'] == 5.0
+    assert all(r['date'] >= (date.today()-timedelta(days=28)).isoformat() for r in ctx['recent_runs'])
+    assert 'review_scope' in openai_coach.INSTRUCTIONS and 'week_view' in openai_coach.INSTRUCTIONS
+    review(plan_id, activity_id)
+    assert calls[-1]['review_scope'] == 'run'
+
+
+def test_coach_memory_carries_two_weeks_of_its_own_notes(monkeypatch):
+    plan_id, activity_id, _ = seed()
+    calls = fake(monkeypatch)
+    with SessionLocal() as db:
+        old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=15)
+        for status, created in (('ready', old), ('fallback', datetime.now(timezone.utc).replace(tzinfo=None))):
+            db.add(CoachingReview(user_id=1, plan_id=plan_id, activity_id=None, context_hash=f'{status}-memory', status=status,
+                                  created_at=created, result=json.dumps({'summary': f'{status} note'}), candidates='[]'))
+        db.commit()
+    assert review(plan_id, activity_id).json()['status'] == 'ready'
+    assert calls[-1]['prior_reviews'] == []  # nothing recent and ready yet; the run itself is excluded
+    week = review(plan_id).json()
+    memory = calls[-1]['prior_reviews']
+    assert len(memory) == 1 and memory[0]['scope'] == 'run' and memory[0]['run_date'] == date.today().isoformat()
+    assert memory[0]['summary'].startswith('Controlled run') and memory[0]['observations'] == ['Feedback is positive.']
+    # A newer note elsewhere does not stale the weekly review or block its suggestions.
+    latest = client.get(f'/api/coaching/1/latest?plan_id={plan_id}').json()
+    assert latest['id'] == week['id'] and latest['stale'] is False
+    review(plan_id, activity_id)  # cached: same context, no new call
+    assert len(calls) == 2
+    assert 'prior_reviews' in openai_coach.INSTRUCTIONS
+
+
+def test_coach_memory_keeps_latest_note_per_subject_and_is_bounded(monkeypatch):
+    plan_id, _, _ = seed()
+    with SessionLocal() as db:
+        runs = []
+        for i in range(8):
+            a = Activity(user_id=1, source='manual', date=datetime.combine(date.today()-timedelta(days=i+1), datetime.min.time()),
+                         name='r', distance_meters=4*MI, duration_seconds=2000)
+            db.add(a); db.flush(); runs.append(a.id)
+        for i, run_id in enumerate(runs):
+            for version in ('older', 'newer'):
+                db.add(CoachingReview(user_id=1, activity_id=run_id, plan_id=plan_id, context_hash=f'{run_id}-{version}', status='ready',
+                                      created_at=datetime.now(timezone.utc).replace(tzinfo=None)-timedelta(hours=i*10 + (5 if version == 'older' else 0)),
+                                      result=json.dumps({'summary': f'{version} {run_id}'}), candidates='[]'))
+        db.commit()
+        memory = coaching.prior_reviews(1, db, plan_id=plan_id)
+    assert len(memory) == coaching.MEMORY_LIMIT
+    assert [m['summary'] for m in memory] == [f'newer {r}' for r in runs[:coaching.MEMORY_LIMIT]]
+
+
+def test_cut_off_coach_text_is_never_shown_mid_sentence():
+    cut = ("This week is 17.0 of 39.5 miles so far. Next week's Tue tempo moves you toward threshold. "
+           "You asked for more, and if you want to sharpen the week without overreaching, the 6")
+    assert coaching.finish_sentences(cut) == "This week is 17.0 of 39.5 miles so far. Next week's Tue tempo moves you toward threshold."
+    assert coaching.finish_sentences('Strong session at 6:59/mi.') == 'Strong session at 6:59/mi.'
+    assert coaching.finish_sentences('It went "well."') == 'It went "well."'
+    assert coaching.finish_sentences('no sentence end here,') == 'no sentence end here…'
+    with SessionLocal() as db:
+        db.add(CoachingReview(user_id=1, context_hash='cut', status='ready', candidates='[]',
+                              result=json.dumps({'summary': cut, 'observations': ['Legs were', 'Done.'], 'suggestions': []})))
+        db.commit()
+        served = coaching.serialize_review(db.query(CoachingReview).filter_by(context_hash='cut').one())
+    assert served['summary'].endswith('toward threshold.') and served['observations'] == ['Legs were', 'Done.']  # uncapped bullets untouched
+    # The schema limit is a backstop far above the prompt's ~450-character target, so the
+    # provider's constrained decoding no longer stops mid-sentence at the limit.
+    assert openai_coach.CoachAdvice.model_fields['summary'].metadata[0].max_length >= 800
+    assert '70 words' in openai_coach.INSTRUCTIONS
