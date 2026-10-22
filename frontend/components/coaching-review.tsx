@@ -139,6 +139,14 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       {review.athlete_concern && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
       {(!review.stale || expanded) && <p className={cn("leading-relaxed", !expanded && "line-clamp-3", review.stale && "text-muted-foreground")}>{review.summary}</p>}
       {review.stale && <p className="text-xs text-muted-foreground">This advice predates newer evidence. Refresh explicitly to review it; browsing never starts a paid refresh.</p>}
+      {/* The suggested change sits right under the advice it comes from; the evidence is behind More. */}
+      {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
+        <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({distance(option.replacement.distance_miles)} {unit})</span></p>
+        <p className="text-xs text-muted-foreground">{option.reason}</p>
+        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {distance(change.before.distance_miles)} → {distance(change.replacement.distance_miles)} {unit} to keep the weekly budget.</p>)}
+        <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply"}</Button>
+      </div>)}
+      {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
       {(review.stale || hasDetails || review.summary.length > 220) && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
           className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
@@ -151,13 +159,6 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
         {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
         <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
       </div>}
-      {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
-        <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({distance(option.replacement.distance_miles)} {unit})</span></p>
-        <p className="text-xs text-muted-foreground">{option.reason}</p>
-        {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {distance(change.before.distance_miles)} → {distance(change.replacement.distance_miles)} {unit} to keep the weekly budget.</p>)}
-        <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply"}</Button>
-      </div>)}
-      {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
     </>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {error && configured === null && <Button size="sm" variant="outline" onClick={load}>Retry loading coach</Button>}

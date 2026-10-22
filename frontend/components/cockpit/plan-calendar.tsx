@@ -27,8 +27,8 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
   return (
     <>
     <CompactCalendar weeks={weeks} units={units} selectedDate={selectedDate} onSelect={onSelect} today={today} />
-    <div className="hidden overflow-x-auto lg:block">
-      <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
+    <div className="hidden lg:block">
+      <table className="w-full table-fixed border-collapse text-sm">
         <thead>
           <tr className="bg-[var(--ink)] text-left font-mono text-xs uppercase tracking-[.08em] text-[#f5f5f2]">
             <th scope="col" className="w-[64px] px-1.5 py-2 font-medium">Wk</th>
