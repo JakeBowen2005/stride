@@ -63,9 +63,43 @@ def render(data):
     return text
 
 
+def long_run_prescription(parts, note, easy_pace=None):
+    """A structured long run as numbers, so its hard part can be verified like a workout.
+
+    ``parts`` run in order: ("easy", miles) or (category, miles, pace_sec_per_mile | None),
+    e.g. [("easy", 10), ("race_pace", 10, 410)]. Leading/trailing easy miles are the
+    warmup/cooldown; easy miles between two hard parts are the recovery between them.
+    A pace of None means effort-based (e.g. ultra race effort): distance is still checked.
+    ``easy_pace`` lets plain Garmin auto-laps be read (the hard laps stand out from it).
+    """
+    parts = list(parts)
+    warmup = parts.pop(0)[1] if parts and parts[0][0] == "easy" else 0
+    cooldown = parts.pop()[1] if parts and parts[-1][0] == "easy" else 0
+    segments = []
+    for part in parts:
+        if part[0] == "easy":
+            if segments:
+                segments[-1]["recovery_meters"] = round(part[1] * MI, 2)
+            continue
+        category, miles, pace = part
+        last = segments[-1] if segments else None
+        if (last and last["category"] == category and last["distance_meters"] == round(miles * MI, 2)
+                and last.get("recovery_meters")):
+            last["reps"] += 1  # repeated blocks (3x3mi at MP with float) are one segment
+            continue
+        segments.append(segment(meters=round(miles * MI, 2), fast=pace - 5 if pace else None, slow=pace + 5 if pace else None,
+                                category=category))
+    data = prescription("long_run", "continuous" if len(segments) == 1 and segments[0]["reps"] == 1 else "distance_intervals",
+                        segments, note=note)
+    data.update(warmup=segment(meters=round(warmup * MI, 2)) if warmup else None,
+                cooldown=segment(meters=round(cooldown * MI, 2)) if cooldown else None,
+                easy_pace_sec_per_mile=easy_pace)
+    return data
+
+
 def day_prescription(day):
     """New non-ladder days retain their effort/fueling guidance as an authored note."""
-    if day.get('prescription') and day['type'] == 'workout':
+    if day.get('prescription') and day['type'] in ('workout', 'long_run'):
         return day['prescription']
     return prescription(day['type'], 'continuous', [segment(meters=round(day.get('distance_miles', 0) * MI, 2))] if day.get('distance_miles') else [],
                         note=day.get('description'), source='effort_guidance')
@@ -158,7 +192,7 @@ def demanding_long_run(row):
         return False
     value = lambda key: row.get(key) if isinstance(row, dict) else getattr(row, key, None)
     data = loads(value('prescription')) or {}
-    if any(s.get('category') in {'threshold', 'intervals', 'race_pace'} for s in data.get('segments', [])):
+    if any(s.get('category') in {'threshold', 'intervals', 'race_pace', 'steady', 'race_effort'} for s in data.get('segments', [])):
         return True
     title = (value('title') or '').lower()
     return any(term in title for term in ('mp ', 'marathon pace', 'marathon-pace', 'race-effort', 'steady', 'sandwich', 'progressive', 'progression'))
