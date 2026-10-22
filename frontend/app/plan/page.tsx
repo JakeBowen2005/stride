@@ -81,6 +81,11 @@ interface ApiWeek {
 interface ApiPlan {
   id: number;
   preview?: boolean;
+  /** "schedule": only run days changed, so only the touched days moved. */
+  revision?: "schedule";
+  /** One plain line per week comparing this draft with the approved block. */
+  change_summary?: string[];
+  changes?: { date: string; before: string; after: string; reason: string }[];
   quality_policy?: { stage: string } | null;
   start_date: string;
   end_date: string;
@@ -215,14 +220,14 @@ export default function PlanPage() {
     }
   }, []);
 
-  const generatePlan = useCallback(async (lighter = false, scope: "current" | "next" = "current") => {
+  const generatePlan = useCallback(async (lighter = false, scope: "current" | "next" = "current", mode: "full" | "schedule" = "full") => {
     setGenerating(true);
     setError(null);
     try {
       const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lighter, scope }),
+        body: JSON.stringify({ lighter, scope, mode }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -412,10 +417,16 @@ export default function PlanPage() {
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
       {preferenceMismatch && builtFor && currentPreferences && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
         <p>This block was built for {describeSchedule(builtFor.days_per_week, builtFor.rest_days)}. Your settings now say {describeSchedule(currentPreferences.days_per_week, (currentPreferences.rest_days || "").split(","))}.</p>
-        <Button size="sm" disabled={generating} onClick={() => generatePlan()}>{generating ? "Building…" : "Update my plan"}</Button>
+        <Button size="sm" disabled={generating} onClick={() => generatePlan(false, "current", "schedule")}>{generating ? "Building…" : "Update my plan"}</Button>
       </div>}
       {plan.preview && <Panel label="Review this block" accent="var(--type-threshold)">
-        <p className="text-sm text-muted-foreground">Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged.</p>
+        <p className="text-sm text-muted-foreground">{plan.revision === "schedule"
+          ? "Only the days your new schedule touches changed: workouts and long runs are exactly as approved. Your current plan stays active until you approve."
+          : "Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged."}</p>
+        {!!plan.change_summary?.length && <ul className="mt-2 space-y-0.5 text-sm">{plan.change_summary.map((line) => <li key={line}>{line}</li>)}</ul>}
+        {!!plan.changes?.length && <ul className="mt-2 space-y-1 text-xs text-muted-foreground">{plan.changes.map((c) => (
+          <li key={c.date}><span className="font-medium text-foreground">{formatDateShort(c.date)}</span>: {c.before} → {c.after}. {c.reason}</li>
+        ))}</ul>}
         <div className="mt-3 flex flex-wrap gap-2">
           <Button disabled={generating} onClick={() => finishPreview("approve")}>Approve</Button>
           <Button variant="outline" disabled={generating} onClick={() => generatePlan(true)}>Make it lighter</Button>
