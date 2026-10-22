@@ -6,7 +6,8 @@ CLAUDE.md, using the production policy functions as the source of truth:
 
 - `plan_validator.validate_plan`: weekly budget, no runs on rest days, no hard day
   directly after another hard day (except a flagged ultra ``b2b`` pair)
-- ramp: no week schedules more than the demonstrated load grown by
+- ramp: no week schedules more than the demonstrated load (the 4-week average, or after a
+  down week the training level, never above a week actually run) grown by
   `load_policy.ramp_rate`, and no week grows more than that rate over the week
   before it (a week may always return to the demonstrated load after a lighter one)
 - deloads: a deload week appears exactly when `load_policy.deload_due` says one is
@@ -111,7 +112,13 @@ def plan_invariant_violations(
     baseline = float(load.get("baseline") or 0)
     experience = athlete.get("experience_level", "beginner")
     rate = ramp_rate(baseline, float(athlete.get("peak_weekly_mileage") or 0), experience, goal.get("type") or "race")
-    anchor = max(baseline, float(load.get("planning_anchor") or 0))
+    # After a down week the policy grows from the training level (the full-volume weeks), not the
+    # deload-dragged average. Checked independently: never above a week actually run, never more
+    # than 35% over the average.
+    level = min(float(load.get("training_level") or 0), baseline * 1.35)
+    if completed_weeks:
+        level = min(level, max(completed_weeks[-4:]))
+    anchor = max(baseline, float(load.get("planning_anchor") or 0), level)
     if load.get("mode") == "start":  # no usable history: the policy's starting load is the anchor
         anchor = max(anchor, *(load.get("weekly_budgets") or [0]))
     ceiling = anchor * (1 + rate)
