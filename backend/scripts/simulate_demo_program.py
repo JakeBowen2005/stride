@@ -34,26 +34,35 @@ def first_sentence(text, limit=170):
 
 
 def laps_for(day, easy_pace, mi):
-    """Garmin-style laps that execute a structured workout exactly."""
+    """Garmin-style laps that execute a structured session (workout or long run) exactly."""
     spec = day.get("prescription") or {}
-    work, laps = [], []
-    for seg in spec.get("segments") or []:
+    segments = spec.get("segments") or []
+    work = []
+    for index, seg in enumerate(segments):
         pace_range = seg.get("pace_range_sec_per_mile") or {}
         pace = ((pace_range.get("fast") or 0) + (pace_range.get("slow") or 0)) / 2 or easy_pace
-        for rep in range(seg.get("reps") or 1):
+        reps = seg.get("reps") or 1
+        for rep in range(reps):
             seconds = seg.get("duration_seconds") or (seg.get("distance_meters") or 0) / mi * pace
             meters = seg.get("distance_meters") or (seg.get("duration_seconds") or 0) / pace * mi
             if not meters:
                 continue
             work.append({"intensity": "ACTIVE", "distance_m": meters, "duration_s": seconds})
-            if rep < (seg.get("reps") or 1) - 1 and (seg.get("recovery_seconds") or seg.get("recovery_meters")):
+            last = index == len(segments) - 1 and rep == reps - 1
+            if not last and (seg.get("recovery_seconds") or seg.get("recovery_meters")):
                 rest_s = seg.get("recovery_seconds") or seg["recovery_meters"] / mi * easy_pace
                 work.append({"intensity": "RECOVERY", "distance_m": rest_s / easy_pace * mi, "duration_s": rest_s})
     if not work:
         return []
     remaining = max(0.0, day["distance_miles"] * mi - sum(lap["distance_m"] for lap in work))
+    warm = (spec.get("warmup") or {}).get("distance_meters")
+    cool = (spec.get("cooldown") or {}).get("distance_meters")
+    if warm is None and cool is None:
+        warm = cool = remaining / 2
+    else:
+        warm, cool = warm or 0, cool or 0
     easy_lap = lambda kind, meters: {"intensity": kind, "distance_m": meters, "duration_s": meters / mi * easy_pace}
-    laps = [easy_lap("WARMUP", remaining / 2)] + work + [easy_lap("COOLDOWN", remaining / 2)]
+    laps = [easy_lap("WARMUP", warm)] + work + [easy_lap("COOLDOWN", cool)]
     return [lap for lap in laps if lap["distance_m"] > 1]
 
 
@@ -64,6 +73,11 @@ def describe(day):
     # Easy and long runs keep their guidance in the prescription note ("6mi easy at 8:05-8:55/mi. Conversational...").
     what = first_sentence(spec.get("note") if spec.get("evidence_source") == "effort_guidance" or not spec.get("segments") else None) \
         or first_sentence(day.get("description"))
+    if day["type"] == "long_run":
+        # Long runs explain their structure over up to three sentences ("4h50 on trail... Run the middle third at race effort.")
+        text = " ".join((day.get("description") or "").split())
+        sentences = [x for x in text.split(". ") if x][:3]
+        what = ". ".join(sentences) or what
     what = what.rstrip(".")
     if day["type"] == "workout" and day.get("warmup"):
         what += f" (warm up {day['warmup']}, cool down {day.get('cooldown') or day['warmup']})"
@@ -136,8 +150,9 @@ def main():
                 with SessionLocal() as db:
                     if day and day["type"] != "rest" and day["distance_miles"]:
                         # Any session with paced work (workouts, marathon-pace long runs) gets matching laps.
-                        paced = any(seg.get("pace_range_sec_per_mile") for seg in (day.get("prescription") or {}).get("segments") or [])
-                        laps = laps_for(day, easy_pace, MI) if day["type"] == "workout" or paced else []
+                        spec = day.get("prescription") or {}
+                        structured = any(seg.get("category") for seg in spec.get("segments") or [])  # MP / steady / race effort
+                        laps = laps_for(day, easy_pace, MI) if day["type"] == "workout" or structured else []
                         seconds = sum(l["duration_s"] for l in laps) if laps else day["distance_miles"] * easy_pace
                         category = (day.get("prescription") or {}).get("category")
                         db.add(Activity(user_id=1, source="manual", external_id=f"sim-{current}", name=f"Simulated {day['title']}",

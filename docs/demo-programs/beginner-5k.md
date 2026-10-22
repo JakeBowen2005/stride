@@ -10,10 +10,10 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 ## How each block was decided
 
 - **Block 1** (Oct 19–Nov 01): **build** → deload. Deload in week 2: ~25% less volume to absorb training. Why: Ran 16 of 16 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 8.0/10 over 6 rated runs.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (8 → 8 mi/week). Why: Ran 12 of 12 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 3** (Nov 16–Nov 29): **build** → build. Building up to 10% over the block (8 → 8 mi/week). Why: Ran 16 of 16 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 4** (Nov 30–Dec 13): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 16 of 16 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 5** (Dec 14–Dec 27): **build** → build. Building up to 10% over the block (8 → 9 mi/week). Why: Ran 15 of 15 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Training level 8 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 12 of 12 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 3** (Nov 16–Nov 29): **build** → build. Training level 8.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 16 of 16 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 4** (Nov 30–Dec 13): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 17 of 17 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 5** (Dec 14–Dec 27): **build** → build. Training level 8.5 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 14 of 14 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
 
 ## At a glance
 
@@ -23,9 +23,9 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 | 2 | Oct 26 | Build | 6.0 | 2 | easy running only |
 | 3 | Nov 02 | Build | 8.0 | 3 | easy running only |
 | 4 | Nov 09 | Build | 8.5 | 3 | easy running only |
-| 5 | Nov 16 | Build | 8.0 | 3 | easy running only |
+| 5 | Nov 16 | Build | 8.5 | 3 | easy running only |
 | 6 | Nov 23 | Peak | 8.5 | 3 | easy running only |
-| 7 | Nov 30 | Peak | 6.5 | 2.5 | easy running only |
+| 7 | Nov 30 | Peak | 6.0 | 2 | easy running only |
 | 8 | Dec 07 | Peak | 8.5 | 3 | easy running only |
 | 9 | Dec 14 | Race Week | 12.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
 
@@ -37,7 +37,7 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Oct 21** · Rest
 - **Thu Oct 22** · Easy Run · 2.5 mi — Conversational effort the entire time.
 - **Fri Oct 23** · Rest
-- **Sat Oct 24** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 24** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Oct 25** · Rest
 
 ### Week 2 · Oct 26–Nov 01 · Build · 6.0 mi
@@ -46,7 +46,7 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Oct 28** · Rest
 - **Thu Oct 29** · Easy Run · 2 mi — Conversational effort the entire time.
 - **Fri Oct 30** · Rest
-- **Sat Oct 31** · Easy Long Run · 2 mi — 2.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 31** · Easy Long Run · 2 mi — 2.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 01** · Rest
 
 ### Week 3 · Nov 02–Nov 08 · Build · 8.0 mi
@@ -55,7 +55,7 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Nov 04** · Rest
 - **Thu Nov 05** · Easy Run · 2.5 mi — Conversational effort the entire time.
 - **Fri Nov 06** · Rest
-- **Sat Nov 07** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 07** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 08** · Rest
 
 ### Week 4 · Nov 09–Nov 15 · Build · 8.5 mi
@@ -64,16 +64,16 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Nov 11** · Rest
 - **Thu Nov 12** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Nov 13** · Rest
-- **Sat Nov 14** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 14** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 15** · Rest
 
-### Week 5 · Nov 16–Nov 22 · Build · 8.0 mi
+### Week 5 · Nov 16–Nov 22 · Build · 8.5 mi
 - **Mon Nov 16** · Rest
 - **Tue Nov 17** · Easy Run · 2.5 mi — Conversational effort the entire time.
 - **Wed Nov 18** · Rest
-- **Thu Nov 19** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Nov 19** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Nov 20** · Rest
-- **Sat Nov 21** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 21** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 22** · Rest
 
 ### Week 6 · Nov 23–Nov 29 · Peak · 8.5 mi
@@ -82,16 +82,16 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Nov 25** · Rest
 - **Thu Nov 26** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Nov 27** · Rest
-- **Sat Nov 28** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 28** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 29** · Rest
 
-### Week 7 · Nov 30–Dec 06 · Peak · 6.5 mi
+### Week 7 · Nov 30–Dec 06 · Peak · 6.0 mi
 - **Mon Nov 30** · Rest
 - **Tue Dec 01** · Easy Run · 2 mi — Conversational effort the entire time.
 - **Wed Dec 02** · Rest
 - **Thu Dec 03** · Easy Run · 2 mi — Conversational effort the entire time.
 - **Fri Dec 04** · Rest
-- **Sat Dec 05** · Easy Long Run · 2.5 mi — 2.5mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Dec 05** · Easy Long Run · 2 mi — 2.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Dec 06** · Rest
 
 ### Week 8 · Dec 07–Dec 13 · Peak · 8.5 mi
@@ -100,7 +100,7 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 - **Wed Dec 09** · Rest
 - **Thu Dec 10** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Dec 11** · Rest
-- **Sat Dec 12** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Dec 12** · Easy Long Run · 3 mi — 3.0mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Dec 13** · Rest
 
 ### Week 9 · Dec 14–Dec 20 · Race Week · 12.1 mi

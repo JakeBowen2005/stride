@@ -9,40 +9,40 @@ Synthetic beginner training for a first marathon (~4:30), 18 weeks out, running 
 
 ## How each block was decided
 
-- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (15 → 16 mi/week). Why: Ran 28 of 28 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 8.0/10 over 8 rated runs.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (15 → 16 mi/week). Why: Ran 28 of 28 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Building up to 10% over the block (15 → 16 mi/week). Why: Ran 26 of 26 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 5** (Dec 14–Dec 27): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 6** (Dec 28–Jan 10): **build** → build. Building up to 10% over the block (14 → 15 mi/week). Why: Ran 25 of 25 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 7** (Jan 11–Jan 24): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 8** (Jan 25–Feb 07): **build** → build. Building up to 10% over the block (14 → 15 mi/week). Why: Ran 24 of 24 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 9** (Feb 08–Feb 21): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
-- **Block 10** (Feb 22–Mar 07): **build** → build. Building up to 10% over the block (13 → 14 mi/week). Why: Ran 21 of 21 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 1** (Oct 19–Nov 01): **build** → build. Training level 15 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 28 of 28 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 8.0/10 over 8 rated runs.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Training level 15.7 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 28 of 28 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 34 of 34 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 16.8 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 29 of 29 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 5** (Dec 14–Dec 27): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 36 of 36 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 6** (Dec 28–Jan 10): **build** → build. Training level 18 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 7** (Jan 11–Jan 24): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 38 of 38 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 8** (Jan 25–Feb 07): **build** → build. Training level 19.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 34 of 34 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
+- **Block 9** (Feb 08–Feb 21): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 42 of 42 planned miles (100%). Verified 2 of 2 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 10** (Feb 22–Mar 07): **build** → build. Training level 20.8 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 30 of 30 planned miles (100%). Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence. Average feel 7.0/10 over 2 rated runs.
 
 ## At a glance
 
 | Week | Starts | Phase | Miles | Long run | Quality |
 |---|---|---|---|---|---|
 | 1 | Oct 19 | Base | 15.3 | 4.5 | easy running only |
-| 2 | Oct 26 | Base | 15.0 | 4.5 | easy running only |
-| 3 | Nov 02 | Base | 15.0 | 4.5 | easy running only |
-| 4 | Nov 09 | Base | 15.5 | 5 | easy running only |
-| 5 | Nov 16 | Base | 11.0 | 3.5 | easy running only |
-| 6 | Nov 23 | Base | 15.0 | 4.5 | easy running only |
-| 7 | Nov 30 | Base | 15.0 | 4.5 | easy running only |
-| 8 | Dec 07 | Build | 15.0 | 4.5 | easy running only |
-| 9 | Dec 14 | Build | 10.5 | 3 | easy running only |
-| 10 | Dec 21 | Build | 14.5 | 4 | easy running only |
-| 11 | Dec 28 | Build | 15.0 | 4.5 | easy running only |
-| 12 | Jan 04 | Build | 15.0 | 4.5 | easy running only |
-| 13 | Jan 11 | Peak | 10.5 | 3 | easy running only |
-| 14 | Jan 18 | Peak | 14.0 | 4 | easy running only |
-| 15 | Jan 25 | Peak | 14.5 | 4.5 | easy running only |
-| 16 | Feb 01 | Peak | 15.0 | 4.5 | easy running only |
-| 17 | Feb 08 | Peak | 10.5 | 3 | easy running only |
-| 18 | Feb 15 | Taper | 10.5 | 3 | easy running only |
-| 19 | Feb 22 | Race Week | 35.2 | — | Race-Week Sharpener: 2x1mi at MP, RACE DAY — Marathon |
+| 2 | Oct 26 | Base | 16.0 | 4.5 | easy running only |
+| 3 | Nov 02 | Base | 17.0 | 5 | easy running only |
+| 4 | Nov 09 | Base | 17.0 | 5 | easy running only |
+| 5 | Nov 16 | Base | 12.5 | 3.5 | easy running only |
+| 6 | Nov 23 | Base | 16.5 | 5 | easy running only |
+| 7 | Nov 30 | Base | 17.5 | 5.5 | easy running only |
+| 8 | Dec 07 | Build | 19.0 | 5.5 | easy running only |
+| 9 | Dec 14 | Build | 13.0 | 4 | easy running only |
+| 10 | Dec 21 | Build | 17.5 | 5.5 | easy running only |
+| 11 | Dec 28 | Build | 19.0 | 5.5 | easy running only |
+| 12 | Jan 04 | Build | 19.5 | 6 | easy running only |
+| 13 | Jan 11 | Peak | 14.5 | 4 | easy running only |
+| 14 | Jan 18 | Peak | 19.0 | 5.5 | easy running only |
+| 15 | Jan 25 | Peak | 20.0 | 6 | 2x10min Threshold |
+| 16 | Feb 01 | Peak | 21.5 | 6.5 | 2x11min Threshold |
+| 17 | Feb 08 | Peak | 15.0 | 4.5 | easy running only |
+| 18 | Feb 15 | Taper | 14.5 | 4 | easy running only |
+| 19 | Feb 22 | Race Week | 35.7 | — | Race-Week Sharpener: 2x1mi at MP, RACE DAY — Marathon |
 
 ## Week by week
 
@@ -52,165 +52,165 @@ Synthetic beginner training for a first marathon (~4:30), 18 weeks out, running 
 - **Wed Oct 21** · Rest
 - **Thu Oct 22** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Oct 23** · Rest
-- **Sat Oct 24** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 24** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Oct 25** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 2 · Oct 26–Nov 01 · Base · 15.0 mi
+### Week 2 · Oct 26–Nov 01 · Base · 16.0 mi
 - **Mon Oct 26** · Rest
-- **Tue Oct 27** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Oct 27** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Oct 28** · Rest
-- **Thu Oct 29** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Oct 29** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Oct 30** · Rest
-- **Sat Oct 31** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 31** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 01** · Easy Run · 3.5 mi — Conversational effort the entire time.
 
-### Week 3 · Nov 02–Nov 08 · Base · 15.0 mi
+### Week 3 · Nov 02–Nov 08 · Base · 17.0 mi
 - **Mon Nov 02** · Rest
-- **Tue Nov 03** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Nov 03** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Nov 04** · Rest
-- **Thu Nov 05** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Nov 05** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Nov 06** · Rest
-- **Sat Nov 07** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Nov 08** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Nov 07** · Easy Long Run · 5 mi — 5.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Nov 08** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 4 · Nov 09–Nov 15 · Base · 15.5 mi
+### Week 4 · Nov 09–Nov 15 · Base · 17.0 mi
 - **Mon Nov 09** · Rest
-- **Tue Nov 10** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Nov 10** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Nov 11** · Rest
-- **Thu Nov 12** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Nov 12** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Nov 13** · Rest
-- **Sat Nov 14** · Easy Long Run · 5 mi — 5.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Nov 15** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Nov 14** · Easy Long Run · 5 mi — 5.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Nov 15** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 5 · Nov 16–Nov 22 · Base · 11.0 mi
+### Week 5 · Nov 16–Nov 22 · Base · 12.5 mi
 - **Mon Nov 16** · Rest
-- **Tue Nov 17** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Tue Nov 17** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Wed Nov 18** · Rest
-- **Thu Nov 19** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Nov 19** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Nov 20** · Rest
-- **Sat Nov 21** · Easy Long Run · 3.5 mi — 3.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Nov 22** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Sat Nov 21** · Easy Long Run · 3.5 mi — 3.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Nov 22** · Easy Run · 3 mi — Conversational effort the entire time.
 
-### Week 6 · Nov 23–Nov 29 · Base · 15.0 mi
+### Week 6 · Nov 23–Nov 29 · Base · 16.5 mi
 - **Mon Nov 23** · Rest
-- **Tue Nov 24** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Nov 24** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Nov 25** · Rest
-- **Thu Nov 26** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Nov 26** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Nov 27** · Rest
-- **Sat Nov 28** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 28** · Easy Long Run · 5 mi — 5.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 29** · Easy Run · 3.5 mi — Conversational effort the entire time.
 
-### Week 7 · Nov 30–Dec 06 · Base · 15.0 mi
+### Week 7 · Nov 30–Dec 06 · Base · 17.5 mi
 - **Mon Nov 30** · Rest
-- **Tue Dec 01** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Dec 01** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Dec 02** · Rest
-- **Thu Dec 03** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Dec 03** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Dec 04** · Rest
-- **Sat Dec 05** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Dec 06** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Dec 05** · Easy Long Run · 5.5 mi — 5.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Dec 06** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 8 · Dec 07–Dec 13 · Build · 15.0 mi
+### Week 8 · Dec 07–Dec 13 · Build · 19.0 mi
 - **Mon Dec 07** · Rest
-- **Tue Dec 08** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Dec 08** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Wed Dec 09** · Rest
-- **Thu Dec 10** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Dec 10** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Fri Dec 11** · Rest
-- **Sat Dec 12** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Dec 13** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Dec 12** · Easy Long Run · 5.5 mi — 5.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Dec 13** · Easy Run · 4.5 mi — Conversational effort the entire time.
 
-### Week 9 · Dec 14–Dec 20 · Build · 10.5 mi
+### Week 9 · Dec 14–Dec 20 · Build · 13.0 mi
 - **Mon Dec 14** · Rest
-- **Tue Dec 15** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Tue Dec 15** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Wed Dec 16** · Rest
-- **Thu Dec 17** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Dec 17** · Easy Run · 3 mi — Conversational effort the entire time.
 - **Fri Dec 18** · Rest
-- **Sat Dec 19** · Easy Long Run · 3 mi — 3.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Dec 20** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Sat Dec 19** · Easy Long Run · 4 mi — 4.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Dec 20** · Easy Run · 3 mi — Conversational effort the entire time.
 
-### Week 10 · Dec 21–Dec 27 · Build · 14.5 mi
+### Week 10 · Dec 21–Dec 27 · Build · 17.5 mi
 - **Mon Dec 21** · Rest
-- **Tue Dec 22** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Dec 22** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Wed Dec 23** · Rest
-- **Thu Dec 24** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Dec 24** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Dec 25** · Rest
-- **Sat Dec 26** · Easy Long Run · 4 mi — 4.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Dec 27** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Dec 26** · Easy Long Run · 5.5 mi — 5.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Dec 27** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 11 · Dec 28–Jan 03 · Build · 15.0 mi
+### Week 11 · Dec 28–Jan 03 · Build · 19.0 mi
 - **Mon Dec 28** · Rest
-- **Tue Dec 29** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Dec 29** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Wed Dec 30** · Rest
-- **Thu Dec 31** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Dec 31** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Fri Jan 01** · Rest
-- **Sat Jan 02** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Jan 03** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Jan 02** · Easy Long Run · 5.5 mi — 5.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Jan 03** · Easy Run · 4.5 mi — Conversational effort the entire time.
 
-### Week 12 · Jan 04–Jan 10 · Build · 15.0 mi
+### Week 12 · Jan 04–Jan 10 · Build · 19.5 mi
 - **Mon Jan 04** · Rest
-- **Tue Jan 05** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Jan 05** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Wed Jan 06** · Rest
-- **Thu Jan 07** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Jan 07** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Fri Jan 08** · Rest
-- **Sat Jan 09** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Jan 10** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Jan 09** · Easy Long Run · 6 mi — 6.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Jan 10** · Easy Run · 4.5 mi — Conversational effort the entire time.
 
-### Week 13 · Jan 11–Jan 17 · Peak · 10.5 mi
+### Week 13 · Jan 11–Jan 17 · Peak · 14.5 mi
 - **Mon Jan 11** · Rest
-- **Tue Jan 12** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Tue Jan 12** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Wed Jan 13** · Rest
-- **Thu Jan 14** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Jan 14** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Fri Jan 15** · Rest
-- **Sat Jan 16** · Easy Long Run · 3 mi — 3.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Jan 17** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Sat Jan 16** · Easy Long Run · 4 mi — 4.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Jan 17** · Easy Run · 3.5 mi — Conversational effort the entire time.
 
-### Week 14 · Jan 18–Jan 24 · Peak · 14.0 mi
+### Week 14 · Jan 18–Jan 24 · Peak · 19.0 mi
 - **Mon Jan 18** · Rest
-- **Tue Jan 19** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Jan 19** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Wed Jan 20** · Rest
-- **Thu Jan 21** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Jan 21** · Easy Run · 4.5 mi — Conversational effort the entire time.
 - **Fri Jan 22** · Rest
-- **Sat Jan 23** · Easy Long Run · 4 mi — 4.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Jan 24** · Easy Run · 3 mi — Conversational effort the entire time.
+- **Sat Jan 23** · Easy Long Run · 5.5 mi — 5.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Jan 24** · Easy Run · 4.5 mi — Conversational effort the entire time.
 
-### Week 15 · Jan 25–Jan 31 · Peak · 14.5 mi
+### Week 15 · Jan 25–Jan 31 · Peak · 20.0 mi
 - **Mon Jan 25** · Rest
-- **Tue Jan 26** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Jan 26** · 2x10min Threshold · 6 mi — 2x10min at 8:00/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your ma…
 - **Wed Jan 27** · Rest
-- **Thu Jan 28** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Jan 28** · Easy Run + Strides · 4 mi — Conversational effort the whole run — easy means easy.
 - **Fri Jan 29** · Rest
-- **Sat Jan 30** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Jan 31** · Easy Run · 3 mi — Conversational effort the entire time.
+- **Sat Jan 30** · Easy Long Run · 6 mi — 6.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Jan 31** · Easy Run · 4 mi — Conversational effort the entire time.
 
-### Week 16 · Feb 01–Feb 07 · Peak · 15.0 mi
+### Week 16 · Feb 01–Feb 07 · Peak · 21.5 mi
 - **Mon Feb 01** · Rest
-- **Tue Feb 02** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Tue Feb 02** · 2x11min Threshold · 6 mi — 2x11min at 8:00/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your ma…
 - **Wed Feb 03** · Rest
-- **Thu Feb 04** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Thu Feb 04** · Easy Run + Strides · 4.5 mi — Conversational effort the whole run — easy means easy.
 - **Fri Feb 05** · Rest
-- **Sat Feb 06** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Feb 07** · Easy Run · 3.5 mi — Conversational effort the entire time.
+- **Sat Feb 06** · Easy Long Run · 6.5 mi — 6.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Feb 07** · Easy Run · 4.5 mi — Conversational effort the entire time.
 
-### Week 17 · Feb 08–Feb 14 · Peak · 10.5 mi
+### Week 17 · Feb 08–Feb 14 · Peak · 15.0 mi
 - **Mon Feb 08** · Rest
-- **Tue Feb 09** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Tue Feb 09** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Wed Feb 10** · Rest
-- **Thu Feb 11** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Feb 11** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Fri Feb 12** · Rest
-- **Sat Feb 13** · Easy Long Run · 3 mi — 3.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Feb 14** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Sat Feb 13** · Easy Long Run · 4.5 mi — 4.5mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Feb 14** · Easy Run · 3.5 mi — Conversational effort the entire time.
 
-### Week 18 · Feb 15–Feb 21 · Taper · 10.5 mi
+### Week 18 · Feb 15–Feb 21 · Taper · 14.5 mi
 - **Mon Feb 15** · Rest
-- **Tue Feb 16** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Tue Feb 16** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Wed Feb 17** · Rest
-- **Thu Feb 18** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Thu Feb 18** · Easy Run · 3.5 mi — Conversational effort the entire time.
 - **Fri Feb 19** · Rest
-- **Sat Feb 20** · Easy Long Run · 3 mi — 3.0mi easy at 10:25-11:35/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
-- **Sun Feb 21** · Easy Run · 2.5 mi — Conversational effort the entire time.
+- **Sat Feb 20** · Easy Long Run · 4 mi — 4.0mi easy at 10:25-11:35/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sun Feb 21** · Easy Run · 3.5 mi — Conversational effort the entire time.
 
-### Week 19 · Feb 22–Feb 28 · Race Week · 35.2 mi
+### Week 19 · Feb 22–Feb 28 · Race Week · 35.7 mi
 - **Mon Feb 22** · Rest
-- **Tue Feb 23** · Easy Run · 2 mi — Easy and short.
+- **Tue Feb 23** · Easy Run · 2.5 mi — Easy and short.
 - **Wed Feb 24** · Rest
 - **Thu Feb 25** · Race-Week Sharpener: 2x1mi at MP · 5 mi — 2x1mi at 10:17/mi (goal MP) with 3min jog (warm up 1.5mi easy + 4 strides, cool down 1.5mi easy). *Why:* Keeps the legs sharp during the taper without adding fatigue.
 - **Fri Feb 26** · Rest

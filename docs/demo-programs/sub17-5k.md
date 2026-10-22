@@ -12,7 +12,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (49 → 51 mi/week). Why: Ran 93 of 93 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
 - **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (51 → 53 mi/week). Why: Ran 88 of 88 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
 - **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 104 of 104 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Building up to 10% over the block (51 → 53 mi/week). Why: Ran 89 of 89 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 51.8 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 89 of 89 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
 
 ## At a glance
 
@@ -34,7 +34,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Oct 21** · Easy Run · 8 mi — Conversational effort the entire time.
 - **Thu Oct 22** · 25min Continuous Tempo · 7.5 mi — 25min at 6:00/mi (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Extended threshold stimulus.
 - **Fri Oct 23** · Easy Run · 8 mi — Conversational effort the entire time.
-- **Sat Oct 24** · Easy Long Run · 13.5 mi — 13.5mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 24** · Easy Long Run · 13.5 mi — 13.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Oct 25** · Rest
 
 ### Week 2 · Oct 26–Nov 01 · Build · 51.0 mi
@@ -43,7 +43,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Oct 28** · Easy Run · 7 mi — Conversational effort the entire time.
 - **Thu Oct 29** · 2x15min Hard · 8.5 mi — 2x15min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* 30min quality in two big chunks.
 - **Fri Oct 30** · Easy Run · 7 mi — Conversational effort the entire time.
-- **Sat Oct 31** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Oct 31** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 01** · Rest
 
 ### Week 3 · Nov 02–Nov 08 · Build · 50.5 mi
@@ -52,7 +52,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Nov 04** · Easy Run · 6.5 mi — Conversational effort the entire time.
 - **Thu Nov 05** · 3x12min Hard · 10 mi — 3x12min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* 36min total threshold — approaching peak time-based volume.
 - **Fri Nov 06** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Sat Nov 07** · Easy Long Run · 14 mi — 14.0mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 07** · Easy Long Run · 14 mi — 14.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 08** · Rest
 
 ### Week 4 · Nov 09–Nov 15 · Peak · 53.5 mi
@@ -61,7 +61,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Nov 11** · Easy Run · 7 mi — Conversational effort the entire time.
 - **Thu Nov 12** · 3x11min Threshold · 9.5 mi — 3x11min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 5K…
 - **Fri Nov 13** · Easy Run · 7 mi — Conversational effort the entire time.
-- **Sat Nov 14** · Easy Long Run · 15 mi — 15.0mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 14** · Easy Long Run · 15 mi — 15.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 15** · Rest
 
 ### Week 5 · Nov 16–Nov 22 · Peak · 37.5 mi
@@ -70,7 +70,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Nov 18** · Easy Run · 5 mi — Conversational effort the entire time.
 - **Thu Nov 19** · Easy Run · 5 mi — Conversational effort the entire time.
 - **Fri Nov 20** · Easy Run · 5 mi — Conversational effort the entire time.
-- **Sat Nov 21** · Easy Long Run · 10.5 mi — 10.5mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 21** · Easy Long Run · 10.5 mi — 10.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 22** · Rest
 
 ### Week 6 · Nov 23–Nov 29 · Peak · 51.5 mi
@@ -79,7 +79,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Wed Nov 25** · Easy Run · 6.5 mi — Conversational effort the entire time.
 - **Thu Nov 26** · 4x9min Threshold · 10 mi — 4x9min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 5K…
 - **Fri Nov 27** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Sat Nov 28** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Sat Nov 28** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 29** · Rest
 
 ### Week 7 · Nov 30–Dec 06 · Race Week · 30.1 mi
