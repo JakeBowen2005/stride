@@ -12,6 +12,7 @@ Key principles:
 from datetime import date, timedelta
 
 from app.core.pacing import format_pace, goal_paces, pace_range
+from app.core.workout_data import long_run_prescription
 from app.core.workouts import get_workout_library
 from app.core.goal_pace import with_specific_pace
 from app.core.session_catalog import ultra_vert_session
@@ -208,7 +209,8 @@ def generate_plan(
 
     def restructure_long(miles: float) -> dict:
         lr = _long_run_structure(miles, "easy", current_paces)
-        return {"title": lr["title"], "description": lr["description"], "purpose": lr["purpose"]}
+        # A shortened long run is a plain easy run: drop any structured (MP/steady) prescription.
+        return {"title": lr["title"], "description": lr["description"], "purpose": lr["purpose"], "prescription": None}
 
     easy_desc_all = (
         "Conversational effort the entire time. Should be able to hold a full conversation — "
@@ -494,6 +496,7 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
     else:
         mp_label = f"goal MP ({format_pace(mp)}/mi)" if mp else f"steady ({steady}/mi)"
     total = _round_half(total_miles)
+    easy_ref = paces.get("long_run_pace") or paces["easy_pace_high"]
 
     if run_type == "easy":
         return {
@@ -511,10 +514,12 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
         else:
             hard = 4.0
         easy_mi = _round_half(total - hard)
+        description = f"{easy_mi}mi easy at {easy_range}/mi, then {hard}mi at steady effort ({steady}/mi)."
         return {
             "title": "Steady Finish Long Run",
-            "description": f"{easy_mi}mi easy at {easy_range}/mi, then {hard}mi at steady effort ({steady}/mi).",
+            "description": description,
             "purpose": "Teaches finishing strong on tired legs. Controlled — not a workout.",
+            "prescription": long_run_prescription([("easy", easy_mi), ("steady", hard, paces["steady_pace"])], description, easy_ref),
         }
 
     elif run_type == "mp_finish":
@@ -526,20 +531,24 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
         else:
             hard = 5.0
         easy_mi = _round_half(total - hard)
+        description = f"{easy_mi}mi easy at {easy_range}/mi, then {hard}mi at {mp_label}. Controlled — don't force it."
         return {
             "title": "MP Finish Long Run",
-            "description": f"{easy_mi}mi easy at {easy_range}/mi, then {hard}mi at {mp_label}. Controlled — don't force it.",
+            "description": description,
             "purpose": "Marathon-specific endurance. Running race effort on tired legs — the key long run workout.",
+            "prescription": long_run_prescription([("easy", easy_mi), ("race_pace" if mp else "steady", hard, mp or paces["steady_pace"])], description, easy_ref),
         }
 
     elif run_type == "sandwich":
         # Easy / steady / easy — roughly equal thirds
         third = _round_half(total / 3)
         middle = _round_half(total - third * 2)
+        description = f"{third}mi easy at {easy_range}/mi, {middle}mi at steady ({steady}/mi), {third}mi easy to finish."
         return {
             "title": "Steady Sandwich Long Run",
-            "description": f"{third}mi easy at {easy_range}/mi, {middle}mi at steady ({steady}/mi), {third}mi easy to finish.",
+            "description": description,
             "purpose": "Sustained steady effort sandwiched between easy. Builds pacing discipline over distance.",
+            "prescription": long_run_prescription([("easy", third), ("steady", middle, paces["steady_pace"]), ("easy", third)], description, easy_ref),
         }
 
     elif run_type == "mp_block":
@@ -549,10 +558,13 @@ def _long_run_structure(total_miles: float, run_type: str, paces: dict) -> dict:
         float_total = sets - 1
         wu = _round_half((total - mp_total - float_total) / 2)
         cd = _round_half(total - mp_total - float_total - wu)
+        description = f"{wu}mi easy, then {sets}x3mi at {mp_label} with 1mi float ({easy_range}/mi) between sets, {cd}mi easy."
+        blocks = [part for _ in range(sets) for part in (("race_pace" if mp else "steady", 3, mp or paces["steady_pace"]), ("easy", 1))][:-1]
         return {
             "title": "MP Block Long Run",
-            "description": f"{wu}mi easy, then {sets}x3mi at {mp_label} with 1mi float ({easy_range}/mi) between sets, {cd}mi easy.",
+            "description": description,
             "purpose": "Accumulates massive marathon pace volume. Peak long run workout.",
+            "prescription": long_run_prescription([("easy", wu)] + blocks + [("easy", cd)], description, easy_ref),
         }
 
     # Fallback
@@ -754,7 +766,7 @@ def _build_week(
 
             if long_wo and long_wo.get("structure") and long_wo.get("total_miles", distance) <= distance * 1.15:
                 # Peak fixed-structure long runs — use as-is (only when they fit this week)
-                days.append({
+                day = {
                     "date": day_date.isoformat(), "day": day_name,
                     "type": "long_run",
                     "title": long_wo["name"],
@@ -762,7 +774,16 @@ def _build_week(
                     "purpose": long_wo["purpose"],
                     "distance_miles": long_wo.get("total_miles", distance),
                     "warmup": None, "cooldown": None,
-                })
+                }
+                if long_wo.get("parts"):
+                    # The written structure as numbers, so the marathon-pace work can be verified.
+                    target = {"mp": ("race_pace", current_paces.get("goal_race_pace") or current_paces["steady_pace"]),
+                              "steady": ("steady", current_paces["steady_pace"])}
+                    day["prescription"] = long_run_prescription(
+                        [("easy", miles) if kind == "easy" else (target[kind][0], miles, target[kind][1])
+                         for kind, miles in long_wo["parts"]], long_wo["structure"],
+                        current_paces.get("long_run_pace") or current_paces["easy_pace_high"])
+                days.append(day)
             elif long_wo and long_wo.get("run_type"):
                 lr = _long_run_structure(distance, long_wo["run_type"], current_paces)
                 days.append({
@@ -773,6 +794,7 @@ def _build_week(
                     "purpose": lr["purpose"],
                     "distance_miles": distance,
                     "warmup": None, "cooldown": None,
+                    **({"prescription": lr["prescription"]} if lr.get("prescription") else {}),
                 })
             else:
                 lr = _long_run_structure(distance, "easy", current_paces)

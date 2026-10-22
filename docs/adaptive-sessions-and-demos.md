@@ -65,7 +65,7 @@ Each branch has the same reviewed application code and its own `demo/default-sce
 
 ### Beginner demo branches
 
-- `codex/demo-beginner-marathon`: first marathon (~4:30), 18 weeks out, 12→16 mi/week history on 4 days, easy ~11:00/mi. Base phase.
+- `codex/demo-beginner-marathon`: first marathon (~4:30), 18 weeks out, 10→16 mi/week history on 4 days in a three-up, one-down rhythm (last week was the down week), easy ~11:00/mi. Base phase, building.
 - `codex/demo-beginner-mileage`: mileage goal of 25 mi/week, 8→11 mi/week history on 4 days, easy ~11:30/mi. No race, so the phase is `general`.
 - `codex/demo-beginner-5k`: first 5K (~30:00), 8 weeks out, 5→8 mi/week history on 3 days, easy ~12:00/mi, rough 5K PR only.
 
