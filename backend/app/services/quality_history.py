@@ -45,7 +45,7 @@ def quality_history(user_id, db, today=None):
         activities = by_date.get(day, [])
         if not activities or row.swapped or row.session_status == 'skipped' or row.moved_to is not None:
             continue
-        feels = [a.feel_rating for a in activities if a.feel_rating is not None]
+        feels = [a.effective_feel for a in activities if a.effective_feel is not None]
         if row.feel_rating is not None:
             feels.append(row.feel_rating)
         feel = min(feels) if feels else None
@@ -94,7 +94,7 @@ def quality_history(user_id, db, today=None):
             miles = sum(a.distance_meters for a in activities) / 1609.34
             if miles >= row.distance_miles * .9:
                 successful['long_run'].add(day)
-    ratings = [(day, a.feel_rating) for day, items in by_date.items() for a in items if a.feel_rating is not None]
+    ratings = [(day, a.effective_feel) for day, items in by_date.items() for a in items if a.effective_feel is not None]
     # Planned-day feedback also counts as recovery evidence, once per date.
     ratings += [(day, row.feel_rating) for day, row in latest.items() if day in by_date and row.feel_rating is not None]
     rated_days = {}

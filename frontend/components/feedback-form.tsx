@@ -59,16 +59,20 @@ interface FeedbackFormProps {
   onSubmitted: (feedback: DayFeedback) => void;
   /** Parent already asks "how did it feel?" — hide the form's own headings */
   compact?: boolean;
+  /** Start from earlier answers (editing) or the watch's own post-run rating */
+  initial?: { feel?: number | null; effort?: number | null; notes?: string | null; completion?: string | null };
+  /** The initial feel/effort came from the Garmin watch, not the app */
+  fromWatch?: boolean;
 }
 
-export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording = true, isWorkout = false, hasPaceTarget = false }: FeedbackFormProps) {
+export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording = true, isWorkout = false, hasPaceTarget = false, initial, fromWatch = false }: FeedbackFormProps) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const [feel, setFeel] = useState<number | null>(null);
-  const [effort, setEffort] = useState<number | null>(null);
-  const [completion, setCompletion] = useState<string | null>(null);
+  const [feel, setFeel] = useState<number | null>(initial?.feel ?? null);
+  const [effort, setEffort] = useState<number | null>(initial?.effort ?? null);
+  const [completion, setCompletion] = useState<string | null>(initial?.completion ?? null);
   const [manualMiles, setManualMiles] = useState("");
   const [manualMinutes, setManualMinutes] = useState("");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [pace, setPace] = useState<string | null>(null);
   const [swapped, setSwapped] = useState(false);
   const [swapType, setSwapType] = useState<string | null>(null);
@@ -139,7 +143,11 @@ export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording 
           How&apos;d it go?
         </p>
       )}
-      <p className="text-xs text-muted-foreground">Your answers adjust the next few days of your plan.</p>
+      <p className="text-xs text-muted-foreground">
+        {fromWatch
+          ? "Prefilled from the rating you gave on your watch. Confirm or change it, and add a comment."
+          : "Your answers adjust the next few days of your plan."}
+      </p>
 
       {!hasRecording && (
         <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
@@ -274,30 +282,26 @@ export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording 
       </div>
       )}
 
+      {/* Notes */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <Textarea
+          placeholder="Comments for your coach (optional)"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="h-16 text-xs resize-none"
+        />
+      </div>
+
       <button
         type="button"
         aria-expanded={moreOpen}
-        onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen); }}
+        onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen); setSwapped(!moreOpen); }}
         className="text-xs text-muted-foreground underline underline-offset-2"
       >
-        {moreOpen ? "Fewer details" : "More details (swap, notes)"}
+        {moreOpen ? "Never mind, I didn't swap it" : "I swapped this workout…"}
       </button>
 
       {moreOpen && (<>
-      {/* Swap toggle */}
-      <div>
-        <button
-          onClick={(e) => { e.stopPropagation(); setSwapped(!swapped); }}
-          className={`rounded px-3 py-1 text-xs transition-colors ${
-            swapped
-              ? "bg-yellow-500/20 text-yellow-600"
-              : "bg-secondary hover:bg-secondary/80 text-muted-foreground"
-          }`}
-        >
-          {swapped ? "Swapped workout" : "I swapped this workout"}
-        </button>
-      </div>
-
       {swapped && (
         <div className="space-y-2 pl-2 border-l-2 border-yellow-500/30">
           <div>
@@ -347,15 +351,7 @@ export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording 
         </div>
       )}
 
-      {/* Notes */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <Textarea
-          placeholder="Any notes? (optional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="h-16 text-xs resize-none"
-        />
-      </div>
+
       </>)}
 
       {error && <p className="text-xs text-destructive">{error}</p>}

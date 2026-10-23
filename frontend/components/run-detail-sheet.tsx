@@ -202,10 +202,11 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               {/* Garmin metrics */}
               {activity.aerobic_training_effect != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">
-                    {activity.aerobic_training_effect.toFixed(1)} / {(activity.anaerobic_training_effect ?? 0).toFixed(1)}
+                  {/* Garmin's two scores (0-5): aerobic base vs. anaerobic/speed stimulus */}
+                  <div className="font-mono text-sm font-medium" title="Garmin training effect, 0 to 5">
+                    {activity.aerobic_training_effect.toFixed(1)} · {(activity.anaerobic_training_effect ?? 0).toFixed(1)}
                   </div>
-                  <div className="text-xs text-muted-foreground">training effect</div>
+                  <div className="text-xs text-muted-foreground">aerobic · anaerobic effect</div>
                 </div>
               )}
               {activity.vo2max != null && (

@@ -97,6 +97,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
   const repHr = executed?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
+  const [editing, setEditing] = useState(false);
   // Past/today days without a recording still take feedback: watchless runners log the run by hand
   const isPastOrToday = workout.date <= new Date().toLocaleDateString("en-CA");
   const showFeedbackForm = !readOnly && !hasFeedback && workout.type !== "rest"
@@ -218,7 +219,10 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 {executed && executed.reps.length > 1 ? (
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">{executed.title}: </span>
-                    <span className="num">{executed.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}/{unit}</span>
+                    {/* Short reps read as rep times (1:34), the way runners record them; longer reps as pace */}
+                    {executed.reps.every((r) => r.distance_m < 1000)
+                      ? <span className="num">{executed.reps.map((r) => secondsToTime(r.duration_s)).join(" · ")}</span>
+                      : <span className="num">{executed.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}/{unit}</span>}
                     {repHr.length > 1 && <span className="num"> · HR {repHr[0]}→{repHr[repHr.length - 1]}</span>}
                     {executed.recovery_seconds ? <span> · {secondsToTime(executed.recovery_seconds)} recovery</span> : null}
                   </p>
@@ -305,6 +309,11 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                     Feel: {localFeedback.feel_rating}/10
                   </span>
                 )}
+                {localFeedback.effort_rating && (
+                  <span className="rounded bg-secondary px-2 py-0.5 font-mono">
+                    Effort: {localFeedback.effort_rating}/10
+                  </span>
+                )}
                 {localFeedback.pace_assessment && (
                   <span className="rounded bg-secondary px-2 py-0.5">
                     Pace: {PACE_LABELS[localFeedback.pace_assessment] ?? localFeedback.pace_assessment}
@@ -320,6 +329,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 <p className="text-xs text-muted-foreground italic">
                   &ldquo;{localFeedback.feel_notes}&rdquo;
                 </p>
+              )}
+              {!readOnly && !editing && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+                  className="text-xs text-muted-foreground underline underline-offset-2">
+                  {localFeedback.feel_notes ? "Edit comment or rating" : "Add a comment"}
+                </button>
               )}
               {localFeedback.swap_reason && (
                 <p className="text-xs text-muted-foreground italic">
@@ -348,15 +363,21 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <SessionControls workout={workout} onChanged={onPlanChanged} initialAction={sessionAction} />
           )}
           {/* Feedback form for completed days without feedback */}
-          {showFeedbackForm && expanded && (
+          {(showFeedbackForm || (editing && !readOnly)) && expanded && (
             <div className="border-t pt-3">
               <FeedbackForm
                 date={workout.date}
+                initial={editing && localFeedback
+                  ? { feel: localFeedback.feel_rating, effort: localFeedback.effort_rating, notes: localFeedback.feel_notes,
+                      completion: localFeedback.reported_completion?.status }
+                  : { feel: workout.actual?.watch_feel, effort: workout.actual?.watch_effort }}
+                fromWatch={!editing && (workout.actual?.watch_feel != null || workout.actual?.watch_effort != null)}
                 hasRecording={hasActual}
                 isWorkout={workout.type === "workout"}
                 hasPaceTarget={!!workout.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
                 onSubmitted={(fb) => {
                   setLocalFeedback(fb);
+                  setEditing(false);
                   // Re-fetch plan to reflect any adjustments from feedback
                   onPlanChanged?.();
                 }}

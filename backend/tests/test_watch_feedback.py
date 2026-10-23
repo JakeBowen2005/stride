@@ -1,0 +1,127 @@
+"""Garmin's on-watch rating, measured-vs-planned run reviews, and distinct review scopes."""
+import json
+from datetime import date, datetime, timedelta
+
+from fastapi.testclient import TestClient
+
+from app.database import SessionLocal
+from app.main import app
+from app.models.activity import Activity
+from app.models.coaching import CoachingReview
+from app.models.garmin import GarminConnection
+from app.services import coaching, garmin, openai_coach
+from tests.test_api import FakeGarmin
+from tests.test_off_plan_sessions import seed_day
+
+client = TestClient(app)
+
+
+class RatedGarmin(FakeGarmin):
+    """Detail payloads carry the watch's post-run self-evaluation."""
+    def __init__(self, ids, rating=(75, 40)):
+        super().__init__(ids)
+        self.rating, self.detail_calls = rating, []
+
+    def get_activity(self, aid):
+        self.detail_calls.append(str(aid))
+        feel, rpe = self.rating
+        return {"summaryDTO": {"directWorkoutFeel": feel, "directWorkoutRpe": rpe}}
+
+
+def test_watch_rating_maps_onto_stride_scales():
+    assert garmin.watch_rating({"summaryDTO": {"directWorkoutFeel": 75, "directWorkoutRpe": 40}}) == (75, 40)
+    assert garmin.watch_rating({"summaryDTO": {"directWorkoutRpe": 0}}) == (None, None)
+    assert garmin.watch_rating(None) == (None, None)
+    run = Activity(garmin_feel=75, garmin_rpe=40)
+    assert (run.watch_feel, run.watch_effort, run.effective_feel) == (8, 4, 8)
+    assert [Activity(garmin_feel=f).watch_feel for f in (0, 25, 50, 75, 100)] == [2, 4, 6, 8, 10]
+    run.feel_rating = 5
+    assert run.effective_feel == 5  # the app answer wins over the watch
+
+
+def test_sync_reads_the_watch_rating_for_new_runs_and_checks_known_runs_once(monkeypatch):
+    fake = RatedGarmin([1, 2])
+    monkeypatch.setattr(garmin, "get_client", lambda: fake)
+    db = SessionLocal()
+    db.add(Activity(user_id=1, source="garmin", external_id="2", name="Run 2", date=datetime(2026, 8, 31, 7),
+                    distance_meters=8000, duration_seconds=2700, splits='[{"distance_m": 8000, "duration_s": 2700}]'))
+    db.add(GarminConnection(user_id=1, connected=True, full_sync_done=True, display_name="x",
+                            last_reconciled_at=datetime.now()))
+    db.commit()
+    garmin.sync_garmin(1, db)
+    rows = {a.external_id: a for a in db.query(Activity).all()}
+    assert (rows["1"].garmin_feel, rows["1"].garmin_rpe) == (75, 40)  # new run
+    assert (rows["2"].garmin_feel, rows["2"].garmin_rpe) == (75, 40)  # known run, inside the window
+    calls = len(fake.detail_calls)
+    garmin.sync_garmin(1, db)
+    assert len(fake.detail_calls) == calls  # checked once, not on every poll
+    db.close()
+
+
+def _review_context(monkeypatch, **activity_fields):
+    from app.config import settings
+    _, today = seed_day()
+    with SessionLocal() as db:
+        run = db.query(Activity).one()
+        for key, value in activity_fields.items():
+            setattr(run, key, value)
+        db.commit()
+        activity_id = run.id
+    monkeypatch.setattr(settings, "openai_api_key", "unit-test-secret")
+    calls = []
+
+    def request(context, sources):
+        calls.append(context)
+        return openai_coach.CoachAdvice(summary="ok", plan_fit="consistent", observations=[], uncertainties=[],
+                                        research_ids=[], suggestions=[]), {}
+    monkeypatch.setattr(coaching, "request_advice", request)
+    assert client.post("/api/coaching/1/review", json={"activity_id": activity_id}).status_code == 200
+    return calls[-1], activity_id
+
+
+def test_run_review_uses_the_watch_rating_when_the_app_was_not_used(monkeypatch):
+    ctx, _ = _review_context(monkeypatch, garmin_feel=75, garmin_rpe=40)
+    feedback = ctx["run"]["athlete_feedback"]
+    assert feedback["feel_1_to_10"] == 8 and feedback["feel_source"] == "watch" and feedback["effort_1_to_10"] == 4
+    assert ctx["run"]["watch_self_evaluation"]["provenance"] == "garmin_watch_prompt_after_the_run"
+
+
+def test_run_review_separates_measured_recovery_from_the_plan(monkeypatch):
+    ctx, _ = _review_context(monkeypatch, description="Garmin laps: 3x8min threshold w/ 61s recovery")
+    run = ctx["run"]
+    assert run["measured_lap_summary"] == "Garmin laps: 3x8min threshold w/ 61s recovery"
+    session = run["detected_session"]
+    assert "measured_recovery_s" in session and "planned_recovery_s" in session and "recovery_s" not in session
+    assert all("time_s" in rep and "meters" in rep for rep in session["reps"])
+    assert "Never present planned rest" in openai_coach.INSTRUCTIONS
+    assert "DIFFERENT jobs" in openai_coach.INSTRUCTIONS
+
+
+def test_run_reviews_dont_inherit_week_reviews_but_week_reviews_see_runs():
+    seed_day()
+    with SessionLocal() as db:
+        run = db.query(Activity).one()
+        other = Activity(user_id=1, source="garmin", external_id="t0", name="Run",
+                         date=run.date - timedelta(days=2), distance_meters=5 * 1609.34, duration_seconds=2700)
+        db.add(other)
+        db.flush()
+        db.add(CoachingReview(user_id=1, plan_id=1, context_hash="w", status="ready", result=json.dumps({"summary": "Week note"})))
+        db.add(CoachingReview(user_id=1, activity_id=other.id, context_hash="r", status="ready", result=json.dumps({"summary": "Run note"})))
+        db.commit()
+        for_run = coaching.prior_reviews(1, db, activity_id=run.id)
+        for_week = coaching.prior_reviews(1, db, plan_id=999)
+    assert [n["scope"] for n in for_run] == ["run"]
+    assert {n["scope"] for n in for_week} == {"run", "week"}
+
+
+def test_watch_rating_counts_as_fatigue_evidence():
+    from app.api.plans import _recent_fatigue_assessment
+    today = date.today()
+    with SessionLocal() as db:
+        for back in (1, 2):
+            db.add(Activity(user_id=1, source="garmin", external_id=f"tired{back}", name="Run",
+                            date=datetime.combine(today - timedelta(days=back), datetime.min.time()).replace(hour=7),
+                            distance_meters=5 * 1609.34, duration_seconds=2700, garmin_feel=25))
+        db.commit()
+        assessment = _recent_fatigue_assessment(1, None, db)
+    assert assessment and assessment.decision == "recovery"
