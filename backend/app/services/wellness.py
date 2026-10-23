@@ -227,6 +227,7 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
         end = date.fromisoformat(checked) - timedelta(days=1) if checked else today
         if oldest and end >= oldest.date():
             history_start = max(oldest.date(), end - timedelta(days=BACKFILL_DAYS-1))
+            db.commit()  # recent metrics are durable; no SQLite writer held across historical I/O
             older = fetch_range(client, history_start, end, user_id=user_id, db=db)
             for iso, fields in older.items():
                 if fields:
