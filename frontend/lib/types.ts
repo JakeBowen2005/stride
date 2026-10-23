@@ -92,6 +92,9 @@ export interface ActualRun {
   average_heartrate: number | null;
   description: string | null;
   feel_rating: number | null;
+  /** The rating entered on the Garmin watch after the run (Stride's 1-10 scales) */
+  watch_feel?: number | null;
+  watch_effort?: number | null;
   name: string | null;
   activity_count?: number;
   /** All runs that day (a double counts; walks never do) */

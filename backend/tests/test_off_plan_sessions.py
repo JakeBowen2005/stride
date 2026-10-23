@@ -170,7 +170,7 @@ def test_coach_reads_the_run_that_was_actually_run(monkeypatch):
     run = ctx["run"]
     assert run["detected_session"]["title"] == "3x8min Threshold"
     assert [r["pace"] for r in run["detected_session"]["reps"]] == ["7:16/mi", "7:08/mi", "7:00/mi"]
-    assert run["athlete_feedback"] == {"feel_1_to_10": 8, "notes": "I did 3x8min threshold", "pace_vs_target": "above", "said_swapped": False,
+    assert run["athlete_feedback"] == {"feel_1_to_10": 8, "feel_source": "app", "notes": "I did 3x8min threshold", "pace_vs_target": "above", "said_swapped": False,
             "effort_1_to_10": None, "reported_completion": None, "provenance": "athlete_report",
             "evidence_note": "Reported completion/effort is subjective; it is not measured lap verification."}
     assert run["avg_pace"] and run["average_hr"] == 161 and len(run["laps"]) == 12 and run["laps"][3]["hr"] == 172

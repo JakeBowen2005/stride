@@ -18,6 +18,7 @@ import { RacePredictions } from "@/components/home/race-predictions";
 import { TodayCard, type PlanDayLite } from "@/components/home/today-card";
 import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
+import { RecentFeedback, runsAwaitingFeedback } from "@/components/home/recent-feedback";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { formatDate, localDateStr } from "@/lib/format";
@@ -102,6 +103,7 @@ export default function TodayPage() {
   const planStale = !!plan?.is_stale;
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;
+  const awaitingFeedback = runsAwaitingFeedback(plan?.weeks.flatMap((w) => w.days) ?? [], today);
   const todayRunId = primaryRunId(recentRuns, today, todayPlan?.actual?.activity_id);
 
   const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0) : null;
@@ -167,6 +169,9 @@ export default function TodayPage() {
                   ) : undefined}
                 />
                 {activityError && <p role="alert" className="mt-2 text-xs text-destructive">{activityError}</p>}
+                {awaitingFeedback.length > 0 && (
+                  <div className="mt-3"><RecentFeedback days={awaitingFeedback} onSaved={load} /></div>
+                )}
               </Section>
               {thisWeek && (
                 <Section label="This week" accent="var(--type-threshold)" className="order-2" meta="tap a day">

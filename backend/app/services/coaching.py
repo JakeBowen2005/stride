@@ -23,7 +23,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v8-history'
+VERSION = 'openai-coach-v9-measured-scopes'
 
 
 def research_context(goal):
@@ -62,7 +62,7 @@ def _brief_run(a, executed=None):
             'pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
             'avg_hr': round(a.average_heartrate) if a.average_heartrate else None,
             'session': executed['label'] + f" {executed['category']}" if executed else None,
-            'feel': a.feel_rating}
+            'feel': a.effective_feel}
 
 
 def _run(a, executed=None, planned=None):
@@ -79,6 +79,9 @@ def _run(a, executed=None, planned=None):
                      'intensity': lap.get('intensity'), 'elev_ft': lap.get('elevation_diff_ft')})
     miles = a.distance_meters / 1609.34
     feedback_matches = bool(planned and planned.feedback_activity_id == a.id)
+    app_feel = planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating
+    app_effort = planned.effort_rating if feedback_matches else None
+    lap_summary = next((line.strip() for line in (a.description or '').splitlines() if line.strip().startswith('Garmin laps:')), None)
     run = {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(miles, 2),
            'duration': f"{int(a.duration_seconds // 60)}:{int(a.duration_seconds % 60):02d}" if a.duration_seconds else None,
            'avg_pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
@@ -88,22 +91,38 @@ def _run(a, executed=None, planned=None):
            'aerobic_training_effect': a.aerobic_training_effect,
            'anaerobic_training_effect': a.anaerobic_training_effect,
            'laps': laps,
+           # Measured from the watch's laps: the authority on what was actually run
+           'measured_lap_summary': lap_summary,
            'detected_session': None,
-           'athlete_feedback': {'feel_1_to_10': planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating,
+           'watch_self_evaluation': {'feel_1_to_10': a.watch_feel, 'effort_1_to_10': a.watch_effort,
+                                     'provenance': 'garmin_watch_prompt_after_the_run'}
+                                    if a.garmin_feel is not None or a.garmin_rpe else None,
+           'athlete_feedback': {'feel_1_to_10': app_feel if app_feel is not None else a.watch_feel,
+                                'feel_source': 'app' if app_feel is not None else ('watch' if a.watch_feel is not None else None),
                                 'notes': ((planned.feel_notes if feedback_matches else None) or a.feel_notes or '')[:700] or None,
                                 'pace_vs_target': planned.pace_assessment if feedback_matches else None,
                                 'said_swapped': bool(planned.swapped) if feedback_matches else False,
-                                'effort_1_to_10': planned.effort_rating if feedback_matches else None,
+                                'effort_1_to_10': app_effort if app_effort is not None else a.watch_effort,
                                 'reported_completion': loads_json(planned.reported_completion) if feedback_matches else None,
                                 'provenance': 'athlete_report',
                                 'evidence_note': 'Reported completion/effort is subjective; it is not measured lap verification.'}}
     if executed:
         run['detected_session'] = {'title': executed.get('title'), 'category': executed['category'],
             'matched_activity_ids': [executed['activity_id']],
-            'reps': [{'miles': round(r['distance_m'] / 1609.34, 2), 'time_s': round(r['duration_s']),
+            'reps': [{'meters': round(r['distance_m']), 'time_s': round(r['duration_s']),
                       'pace': _pace(r['pace_sec_per_mile']), 'avg_hr': r['average_hr']} for r in executed['reps']],
-            'recovery_s': executed['recovery_seconds'], 'work_miles': executed['work_miles']}
+            # What was run between reps (measured), next to what the plan asked for
+            'measured_recovery_s': executed['recovery_seconds'],
+            'planned_recovery_s': _planned_recovery(planned),
+            'work_miles': executed['work_miles']}
     return run
+
+
+def _planned_recovery(planned):
+    data = loads_json(planned.prescription) if planned and planned.prescription else None
+    if not isinstance(data, dict):
+        return None
+    return next((s.get('recovery_seconds') for s in data.get('segments') or [] if s.get('recovery_seconds')), None)
 
 
 def _training_summary(user_id, runs, executed_by_id, today, plan_rows, goal):
@@ -165,7 +184,8 @@ def prior_reviews(user_id, db, activity_id=None, plan_id=None):
     """The coach's own completed notes from the last two weeks, newest first.
 
     Only the latest note per subject (a run, or a plan's weekly review) is kept, and the
-    subject under review is left out so a refresh does not just echo itself.
+    subject under review is left out so a refresh does not just echo itself. A run review
+    sees only earlier run reviews; the weekly review sees both, to synthesize the trend.
     """
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=MEMORY_DAYS)
     rows = db.query(CoachingReview).filter(CoachingReview.user_id == user_id, CoachingReview.status == 'ready',
@@ -177,6 +197,8 @@ def prior_reviews(user_id, db, activity_id=None, plan_id=None):
         result = loads_json(row.result) or {}
         if subject in seen or not result.get('summary'):
             continue
+        if current[0] == 'run' and subject[0] == 'week':
+            continue  # a run review stays about its run; week notes made the two converge
         seen.add(subject)
         run = db.get(Activity, row.activity_id) if row.activity_id else None
         notes.append({'written': row.created_at.date().isoformat(), 'scope': subject[0],
@@ -277,7 +299,7 @@ def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
                 from app.api.plans import _plan_program
                 state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=contract["category"], program_key=_plan_program(plan)).first()
                 provisional = evaluate_workout(None, None, None, matched.type, None, matched.title,
-                    matched.feel_rating if matched.feedback_activity_id == activity.id and matched.feel_rating is not None else activity.feel_rating, contract, execution)
+                    matched.feel_rating if matched.feedback_activity_id == activity.id and matched.feel_rating is not None else activity.effective_feel, contract, execution)
                 evaluation = gate_progression(provisional, contract, state.current_level if state else None).to_dict()
                 evaluation['provisional'] = True  # explanation only; no progression or feedback effects applied
     wellness = db.query(DailyWellness).filter(DailyWellness.user_id == user_id,

@@ -1329,7 +1329,7 @@ def _assess_previous_block(prev_plan: Plan, db: Session):
         elif pw.type == "race" and activities:
             verified = (any(a.event_type == "race" or a.workout_type == "race" for a in activities)
                         and actual >= (pw.distance_miles or 0) * .9)
-        feels = [a.feel_rating for a in activities if a.feel_rating is not None]
+        feels = [a.effective_feel for a in activities if a.effective_feel is not None]
         if pw.feel_rating is not None:
             feels.append(pw.feel_rating)
         records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
@@ -1437,6 +1437,9 @@ def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] |
         "average_heartrate": primary.average_heartrate,
         "description": primary.description,
         "feel_rating": primary.feel_rating,
+        # The watch's post-run rating, on Stride's 1-10 scales: prefills app feedback
+        "watch_feel": primary.watch_feel,
+        "watch_effort": primary.watch_effort,
         "name": primary.name,
         "activity_count": len(activities),
         "total_distance_miles": round(sum(a.distance_meters for a in activities) / 1609.34, 2),
@@ -1694,8 +1697,8 @@ def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
     def add(day, feel):
         if cutoff.isoformat() <= day <= date.today().isoformat() and feel is not None:
             ratings[day] = min(ratings.get(day, 10), feel)
-    for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), Activity.feel_rating.isnot(None), runs_only()):
-        add(act.date.date().isoformat(), act.feel_rating)
+    for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), (Activity.feel_rating.isnot(None)) | (Activity.garmin_feel.isnot(None)), runs_only()):
+        add(act.date.date().isoformat(), act.effective_feel)  # the watch rating counts when the app wasn't used
     if active:
         for day in active.planned_workouts:
             add(day.date, day.feel_rating)

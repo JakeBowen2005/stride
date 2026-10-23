@@ -68,6 +68,26 @@ class Activity(Base):
     # User feedback (post-run)
     feel_rating: Mapped[int | None] = mapped_column(Integer)  # 1-10
     feel_notes: Mapped[str | None] = mapped_column(Text)  # free text
+    # The watch's own post-run self-evaluation, on Garmin's scales: feel 0/25/50/75/100
+    # (very weak .. very strong) and perceived effort 10-100. Stride app ratings win.
+    garmin_feel: Mapped[int | None] = mapped_column(Integer)
+    garmin_rpe: Mapped[int | None] = mapped_column(Integer)
+    garmin_rating_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    @property
+    def watch_feel(self) -> int | None:
+        """Garmin feel on Stride's 1-10 feel scale (very weak 2 .. very strong 10)."""
+        return None if self.garmin_feel is None else max(1, min(10, round(2 + self.garmin_feel / 12.5)))
+
+    @property
+    def watch_effort(self) -> int | None:
+        """Garmin perceived effort (10-100) on Stride's 1-10 effort scale."""
+        return None if not self.garmin_rpe else max(1, min(10, round(self.garmin_rpe / 10)))
+
+    @property
+    def effective_feel(self) -> int | None:
+        """The athlete's own rating: the app answer when given, else the watch's."""
+        return self.feel_rating if self.feel_rating is not None else self.watch_feel
 
     # Onboarding: user-highlighted workouts
     user_highlighted: Mapped[bool] = mapped_column(Boolean, default=False)  # user flagged as representative of fitness

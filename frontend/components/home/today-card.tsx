@@ -33,9 +33,17 @@ export interface PlanDayLite {
     total_distance_miles?: number;
     other_runs?: ActivityLine[];
     walks?: ActivityLine[];
+    /** App feel already stored on the run itself */
+    feel_rating?: number | null;
+    /** The rating entered on the Garmin watch after the run (Stride's 1-10 scales) */
+    watch_feel?: number | null;
+    watch_effort?: number | null;
   } | null;
   feedback?: {
     feel_rating: number | null;
+    effort_rating?: number | null;
+    feel_notes?: string | null;
+    reported_completion?: { status: string } | null;
     coach_response: string | null;
     evaluation?: { decision: string; reason: string } | null;
     changes?: { date: string | null; change: string; reason: string }[];
@@ -224,8 +232,26 @@ export function TodayCard({
         {done && today && today.type !== "rest" && !feedback?.feel_rating && (
           <div className="rounded-lg border p-3">
             <p className="mb-2 text-sm font-medium">How did it go?</p>
-            <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"} hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)} onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
+            <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"}
+              hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
+              initial={{ feel: today.actual?.watch_feel, effort: today.actual?.watch_effort }}
+              fromWatch={today.actual?.watch_feel != null || today.actual?.watch_effort != null}
+              onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
           </div>
+        )}
+        {done && today && today.type !== "rest" && !!feedback?.feel_rating && (
+          <details className="rounded-lg border p-3">
+            <summary className="cursor-pointer text-sm text-muted-foreground">
+              {feedback.feel_notes ? "Edit your comment or rating" : "Add a comment"}
+            </summary>
+            <div className="mt-3">
+              <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"}
+                hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
+                initial={{ feel: feedback.feel_rating, effort: feedback.effort_rating, notes: feedback.feel_notes,
+                           completion: feedback.reported_completion?.status }}
+                onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
+            </div>
+          </details>
         )}
         {!done && today && today.type !== "rest" && !feedback?.feel_rating && (
           <details className="rounded-lg border p-3">
