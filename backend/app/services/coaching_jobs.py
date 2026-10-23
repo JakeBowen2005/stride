@@ -1,5 +1,7 @@
 """Durable local jobs. Garmin import commits the job, a separate worker reviews it."""
 from datetime import date, datetime, timedelta, timezone
+import hashlib
+import json
 import asyncio
 import logging
 from uuid import uuid4
@@ -20,8 +22,13 @@ def enqueue_synced_run(activity, db):
     if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < date.today()-timedelta(days=2) or activity.date.date() > date.today():
         return
     db.flush()
-    if not db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version='sync-v1').first():
-        db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, status='waiting_sync'))
+    evidence = [getattr(activity, key) for key in ('date', 'distance_meters', 'duration_seconds', 'splits', 'event_type', 'activity_kind_override', 'feel_rating', 'feel_notes')]
+    evidence = [float(v) if isinstance(v, (int, float)) else v for v in evidence]
+    version = 'e2-' + hashlib.sha256(json.dumps(evidence, default=str).encode()).hexdigest()[:26]
+    if not db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version=version).first():
+        db.query(CoachingJob).filter(CoachingJob.user_id == activity.user_id, CoachingJob.activity_id == activity.id,
+            CoachingJob.status.in_(['queued', 'waiting_sync'])).update({'status': 'superseded'}, synchronize_session=False)
+        db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, version=version, status='waiting_sync'))
 
 
 def release_synced_jobs(user_id, db):

@@ -85,7 +85,7 @@ class PersonalApiClient:
                 self._expires = _jwt_expiry(self._token)
             return self._token
 
-    def _get(self, path: str, params: dict | None = None, *, raw: bool = False):
+    def _get(self, path: str, params: dict | None = None, *, raw: bool = False, optional: bool = False):
         for attempt in (0, 1):
             r = self._http.get(self._base + path, params=params,
                                headers={"Authorization": f"Bearer {self._bearer(force=attempt == 1)}"})
@@ -95,7 +95,7 @@ class PersonalApiClient:
                 raise GarminRateLimited(f"Garmin rate limit on {path}")
             if r.status_code in (401, 403):
                 raise GarminAuthError("Garmin rejected the API token")
-            if r.status_code == 404:
+            if r.status_code == 404 and optional:
                 return None
             r.raise_for_status()
             if raw:
@@ -121,12 +121,14 @@ class PersonalApiClient:
     def get_activity(self, activity_id) -> dict | None:
         return self._get(f"/activity-service/activity/{activity_id}")
 
+    def get_fit(self, activity_id) -> bytes:
+        """Original FIT evidence, including when it contains no lap messages."""
+        blob = self._get(f"/download-service/files/activity/{activity_id}", raw=True, optional=True)
+        return _unzip_fit(blob) if blob else b""
+
     def get_laps(self, activity_id) -> list[dict]:
         """Laps from the original FIT file (the Personal API has no /splits)."""
-        blob = self._get(f"/download-service/files/activity/{activity_id}", raw=True)
-        if not blob:
-            return []
-        return laps_from_fit(_unzip_fit(blob))
+        return laps_from_fit(self.get_fit(activity_id))
 
     def display_name(self) -> str | None:
         settings_ = self._get("/userprofile-service/userprofile/settings") or {}

@@ -23,11 +23,13 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity, runs_only
 from app.models.garmin import GarminConnection
+from app.models.history import ActivitySource
+from app.services.history_evidence import PARSER_VERSION, REPAIR_BATCH, capture, coverage, pending, source_for
 from app.services.descriptions import is_workout_description
 from app.services.garmin_api import (
     GarminAuthError, GarminNotConnected, GarminRateLimited, get_client, has_api_key, laps_from_fit, reset_client,
@@ -120,6 +122,9 @@ def parse_activity(raw: dict) -> dict | None:
     """Map a Garmin activity summary to Activity fields. Returns None for non-runs."""
     if not is_run(raw):
         return None
+    started = _parse_local_time(raw.get("startTimeLocal"))
+    if started is None:
+        raise ValueError("Garmin activity has no valid local start time")
 
     distance = raw.get("distance") or 0.0
     moving = raw.get("movingDuration") or raw.get("duration") or 0.0
@@ -130,7 +135,7 @@ def parse_activity(raw: dict) -> dict | None:
         "external_id": str(raw["activityId"]),
         "source": "garmin",
         "name": raw.get("activityName") or "Run",
-        "date": _parse_local_time(raw.get("startTimeLocal")) or datetime.now(),
+        "date": started,
         "distance_meters": distance,
         "duration_seconds": moving,
         "elapsed_seconds": raw.get("elapsedDuration") or raw.get("duration"),
@@ -239,21 +244,27 @@ def recent_easy_pace(user_id: int, db: Session, as_of: datetime | None = None) -
 def _find_legacy_match(user_id: int, parsed: dict, db: Session) -> Activity | None:
     """Find a non-Garmin activity (e.g. Strava import) that is the same run.
 
-    A hand-logged run (source="manual", one per day, stored at noon) has no real start
-    time, so it matches the watch run on the same calendar day: the upload replaces it
-    instead of counting the day twice. Its feedback and plan links are kept."""
+    Manual noon placeholders require one plausible same-day distance match.
+    Ambiguous doubles remain separate; successful merges keep feedback and plan links."""
     start = parsed["date"]
     day = start.replace(hour=0, minute=0, second=0, microsecond=0)
     manual = db.query(Activity).filter(
         Activity.user_id == user_id, Activity.source == "manual",
         Activity.date >= day, Activity.date < day + timedelta(days=1),
     ).first()
-    if manual:
-        return manual
+    if manual and manual.distance_meters and parsed["distance_meters"]:
+        # Noon is a placeholder, so compare distance and all uploads on the date.
+        # Never let an unrelated shakeout inherit the main workout's feedback.
+        diff = abs(manual.distance_meters - parsed["distance_meters"]) / parsed["distance_meters"]
+        candidates_today = db.info.get('garmin_day_candidates', {}).get(day.date(), [])
+        matches = [r for r in candidates_today if r.get('distance') and
+                   abs(manual.distance_meters - r['distance']) / r['distance'] <= .05]
+        if diff <= .05 and len(matches) == 1 and day.date() not in db.info.get('garmin_ambiguous_days', set()):
+            return manual
     window = timedelta(minutes=10)
     candidates = db.query(Activity).filter(
         Activity.user_id == user_id,
-        Activity.source != "garmin",
+        Activity.source.notin_(["garmin", "manual"]),
         Activity.date >= start - window,
         Activity.date <= start + window,
     ).all()
@@ -291,34 +302,69 @@ def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session, 
         activity = Activity(user_id=user_id)
         db.add(activity)
 
-    legacy_desc = activity.description
+    if outcome == 'merged':
+        alias = source_for(activity, activity.source, activity.external_id or f'activity-{activity.id}', db)
+        capture(alias, 'legacy', db, payload={c.name: getattr(activity, c.name) for c in Activity.__table__.columns})
+        alias.enrichment_status = 'complete'
     _apply(activity, parsed)
+    source = source_for(activity, 'garmin', parsed['external_id'], db)
+    capture(source, 'summary', db, payload=raw)
+    _enrich(client, activity, source, db, easy_pace)
+    from app.services.coaching_jobs import enqueue_synced_run
+    enqueue_synced_run(activity, db)
+    return outcome
 
+
+def _enrich(client, activity, source, db, easy_pace):
+    """Persist original evidence before parsing; retry failures independently of dates."""
     try:
-        laps = client.get_laps(parsed["external_id"])
+        if hasattr(client, 'get_fit'):
+            blob = client.get_fit(source.external_id)
+            if not blob:
+                pending(source, 'FIT not yet available')
+                return False
+            capture(source, 'fit', db, blob=blob)
+            laps = laps_from_fit(blob)
+        else:  # narrow adapter for legacy clients/test doubles
+            laps = client.get_laps(source.external_id)
+        if not laps:
+            pending(source, 'No lap evidence')
+            return False
     except (GarminAuthError, GarminRateLimited):
         raise
-    except Exception as e:  # laps are a bonus; never fail the sync over them
-        logger.warning("Lap fetch failed for %s: %s", parsed["external_id"], e)
-        laps = []
-    if laps:
-        activity.splits = json.dumps(laps)
-
-    # The Personal API carries no activity notes; keep hand-written Strava text on merged runs.
-    base_desc = legacy_desc if outcome != "new" else None
-    base_desc = _strip_lap_summary(base_desc)  # regenerate our own summary rather than nesting it
-    activity.description = build_description(base_desc, laps, easy_pace)
+    except Exception as exc:
+        pending(source, type(exc).__name__)
+        return False
+    activity.splits = json.dumps(laps)
+    activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace)
     activity.has_workout_description = is_workout_description(activity.description)
-    if outcome in {'new', 'merged'}:
-        from app.services.coaching_jobs import enqueue_synced_run
-        enqueue_synced_run(activity, db)
-    return outcome
+    source.enrichment_status, source.parser_version = 'complete', PARSER_VERSION
+    source.last_error, source.next_retry_at, source.attempts = None, None, 0
+    return True
+
+
+def _retry_enrichment(client, user_id, db, easy_paces, attempted):
+    rows = db.query(ActivitySource).filter(ActivitySource.user_id == user_id,
+        ActivitySource.provider == 'garmin', ActivitySource.enrichment_status.in_(['pending', 'retry']),
+        or_(ActivitySource.next_retry_at.is_(None), ActivitySource.next_retry_at <= datetime.now())).order_by(ActivitySource.id).limit(REPAIR_BATCH).all()
+    changed = 0
+    for source in rows:
+        if source.external_id in attempted:
+            continue
+        activity = db.get(Activity, source.activity_id)
+        if activity and _enrich(client, activity, source, db, easy_paces.at(activity.date)):
+            changed += 1
+            from app.services.coaching_jobs import enqueue_synced_run
+            enqueue_synced_run(activity, db)
+    return changed
 
 
 def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
     """Pull running activities from Garmin into the DB. Thread-safe; one sync at a time."""
     if not _sync_lock.acquire(blocking=False):
         return {"status": "busy", "message": "A Garmin sync is already running."}
+    db.info.pop("garmin_day_candidates", None)
+    db.info.pop("garmin_ambiguous_days", None)
     conn = get_connection(user_id, db)
     if conn.backoff_until and conn.backoff_until > datetime.now():
         _sync_lock.release()
@@ -364,6 +410,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         except Exception:
             pass  # cosmetic; never fail a sync over the profile name
     known, lapless = set(), set()
+    attempted = set()
     for ext, splits in db.query(Activity.external_id, Activity.splits).filter(
             Activity.user_id == user_id, Activity.source == "garmin"):
         known.add(ext)
@@ -371,8 +418,12 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
             lapless.add(ext)
     # Until one full import has completed (it may have been interrupted), keep walking the
     # whole history — but skip runs already stored, so a resume doesn't redo finished work.
+    if conn.full_sync_done and conn.last_reconciled_at is None:
+        conn.last_reconciled_at = datetime.now() - timedelta(days=6)
     backfill = not full and not conn.full_sync_done
-    full = full or backfill
+    reconcile = bool(conn.full_sync_done and (conn.last_reconciled_at is not None and conn.last_reconciled_at < datetime.now() - timedelta(days=7)))
+    explicit_full = full
+    full = full or backfill or reconcile
     easy_paces = EasyPaceIndex(user_id, db)
     counts = {"new": 0, "merged": 0, "updated": 0, "seen": 0, "requests": 0}
 
@@ -381,27 +432,41 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
     else:
         newest = db.query(func.max(Activity.date)).filter(
             Activity.user_id == user_id, Activity.source == "garmin").scalar()
-        since = (newest or datetime.now()).date() - timedelta(days=OVERLAP_DAYS)
+        since = min((newest or datetime.now()).date(), (conn.last_sync_at or datetime.now()).date()) - timedelta(days=OVERLAP_DAYS)
         pages = _pages(client, since, date.today() + timedelta(days=1))
 
     try:
         for batch in pages:
             counts["requests"] += 1
+            # Manual placeholders must have exactly one plausible Garmin counterpart.
+            candidates = db.info.setdefault('garmin_day_candidates', {})
+            for candidate in batch:
+                dt = _parse_local_time(candidate.get('startTimeLocal'))
+                if dt:
+                    candidates.setdefault(dt.date(), []).append(candidate)
+            if len(batch) == PAGE_SIZE:
+                boundary = _parse_local_time(batch[-1].get('startTimeLocal'))
+                if boundary:
+                    db.info.setdefault('garmin_ambiguous_days', set()).add(boundary.date())
             for raw in batch:
                 counts["seen"] += 1
                 parsed = parse_activity(raw)
                 if parsed is None:
                     continue
                 if parsed["external_id"] in known:
-                    if parsed["external_id"] in lapless and not backfill:
-                        # A FIT download failed earlier: retry, or the workout can never be evaluated
-                        counts["requests"] += 1
-                        if _repair_laps(client, user_id, parsed, db, easy_paces.at(parsed["date"])):
-                            counts["updated"] += 1
-                            lapless.discard(parsed["external_id"])
                     if not backfill:
-                        _refresh_summary(user_id, parsed, db)
+                        updated = _refresh_summary(user_id, parsed, db, raw)
+                        source = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin', external_id=parsed['external_id']).one()
+                        if (explicit_full or parsed['external_id'] in lapless or source.enrichment_status == 'pending') and (explicit_full or source.next_retry_at is None or source.next_retry_at <= datetime.now()):
+                            attempted.add(parsed['external_id'])
+                            activity = db.get(Activity, source.activity_id)
+                            if _enrich(client, activity, source, db, easy_paces.at(parsed['date'])):
+                                updated = True
+                                from app.services.coaching_jobs import enqueue_synced_run
+                                enqueue_synced_run(activity, db)
+                        counts['updated'] += int(updated)
                     continue
+                attempted.add(parsed['external_id'])
                 outcome = _store_activity(client, user_id, raw, parsed, db, easy_paces.at(parsed["date"]))
                 counts["requests"] += 1
                 counts[outcome] += 1
@@ -418,21 +483,25 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         db.commit()
         raise
 
-    changed = counts["new"] + counts["merged"]
+    if not backfill:
+        counts['updated'] += _retry_enrichment(client, user_id, db, easy_paces, attempted)
+    # A checked discovery interval records access, not proof that every day was worn.
+    earliest = db.query(func.min(Activity.date)).filter_by(user_id=user_id, source='garmin').scalar()
+    coverage(user_id, 'activities', (earliest.date() if earliest else date.today()) if full else since,
+             date.today(), 'checked', db)
+    changed = counts["new"] + counts["merged"] + counts['updated']
     if changed or full:
-        from app.services.analyzer import classify_activities, detect_prs
-
-        classify_activities(user_id, db)
-        detect_prs(user_id, db)
+        reanalyze_laps(user_id, db)
 
     conn = get_connection(user_id, db)
     conn.connected = True
     conn.last_error = None
     conn.last_sync_at = datetime.now()
-    if changed:
+    if counts["new"] + counts["merged"]:
         conn.last_new_activity_at = datetime.now()
     if full:
         conn.full_sync_done = True
+        conn.last_reconciled_at = datetime.now()
     db.commit()
 
     counts["mode"] = "full" if full else "incremental"
@@ -461,33 +530,24 @@ def _record_failure(conn: GarminConnection, e: Exception):
     logger.warning("Garmin sync failed for user %s: %s", conn.user_id, e)
 
 
-def _repair_laps(client, user_id: int, parsed: dict, db: Session, easy_pace: float | None) -> bool:
-    activity = db.query(Activity).filter(
-        Activity.user_id == user_id, Activity.source == "garmin", Activity.external_id == parsed["external_id"]).first()
-    try:
-        laps = client.get_laps(parsed["external_id"])
-    except (GarminAuthError, GarminRateLimited):
-        raise
-    except Exception as e:
-        logger.warning("Lap retry failed for %s: %s", parsed["external_id"], e)
-        return False
-    if not activity or not laps:
-        return False
-    activity.splits = json.dumps(laps)
-    activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace)
-    activity.has_workout_description = is_workout_description(activity.description)
-    return True
-
-
-def _refresh_summary(user_id: int, parsed: dict, db: Session):
-    """Runs inside the overlap window: pick up renames (the API carries no notes)."""
-    activity = db.query(Activity).filter(
-        Activity.user_id == user_id,
-        Activity.source == "garmin",
-        Activity.external_id == parsed["external_id"],
-    ).first()
-    if activity and parsed["name"] and activity.name != parsed["name"]:
-        activity.name = parsed["name"]
+def _refresh_summary(user_id: int, parsed: dict, db: Session, raw: dict) -> bool:
+    activity = db.query(Activity).filter_by(user_id=user_id, source='garmin', external_id=parsed['external_id']).one()
+    before = {key: getattr(activity, key) for key in parsed}
+    # Provider metrics may become null after correction. Athlete overrides and notes live separately.
+    for key, value in parsed.items():
+        if key != 'workout_type':
+            setattr(activity, key, value)
+    source = source_for(activity, 'garmin', parsed['external_id'], db)
+    if source.parser_version is None and activity.splits and activity.splits != '[]':
+        source.enrichment_status = 'complete'  # existing normalized laps; explicit full sync refreshes FIT
+    if any(before[key] is not None and getattr(activity, key) != before[key] for key in ('distance_meters', 'duration_seconds', 'elapsed_seconds', 'activity_subtype')):
+        source.enrichment_status, source.next_retry_at = 'pending', None
+    capture(source, 'summary', db, payload=raw)
+    changed = any(getattr(activity, key) != value for key, value in before.items())
+    if changed:
+        from app.services.coaching_jobs import enqueue_synced_run
+        enqueue_synced_run(activity, db)
+    return changed
 
 
 def _strip_lap_summary(description: str | None) -> str | None:
