@@ -1,6 +1,6 @@
 """Persistent version/revision keyed snapshots; no network and no model calls."""
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.models.history import AnalysisSnapshot, AthleteRevision
 
@@ -13,6 +13,10 @@ def revision(user_id, db, *, flush=True):
 
 def cached(user_id, kind, cache_key, db, build, *, persist=True):
     current = revision(user_id, db, flush=persist)
+    if persist:
+        # Operational caches expire; immutable model input snapshots remain on reviews.
+        db.query(AnalysisSnapshot).filter(AnalysisSnapshot.user_id == user_id,
+            AnalysisSnapshot.created_at < datetime.now()-timedelta(days=45)).delete(synchronize_session=False)
     row = db.query(AnalysisSnapshot).filter_by(user_id=user_id, kind=kind, cache_key=cache_key).first()
     if row and row.revision == current:
         return json.loads(row.payload)

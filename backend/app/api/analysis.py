@@ -311,3 +311,13 @@ def get_history(user_id: int, db: Session = Depends(get_db)):
     result['revision'] = revision(user_id, db)
     db.commit()
     return result
+
+
+@router.post('/{user_id}/history/reparse-fits')
+def reparse_history(user_id: int, force: bool = False, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    from app.services.history_evidence import reparse_fits
+    if not db.get(User, user_id):
+        raise HTTPException(404, 'Athlete not found')
+    _begin_schedule_write(db)
+    return reparse_fits(user_id, db, limit=limit, force=force)

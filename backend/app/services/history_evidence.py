@@ -54,3 +54,42 @@ def coverage(user_id, stream, start, end, status, db):
         row = HistoryCoverage(user_id=user_id, stream=stream, start_date=start, end_date=end)
         db.add(row)
     row.status, row.checked_at = status, datetime.now()
+
+
+def reparse_fits(user_id, db, *, limit=100, force=False):
+    """Reprocess retained evidence offline. No imports, Garmin calls or plan effects."""
+    from app.models.activity import Activity
+    from app.services.garmin_api import laps_from_fit
+    from app.services.garmin import reanalyze_laps
+    from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
+    from sqlalchemy import or_
+    query = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin')
+    if not force:
+        query = query.filter(or_(ActivitySource.parser_version.is_(None), ActivitySource.parser_version != PARSER_VERSION))
+    # Skip sources without original evidence before the limit, so legacy rows cannot starve newer files.
+    query = query.filter(db.query(SourceRevision.id).filter(SourceRevision.source_id == ActivitySource.id,
+                                                          SourceRevision.kind == 'fit').exists())
+    reparsed, failed = 0, 0
+    changed = []
+    for source in query.order_by(ActivitySource.id).limit(limit):
+        original = db.query(SourceRevision).filter_by(source_id=source.id, kind='fit').order_by(SourceRevision.id.desc()).first()
+        try:
+            laps = laps_from_fit(original.fit_bytes)
+            if not laps:
+                failed += 1
+                continue
+            activity = db.get(Activity, source.activity_id)
+            activity.splits = json.dumps(laps)
+            source.parser_version, source.enrichment_status = PARSER_VERSION, 'complete'
+            source.last_error, source.next_retry_at, source.attempts = None, None, 0
+            changed.append(activity); reparsed += 1
+        except Exception as exc:
+            source.last_error = type(exc).__name__
+            failed += 1
+    if reparsed:
+        reanalyze_laps(user_id, db)
+        for activity in changed:
+            enqueue_synced_run(activity, db)
+        release_synced_jobs(user_id, db)
+    db.commit()
+    return {'reparsed': reparsed, 'failed': failed, 'parser_version': PARSER_VERSION}
