@@ -163,3 +163,16 @@ def test_original_fit_is_retained_and_timer_time_survives_pause(monkeypatch):
         garmin.sync_garmin(1, db)
         assert db.query(SourceRevision).filter_by(kind='fit').one().fit_bytes == blob
         assert json.loads(db.query(Activity).one().splits)[0]['duration_s'] == 360
+
+
+def test_exhausted_fit_is_not_retried_every_poll(monkeypatch):
+    fake = FakeGarmin([1]); setup_client(monkeypatch, fake)
+    with SessionLocal() as db:
+        garmin.sync_garmin(1, db)
+        source = db.query(ActivitySource).one()
+        source.enrichment_status, source.attempts, source.next_retry_at = 'unavailable', 5, None
+        db.commit(); fake.split_calls.clear()
+        garmin.sync_garmin(1, db)
+        assert fake.split_calls == []
+        garmin.sync_garmin(1, db, full=True)
+        assert fake.split_calls == ['1']
