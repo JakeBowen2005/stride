@@ -1,4 +1,4 @@
-"""Idempotent source capture and bounded, durable enrichment retries. No commits here."""
+"""Source capture primitives and a bounded offline FIT reprocessing operation."""
 import hashlib
 import json
 from datetime import datetime, timedelta

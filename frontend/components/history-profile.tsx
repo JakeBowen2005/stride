@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { getJson, USER_ID } from "@/lib/api";
 import { useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, unitLabel } from "@/lib/units";
-import { formatDateShort } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Profile {
@@ -17,6 +16,8 @@ interface Profile {
   };
   recording_gaps: { after: string; before: string; unrecorded_days: number }[];
 }
+
+const historyDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 export function HistoryProfile({ revision, onInspect }: { revision: number; onInspect: (id: number) => Promise<void> }) {
   const units = useUnits();
@@ -47,15 +48,15 @@ export function HistoryProfile({ revision, onInspect }: { revision: number; onIn
           <p className="text-xs text-muted-foreground">Last four completed weeks</p></div>
         <div><p className="text-xs text-muted-foreground">Recorded history</p>
           <p className="text-lg font-medium">{profile.coverage.recorded_runs} runs</p>
-          <p className="text-xs text-muted-foreground">{profile.coverage.first_recorded_run ? `Since ${formatDateShort(profile.coverage.first_recorded_run)}` : "No runs recorded yet"}</p></div>
+          <p className="text-xs text-muted-foreground">{profile.coverage.first_recorded_run ? `Since ${historyDate(profile.coverage.first_recorded_run)}` : "No runs recorded yet"}</p></div>
       </div>
       {profile.historical_capacity.sustained_blocks.length > 0 && <details>
         <summary className="cursor-pointer text-sm font-medium">Previously sustained training</summary>
         <p className="mt-2 text-xs text-muted-foreground">Past capacity provides context. Current training determines the next step.</p>
         <ul className="mt-2 space-y-3">{profile.historical_capacity.sustained_blocks.map(block => <li key={block.start} className="text-sm">
-          <p>{distance(block.average_mpw)} / week · {formatDateShort(block.start)}–{formatDateShort(block.end)}</p>
+          <p>{distance(block.average_mpw)} / week · {historyDate(block.start)}–{historyDate(block.end)}</p>
           <p className="text-xs text-muted-foreground">{block.run_days_per_week} running days/week · four recorded weeks</p>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{block.activity_ids.slice(0, 5).map((id, index) => <button key={id} type="button" onClick={() => inspect(id)} className="text-xs underline underline-offset-2">View run {index + 1}</button>)}</div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{block.activity_ids.slice(0, 5).map((id, index) => <button key={id} type="button" onClick={() => inspect(id)} aria-label={`View run ${index + 1} from block starting ${historyDate(block.start)}`} className="text-xs underline underline-offset-2">View run {index + 1}</button>)}</div>
         </li>)}</ul>
       </details>}
       {(missing > 0 || unavailable > 0) && <p className="text-xs text-muted-foreground">Lap evidence: {missing} awaiting repair{unavailable ? ` · ${unavailable} unavailable` : ""}. Those runs still contribute their recorded mileage.</p>}
