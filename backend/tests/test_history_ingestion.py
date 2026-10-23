@@ -176,3 +176,35 @@ def test_exhausted_fit_is_not_retried_every_poll(monkeypatch):
         assert fake.split_calls == []
         garmin.sync_garmin(1, db, full=True)
         assert fake.split_calls == ['1']
+
+
+def test_old_repair_rate_limit_records_connection_backoff(monkeypatch):
+    from app.models.garmin import GarminConnection
+    from app.services.garmin_api import GarminRateLimited
+    import pytest
+    fake = FakeGarmin([1, 2, 3, 4, 5, 6]); setup_client(monkeypatch, fake)
+    with SessionLocal() as db:
+        garmin.sync_garmin(1, db)
+        source = db.query(ActivitySource).filter_by(external_id='6').one()
+        source.next_retry_at = datetime.now()-timedelta(minutes=1); db.commit()
+        def limited(aid):
+            if aid == '6': raise GarminRateLimited('limited')
+            return []
+        fake.get_laps = limited
+        with pytest.raises(GarminRateLimited): garmin.sync_garmin(1, db)
+        assert db.query(GarminConnection).one().backoff_until > datetime.now()
+
+
+def test_fit_network_does_not_hold_database_writer(monkeypatch):
+    from app.models.user import User
+    fake = FakeGarmin([1]); setup_client(monkeypatch, fake)
+    writes = []
+    def network(aid):
+        with SessionLocal() as other:
+            other.get(User, 1).units = 'km'; other.commit()
+        writes.append(aid)
+        return []
+    fake.get_laps = network
+    with SessionLocal() as db:
+        assert garmin.sync_garmin(1, db)['new'] == 1
+        assert writes == ['1']
