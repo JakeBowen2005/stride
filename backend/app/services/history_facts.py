@@ -21,8 +21,9 @@ def _day_payload(rows):
             'feel': [a.feel_rating for a in runs if a.feel_rating is not None]}
 
 
-def daily_facts(user_id, db):
-    db.flush()
+def daily_facts(user_id, db, *, persist=True):
+    if persist:
+        db.flush()
     existing = db.query(DailyFact).filter_by(user_id=user_id).all()
     dirty = db.query(DirtyDay).filter_by(user_id=user_id).all()
     rebuild = not existing or any(row.version != VERSION for row in existing)
@@ -41,6 +42,11 @@ def daily_facts(user_id, db):
     for a in acts:
         if a.date.date().isoformat() in dates:
             groups[a.date.date().isoformat()].append(a)
+    if not persist:
+        payloads = {row.date: json.loads(row.payload) for row in existing}
+        for day in dates:
+            payloads[day] = _day_payload(groups[day])
+        return [{'date': day, **payload} for day, payload in sorted(payloads.items())]
     by_day = {row.date: row for row in existing}
     for day in dates:
         row = by_day.get(day)
@@ -54,8 +60,8 @@ def daily_facts(user_id, db):
     return [{'date': day, **json.loads(row.payload)} for day, row in sorted(by_day.items())]
 
 
-def _profile(user_id, db, today):
-    days = [d for d in daily_facts(user_id, db) if d['date'] <= today.isoformat() and d['runs']]
+def _profile(user_id, db, today, persist=True):
+    days = [d for d in daily_facts(user_id, db, persist=persist) if d['date'] <= today.isoformat() and d['runs']]
     weeks = defaultdict(lambda: {'miles': 0, 'runs': 0, 'run_days': 0, 'activity_ids': [], 'quality_ids': [], 'race_ids': [], 'longest_miles': 0})
     for day in days:
         d = date.fromisoformat(day['date']); monday = (d - timedelta(days=d.weekday())).isoformat()
@@ -118,6 +124,6 @@ def _profile(user_id, db, today):
         'recording_gaps': gaps[-10:], 'weekly_history': weekly}
 
 
-def historical_profile(user_id, db, today=None):
+def historical_profile(user_id, db, today=None, *, persist=True):
     today = today or date.today()
-    return cached(user_id, 'history-profile', f'{VERSION}:{today}', db, lambda: _profile(user_id, db, today))
+    return cached(user_id, 'history-profile', f'{VERSION}:{today}', db, lambda: _profile(user_id, db, today, persist=persist), persist=persist)

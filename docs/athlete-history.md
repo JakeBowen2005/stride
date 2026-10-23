@@ -62,3 +62,38 @@ response records access without inventing measurements; partial endpoint failure
 does not advance the common history cursor. Corrected resting HR recalculates the
 following seven days' derived baseline. History does not imply that the athlete
 wore a compatible device for that entire interval.
+
+## Grounded coaching and audit
+
+Coaching receives a compact dossier: recent completed weeks, sustained historical
+blocks, previous race buildups, recording gaps, descriptive recovery comparisons,
+and up to 120 source-reference records. The API profile retains full weekly
+history; years of individual laps are never sent to the model. Recovery comparisons
+require at least four recent and fourteen prior measurements and establish no
+causal relationship or readiness diagnosis.
+
+Model-selected historical highlights must reference a supplied insight ID. The
+server resolves that ID to its own observed fact, activity IDs and dates; unknown
+IDs reject the response. Effort and reported completion are explicit subjective
+inputs, distinct from feel/recovery and measured lap verification. The deterministic
+plan engine still owns prescriptions and progression; importing or repairing
+history never replays past workout progression or changes approved sessions.
+
+Each coaching review retains the exact JSON model input, input revision, model,
+policy version, token usage and result. Credentials and raw FIT/GPS evidence are
+not part of that input. Expensive context and candidate construction is cached
+by athlete revision, date, scope, model, instructions and research content. Prior
+coach notes remain freshly retrieved without invalidating training facts. Saved
+review GETs never initiate provider/model requests. Disposable computation caches
+expire after 45 days; review input snapshots and source evidence are retained.
+
+`POST /api/analysis/{user_id}/history/reparse-fits?force=true&limit=100` reprocesses
+original stored FIT evidence without contacting Garmin, with at most 200 files
+per request. Without `force`, it selects sources not yet parsed by the current
+parser version. Existing records with normalized laps but no original FIT need
+an explicit full sync to acquire that original evidence first. Missing/corrupt
+files do not remove existing athlete feedback.
+
+The History page shows current recorded volume separately from earlier sustained
+training, recording limitations and lap repair status. Historical block evidence
+opens the original run details, including runs outside the first history page.

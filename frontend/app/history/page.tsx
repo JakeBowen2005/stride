@@ -1,8 +1,9 @@
 "use client";
 
-import { apiUrl, USER_ID } from "@/lib/api";
+import { apiUrl, getJson, USER_ID } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HistoryProfile } from "@/components/history-profile";
 import { RunList } from "@/components/run-list";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
@@ -69,6 +70,11 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">History</h1>
+
+      <HistoryProfile revision={revision} onInspect={async (id) => {
+        const activity = await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);
+        if (activity) setSelected({ ...activity, splits: activity.splits || [] });
+      }} />
 
       <MileageOverTimeChartWrapper data={weeklyMileage} />
 
