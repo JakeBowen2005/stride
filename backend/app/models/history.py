@@ -22,6 +22,7 @@ class ActivitySource(Base):
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_error: Mapped[str | None] = mapped_column(String(100))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    fit_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
     parser_version: Mapped[str | None] = mapped_column(String(30))
 
 

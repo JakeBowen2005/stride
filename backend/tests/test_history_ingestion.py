@@ -208,3 +208,29 @@ def test_fit_network_does_not_hold_database_writer(monkeypatch):
     with SessionLocal() as db:
         assert garmin.sync_garmin(1, db)['new'] == 1
         assert writes == ['1']
+
+
+def test_explicit_full_repair_resumes_after_rate_limit_without_redownloading_checked_files(monkeypatch):
+    import pytest
+    from app.models.garmin import GarminConnection
+    from app.services.garmin_api import GarminRateLimited
+    fake = FakeGarmin([1, 2, 3]); setup_client(monkeypatch, fake)
+    def healthy(aid):
+        fake.split_calls.append(aid)
+        return [{'distance_m': 8000, 'duration_s': 2700}]
+    fake.get_laps = healthy
+    with SessionLocal() as db:
+        garmin.sync_garmin(1, db)
+        def limited(aid):
+            if aid == '2': raise GarminRateLimited('limited')
+            return healthy(aid)
+        fake.get_laps = limited
+        with pytest.raises(GarminRateLimited): garmin.sync_garmin(1, db, full=True)
+        assert db.query(GarminConnection).one().full_repair_started_at is not None
+        db.query(GarminConnection).one().backoff_until = None; db.commit()
+    # A normal poll after restart resumes the explicit repair generation.
+    fake.get_laps = healthy; fake.split_calls.clear()
+    with SessionLocal() as db:
+        garmin.sync_garmin(1, db)
+        assert fake.split_calls == ['2', '3']
+        assert db.query(GarminConnection).one().full_repair_started_at is None
