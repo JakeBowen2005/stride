@@ -339,6 +339,7 @@ def _enrich(client, activity, source, db, easy_pace):
     activity.splits = json.dumps(laps)
     activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace)
     activity.has_workout_description = is_workout_description(activity.description)
+    source.fit_checked_at = datetime.now()
     source.enrichment_status, source.parser_version = 'complete', PARSER_VERSION
     source.last_error, source.next_retry_at, source.attempts = None, None, 0
     return True
@@ -419,6 +420,13 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         known.add(ext)
         if not splits or splits == "[]":
             lapless.add(ext)
+    # An explicit repair has a durable generation. Resume it after a rate limit
+    # without downloading every already-checked FIT again from the newest page.
+    if full and conn.full_repair_started_at is None:
+        conn.full_repair_started_at = datetime.now()
+    repair_started = conn.full_repair_started_at
+    full = full or repair_started is not None
+    db.commit()
     # Until one full import has completed (it may have been interrupted), keep walking the
     # whole history — but skip runs already stored, so a resume doesn't redo finished work.
     if conn.full_sync_done and conn.last_reconciled_at is None:
@@ -460,13 +468,16 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
                     if not backfill:
                         updated = _refresh_summary(user_id, parsed, db, raw)
                         source = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin', external_id=parsed['external_id']).one()
-                        if explicit_full or (source.enrichment_status in {'pending', 'retry'} and (source.next_retry_at is None or source.next_retry_at <= datetime.now())):
+                        repair_due = explicit_full and (source.fit_checked_at is None or source.fit_checked_at < repair_started)
+                        if repair_due or (source.enrichment_status in {'pending', 'retry'} and (source.next_retry_at is None or source.next_retry_at <= datetime.now())):
                             attempted.add(parsed['external_id'])
                             activity = db.get(Activity, source.activity_id)
                             if _enrich(client, activity, source, db, easy_paces.at(parsed['date'])):
                                 updated = True
                                 from app.services.coaching_jobs import enqueue_synced_run
                                 enqueue_synced_run(activity, db)
+                            if explicit_full:
+                                time.sleep(FULL_SYNC_DELAY)
                         counts['updated'] += int(updated)
                     continue
                 attempted.add(parsed['external_id'])
@@ -511,6 +522,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
     if full:
         conn.full_sync_done = True
         conn.last_reconciled_at = datetime.now()
+        conn.full_repair_started_at = None
     db.commit()
 
     counts["mode"] = "full" if full else "incremental"
