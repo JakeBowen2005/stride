@@ -139,19 +139,33 @@ def parse_day(summary, sleep, hrv, readiness, status, predictions) -> dict:
     return {k: v for k, v in out.items() if v is not None}
 
 
-def fetch_range(client, start: date, end: date) -> dict[str, dict]:
-    """Three range requests → parsed fields per ISO date."""
-    by_day: dict[str, dict] = {}
-    for row in _safe(client.daily_summaries, start, end) or []:
-        by_day.setdefault(row.get("calendarDate"), {})["summary"] = flatten_summary(row)
-    for row in _safe(client.sleep_range, start, end) or []:
-        by_day.setdefault(row.get("calendarDate"), {})["sleep"] = row
-    for row in _safe(client.hrv_range, start, end) or []:
-        by_day.setdefault(row.get("calendarDate"), {})["hrv"] = row
-    return {
-        day: parse_day(parts.get("summary"), parts.get("sleep"), parts.get("hrv"), None, None, None)
-        for day, parts in by_day.items() if day
-    }
+def fetch_range(client, start: date, end: date, *, user_id=None, db=None) -> dict[str, dict]:
+    """Three independently recorded streams. Failure never means a checked empty day."""
+    from app.services.history_evidence import coverage, encoded
+    from app.models.history import WellnessRevision
+    import hashlib
+    by_day, complete = {}, True
+    for stream, fn, key in [('daily_summary', client.daily_summaries, 'summary'),
+                             ('sleep', client.sleep_range, 'sleep'), ('hrv', client.hrv_range, 'hrv')]:
+        rows = _safe(fn, start, end)
+        complete = complete and rows is not None
+        if db is not None:
+            coverage(user_id, stream, start, end, 'checked' if rows is not None else 'failed', db)
+            if rows is not None:
+                payload = encoded(rows)
+                digest = hashlib.sha256(payload.encode()).hexdigest()
+                if not db.query(WellnessRevision.id).filter_by(user_id=user_id, stream=stream,
+                        start_date=start.isoformat(), end_date=end.isoformat(), content_hash=digest).first():
+                    db.add(WellnessRevision(user_id=user_id, stream=stream, start_date=start.isoformat(),
+                        end_date=end.isoformat(), content_hash=digest, payload=payload))
+        for row in rows or []:
+            day = row.get('calendarDate')
+            if day and start.isoformat() <= day <= end.isoformat():
+                by_day.setdefault(day, {})[key] = flatten_summary(row) if key == 'summary' else row
+    if db is not None:
+        coverage(user_id, 'wellness', start, end, 'checked' if complete else 'failed', db)
+    return {day: parse_day(parts.get('summary'), parts.get('sleep'), parts.get('hrv'), None, None, None)
+            for day, parts in by_day.items()}
 
 
 def _upsert(user_id: int, day: date, fields: dict, db: Session):
@@ -196,12 +210,30 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
     have = db.query(DailyWellness).filter(DailyWellness.user_id == user_id).count()
     # Yesterday is finalized overnight, so the routine refresh covers it too
     start = today - timedelta(days=(BACKFILL_DAYS if have < 7 else 2) - 1)
-    days = fetch_range(client, start, today)
+    days = fetch_range(client, start, today, user_id=user_id, db=db)
     written = 0
     for iso, fields in days.items():
         if fields:
             _upsert(user_id, date.fromisoformat(iso), fields, db)
             written += 1
+    db.flush()
+    # One bounded historical chunk per sync. Failed chunks do not advance coverage.
+    if have >= 7:
+        from app.models.activity import Activity
+        from app.models.history import HistoryCoverage
+        from sqlalchemy import func
+        oldest = db.query(func.min(Activity.date)).filter_by(user_id=user_id).scalar()
+        checked = db.query(func.min(HistoryCoverage.start_date)).filter_by(user_id=user_id, stream='wellness', status='checked').scalar()
+        end = date.fromisoformat(checked) - timedelta(days=1) if checked else today
+        if oldest and end >= oldest.date():
+            history_start = max(oldest.date(), end - timedelta(days=BACKFILL_DAYS-1))
+            db.commit()  # recent metrics are durable; no SQLite writer held across historical I/O
+            older = fetch_range(client, history_start, end, user_id=user_id, db=db)
+            for iso, fields in older.items():
+                if fields:
+                    _upsert(user_id, date.fromisoformat(iso), fields, db)
+                    written += 1
+            days.update(older)
     db.flush()
     _fill_resting_hr_average(user_id, sorted(days), db)
     db.commit()
@@ -210,18 +242,19 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
 
 
 def _fill_resting_hr_average(user_id: int, isos: list[str], db: Session):
-    """The Personal API has no 7-day resting HR average; derive it from stored days."""
-    for iso in isos:
-        day = date.fromisoformat(iso)
-        rows = db.query(DailyWellness.resting_hr).filter(
-            DailyWellness.user_id == user_id,
-            DailyWellness.date >= (day - timedelta(days=7)).isoformat(),
-            DailyWellness.date < iso,
-            DailyWellness.resting_hr.isnot(None),
-        ).all()
-        row = db.query(DailyWellness).filter(DailyWellness.user_id == user_id, DailyWellness.date == iso).first()
-        if row and len(rows) >= 4:
-            row.resting_hr_7d_avg = round(sum(r[0] for r in rows) / len(rows), 1)
+    """A corrected day also invalidates the next seven days' resting-HR baseline."""
+    if not isos:
+        return
+    first, last = date.fromisoformat(min(isos)), date.fromisoformat(max(isos))
+    rows = db.query(DailyWellness).filter(DailyWellness.user_id == user_id,
+        DailyWellness.date >= (first-timedelta(days=7)).isoformat(),
+        DailyWellness.date <= (last+timedelta(days=7)).isoformat()).all()
+    by_day = {date.fromisoformat(r.date): r for r in rows}
+    for day, row in by_day.items():
+        if first <= day <= last+timedelta(days=7):
+            values = [by_day[d].resting_hr for i in range(1, 8)
+                      if (d := day-timedelta(days=i)) in by_day and by_day[d].resting_hr is not None]
+            row.resting_hr_7d_avg = round(sum(values)/len(values), 1) if len(values) >= 4 else None
 
 
 def wellness_to_dict(row: DailyWellness | None) -> dict | None:

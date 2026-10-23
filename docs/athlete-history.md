@@ -35,3 +35,30 @@ All regression tests use disposable databases, fake clients and a minimal FIT
 fixture with distinct timer/elapsed times. No Garmin or model credentials are
 needed. Original summary payloads retain local/UTC metadata when supplied;
 canonical `Activity.date` remains the existing local training-calendar timestamp.
+
+## Derived facts and caches
+
+`GET /api/analysis/{user_id}/history` exposes an observed historical profile:
+current completed weeks, up to three non-overlapping sustained four-week blocks,
+long-run evidence and recording gaps. Historical capacity is explicitly separate
+from current fitness. Every block references real activity IDs; absent weeks are
+unknown recording coverage, not a claim that the athlete rested.
+
+Activity edits dirty their affected calendar dates; moving a run dirties both
+old and new dates. The next materialization rebuilds those daily facts and folds
+weekly facts from them. Athlete input revisions invalidate persistent historical
+and baseline snapshots. Feedback, wellness, goals, profile and schedule edits
+also invalidate dependent analysis. Rollbacks roll back invalidation. Bulk ORM
+edits conservatively invalidate all facts because they bypass per-object history.
+Snapshot keys include calculation version and local as-of date, so midnight and
+algorithm updates cannot silently reuse yesterday's interpretation. Read-only
+schedule trials never flush or populate caches. The explicit analysis endpoints
+serialize cache materialization with the existing SQLite write mechanism.
+
+Wellness records immutable range responses and independent endpoint coverage.
+One historical chunk of at most 28 days is attempted per sync after the initial
+recent import, working backward to the first stored activity. An empty successful
+response records access without inventing measurements; partial endpoint failure
+does not advance the common history cursor. Corrected resting HR recalculates the
+following seven days' derived baseline. History does not imply that the athlete
+wore a compatible device for that entire interval.
