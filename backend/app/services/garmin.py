@@ -317,6 +317,7 @@ def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session, 
 
 def _enrich(client, activity, source, db, easy_pace):
     """Persist original evidence before parsing; retry failures independently of dates."""
+    db.commit()  # summary + pending enrichment are durable; release writer before FIT I/O
     try:
         if hasattr(client, 'get_fit'):
             blob = client.get_fit(source.external_id)
@@ -365,11 +366,13 @@ def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
         return {"status": "busy", "message": "A Garmin sync is already running."}
     db.info.pop("garmin_day_candidates", None)
     db.info.pop("garmin_ambiguous_days", None)
-    conn = get_connection(user_id, db)
-    if conn.backoff_until and conn.backoff_until > datetime.now():
-        _sync_lock.release()
-        return {"status": "backoff", "message": f"Garmin rate-limited us; retrying after {conn.backoff_until:%H:%M}."}
     try:
+        db.info.pop("garmin_day_candidates", None)
+        db.info.pop("garmin_ambiguous_days", None)
+        conn = get_connection(user_id, db)
+        if conn.backoff_until and conn.backoff_until > datetime.now():
+            return {"status": "backoff", "message": f"Garmin rate-limited us; retrying after {conn.backoff_until:%H:%M}."}
+        db.commit()  # connection creation must not hold SQLite's writer across network calls
         with garmin_io_lock:
             return _sync(user_id, db, full)
     finally:
@@ -484,7 +487,13 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         raise
 
     if not backfill:
-        counts['updated'] += _retry_enrichment(client, user_id, db, easy_paces, attempted)
+        try:
+            counts['updated'] += _retry_enrichment(client, user_id, db, easy_paces, attempted)
+        except Exception as exc:
+            db.rollback()
+            _record_failure(get_connection(user_id, db), exc)
+            db.commit()
+            raise
     # A checked discovery interval records access, not proof that every day was worn.
     earliest = db.query(func.min(Activity.date)).filter_by(user_id=user_id, source='garmin').scalar()
     coverage(user_id, 'activities', (earliest.date() if earliest else date.today()) if full else since,
