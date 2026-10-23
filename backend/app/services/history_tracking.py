@@ -33,6 +33,10 @@ def track_changes(db, flush_context, instances):
     for row in set(db.new) | set(db.dirty) | set(db.deleted):
         if not isinstance(row, TRACKED) or (row in db.dirty and not db.is_modified(row, include_collections=False)):
             continue
+        if isinstance(row, PlannedWorkout) and row in db.dirty:
+            changed = {attr.key for attr in inspect(row).attrs if attr.history.has_changes()}
+            if changed <= {'activity_id', 'session_status'} and row.session_status == 'completed':
+                continue  # GET /current attaches existing evidence; it adds no training input
         if isinstance(row, ActivitySource) and row in db.dirty and not any(inspect(row).attrs[key].history.has_changes() for key in ('enrichment_status', 'parser_version', 'activity_id')):
             continue
         if isinstance(row, HistoryCoverage) and row in db.dirty and not inspect(row).attrs.status.history.has_changes():
