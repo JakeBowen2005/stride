@@ -51,6 +51,7 @@ class LoadPlan:
     planning_anchor: float | None = None
     training_level: float | None = None
     developmental: bool = False
+    after_down_week: bool = False  # the last completed week was a down week
 
     def to_dict(self) -> dict:
         return {
@@ -119,6 +120,21 @@ def training_level(baseline: float, completed_weeks: list[float] | None) -> tupl
     return round(min(max(baseline, level), baseline * LEVEL_CAP), 1), down[-1]
 
 
+def latest_week_is_spike(completed_weeks: list[float] | None, race_weeks: list[bool] | None = None) -> bool:
+    """Is the newest completed week a spike: far above the week before and above the recent high?
+
+    Weeks containing a race are left out: race mileage is an event, not a training level,
+    so a race week is never the spike and never the comparison for one.
+    """
+    weeks = [_finite(w) for w in (completed_weeks or [])][-4:]
+    flags = list(race_weeks or [])[-len(weeks):] if weeks else []
+    flags = [False] * (len(weeks) - len(flags)) + [bool(f) for f in flags]
+    if len(weeks) < 4 or flags[-1]:
+        return False
+    history = [w for w, race in zip(weeks, flags) if not race]
+    return len(history) >= 2 and history[-1] > history[-2] * SPIKE_RATIO and history[-1] > max(history[:-1])
+
+
 def default_destination(goal_type: str, target_weekly_mileage: float | None) -> float | None:
     if goal_type == "mileage" and _finite(target_weekly_mileage):
         return round(_finite(target_weekly_mileage), 1)
@@ -164,6 +180,7 @@ def plan_load(
     completed_weeks: list[float] | None = None,  # oldest -> newest, full calendar weeks incl zero
     developmental: bool = False,
     previous_block: dict | None = None,  # last block's stored load: weekly_budgets + mode
+    race_weeks: list[bool] | None = None,  # aligned with completed_weeks: True where the week held a race
 ) -> LoadPlan:
     baseline = round(_finite(baseline), 1)
     peak = _finite(peak)
@@ -207,18 +224,21 @@ def plan_load(
         if len(history) == 4 and all(history):
             candidate = max(history[:-1]) if after_down_week else history[-1]
             supported = sum(w >= candidate * .8 for w in history) >= 2
-            spike = (not after_down_week and history[-1] > history[-2] * SPIKE_RATIO
-                     and history[-1] > max(history[:-1]))
+            spike = not after_down_week and latest_week_is_spike(history, race_weeks)
             if supported and not spike:
                 level = min(candidate, baseline * LEVEL_CAP)
         anchor = level
         # Weekly steps, not a 10% allowance spread across an entire block.
         rate = min(rate, .10)
         budgets = [level * (1 + rate) ** min(w + (0 if after_down_week else 1), 2) for w in range(num_weeks)]
-        if len(history) == 4 and history[-1] > history[-2] * SPIKE_RATIO and history[-1] > max(history[:-1]):
+        if latest_week_is_spike(history, race_weeks):
             # Right after a spike, one step is the most the block may build;
             # compounding a second week on top of an unabsorbed jump is not fail-safe.
             budgets = [min(b, level * (1 + rate)) for b in budgets]
+    elif latest_week_is_spike(completed_weeks, race_weeks) and budgets:
+        # The same guard for experienced runners: one growth step after a jump, then hold.
+        budgets = [min(b, budgets[0]) for b in budgets]
+        reasons.append("Last week jumped well above the weeks before it: one step of growth this block, then hold.")
     # For an experienced mileage builder, a repeatable recent high is evidence
     # that the rolling average can lag current training. Do not chase one spike.
     history = (completed_weeks or [])[-4:]
@@ -295,4 +315,5 @@ def plan_load(
     if mode == "build" and not recent_build:
         reasons.insert(1, f"Building by at most {rate:.0%} per week ({budgets[0]:.1f} → {budgets[-1]:.1f} mi/week), subject to workout and recovery holds." if developmental
                        else f"Building up to {rate:.0%} over the block ({budgets[0]:.0f} → {budgets[-1]:.0f} mi/week).")
-    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor, level, developmental)
+    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor, level,
+                    developmental, after_down_week)

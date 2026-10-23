@@ -34,7 +34,10 @@ def workout(level, easy_pace, weekly_miles, *, program=None, phase='general', re
     estimate = easy_pace * .9
     cap = max(0, math.floor(weekly_miles * .15 * estimate / 60))
     if reduced:
-        cap = min(cap, max(3, work_minutes // 2))
+        # Taper keeps ~2/3 of the dose (volume drops, rhythm stays); deload, recovery
+        # and race week halve it.
+        keep = round(work_minutes * 2 / 3) if phase == 'taper' else work_minutes // 2
+        cap = min(cap, max(3, keep))
     dose = min(work_minutes, cap)
     if dose < 3:
         return None
@@ -95,11 +98,32 @@ def deload_supported(history, evidence, first_date):
     return sum(d >= since for d in dates) >= 3 or grew
 
 
-def fit_week(days, budget, easy_desc, restructure_long):
+# Long-run shape for developing runners (Stride coaching choices, docs/training-principles.md).
+# Half/marathon long runs may reach ~40-45% of the week on low-frequency schedules,
+# growing about a mile a week (cutback weeks drop back) and never past ~3 hours.
+LONG_RUN_SHARE = {'half': .40, 'marathon': .42}
+LONG_RUN_FLOOR_SHARE = .35  # the +1 mi/week step never pulls a long run below this share
+LONG_RUN_STEP_MILES = 1.0
+LONG_RUN_MAX_MINUTES = 180
+DAY_AFTER_LONG_SHARE = .18  # the run after the long run is the week's shortest, <= ~15-20%
+CLEARLY_LONGEST = 1.2  # the long run should be at least this much longer than any easy day
+
+
+def long_run_cap(week_miles, longest_recent, easy_pace):
+    """Most a developing half/marathon long run may be this week (None = no cap)."""
+    cap = LONG_RUN_MAX_MINUTES * 60 / easy_pace
+    if longest_recent > 0:
+        cap = min(cap, max(longest_recent + LONG_RUN_STEP_MILES, week_miles * LONG_RUN_FLOOR_SHARE))
+    return round(cap, 1)
+
+
+def fit_week(days, budget, easy_desc, restructure_long, long_cap=None):
     """Preserve frequency with tenth-mile easy runs; never enlarge a workout.
 
     Completed days are locked. If the full session cannot fit alongside short
     easy runs, downgrade it rather than silently editing its work prescription.
+    The run after the long run is the week's shortest; the long run is clearly the
+    longest (up to ``long_cap``).
     """
     from app.core.plan_validator import _easy
     live = [d for d in days if d.get('prescribed', True) and d['type'] != 'race']
@@ -146,10 +170,50 @@ def fit_week(days, budget, easy_desc, restructure_long):
                 d.update(restructure_long(d['distance_miles']))
     if long and long['type'] == 'long_run':
         easy = [d for d in aerobic if d is not long and d['type'] == 'easy']
-        while easy and long['distance_miles'] + 1e-8 < max(d['distance_miles'] for d in easy):
-            donor = max(easy, key=lambda d: d['distance_miles'])
-            donor['distance_miles'] = round(donor['distance_miles'] - .1, 1)
-            long['distance_miles'] = round(long['distance_miles'] + .1, 1)
+        idx = days.index(long)
+        after = days[idx + 1] if idx + 1 < len(days) and days[idx + 1] in easy else None
+        others = [d for d in easy if d is not after]
+        if after:
+            cap = math.floor(budget * DAY_AFTER_LONG_SHARE * 10) / 10
+            if others:
+                cap = min(cap, min(d['distance_miles'] for d in others))
+            excess = round(after['distance_miles'] - max(cap, .5), 1)
+            if excess > 0:
+                after['distance_miles'] = round(after['distance_miles'] - excess, 1)
+                # Move the miles to the other easy days, else onto the long run within its
+                # cap. With nowhere left (e.g. a partial first week), the remainder stays on
+                # the day after: silently losing volume would read as a spike next block.
+                for _ in range(round(excess * 10)):
+                    if others:
+                        target = min(others, key=lambda d: d['distance_miles'])
+                    elif long_cap is None or long['distance_miles'] + .1 <= long_cap + 1e-8:
+                        target = long
+                    else:
+                        target = after
+                    target['distance_miles'] = round(target['distance_miles'] + .1, 1)
+
+        def move_to_long(condition):
+            while easy and condition():
+                donor = max(easy, key=lambda d: d['distance_miles'])
+                if donor['distance_miles'] - .1 < .5:
+                    break
+                donor['distance_miles'] = round(donor['distance_miles'] - .1, 1)
+                long['distance_miles'] = round(long['distance_miles'] + .1, 1)
+
+        def longest_easy():
+            return max(d['distance_miles'] for d in easy)
+
+        limit = long_cap if long_cap is not None else float('inf')
+        move_to_long(lambda: long['distance_miles'] + .1 <= limit + 1e-8
+                     and long['distance_miles'] + 1e-8 < CLEARLY_LONGEST * longest_easy())
+        move_to_long(lambda: long['distance_miles'] + 1e-8 < longest_easy()
+                     and long['distance_miles'] + .1 <= limit + 1e-8)
+        # A long run already at its cap: easy days are trimmed to it rather than
+        # pushing it past ~3 hours or the weekly step (fail safe: prescribe less).
+        if any(d['distance_miles'] > long['distance_miles'] for d in easy):
+            for d in easy:
+                d['distance_miles'] = min(d['distance_miles'], long['distance_miles'])
+            notes.append('Easy runs capped at the long run, which is already at its limit: the week holds less than its budget.')
         long.update(restructure_long(long['distance_miles']))
     return notes
 
