@@ -49,6 +49,11 @@ def recovery_signals(today: dict | None) -> list[dict]:
     if not signals and today.get("readiness_score") and today["readiness_score"] >= 75:
         signals.append({"level": "good", "metric": "readiness",
                         "message": "Recovered and ready — a good day to hit a quality session."})
+    elif not signals and hrv and low and hrv >= low and sleep and sleep >= 7 * 3600:
+        # Garmin's readiness score isn't in the Personal API; HRV in range plus a full
+        # night's sleep is the same evidence it leans on.
+        signals.append({"level": "good", "metric": "readiness",
+                        "message": f"HRV in your normal range and {sleep / 3600:.1f}h of sleep — recovered for today's session."})
     return signals
 
 

@@ -42,15 +42,32 @@ const RESCHEDULE_TYPES = [
   { value: "skip", label: "Don't reschedule" },
 ];
 
+const COMPLETION_OPTIONS = [
+  { value: "full", label: "Did it all" },
+  { value: "partial", label: "Did part" },
+  { value: "not_done", label: "Didn't do it" },
+];
+
 interface FeedbackFormProps {
   date: string;
+  /** A Garmin recording exists for the day; otherwise offer manual logging */
+  hasRecording?: boolean;
+  /** Workout days ask how hard the session was */
+  isWorkout?: boolean;
+  /** Only sessions with a prescribed pace ask about pace */
+  hasPaceTarget?: boolean;
   onSubmitted: (feedback: DayFeedback) => void;
   /** Parent already asks "how did it feel?" — hide the form's own headings */
   compact?: boolean;
 }
 
-export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFormProps) {
+export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording = true, isWorkout = false, hasPaceTarget = false }: FeedbackFormProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
   const [feel, setFeel] = useState<number | null>(null);
+  const [effort, setEffort] = useState<number | null>(null);
+  const [completion, setCompletion] = useState<string | null>(null);
+  const [manualMiles, setManualMiles] = useState("");
+  const [manualMinutes, setManualMinutes] = useState("");
   const [notes, setNotes] = useState("");
   const [pace, setPace] = useState<string | null>(null);
   const [swapped, setSwapped] = useState(false);
@@ -60,7 +77,11 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = feel !== null;
+  const validNumber = (v: string) => v !== "" && Number.isFinite(Number(v)) && Number(v) > 0;
+  const manualReady = validNumber(manualMiles) && validNumber(manualMinutes);
+  // Logging without a watch needs the run itself (or an explicit "didn't do it")
+  const manualMissing = !hasRecording && completion !== "not_done" && !manualReady;
+  const canSubmit = feel !== null && !manualMissing;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -79,6 +100,10 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
           actual_workout_type: swapped ? swapType : null,
           // "skip" is sent explicitly: the backend only reschedules on an explicit workout choice
           desired_reschedule_type: swapped ? rescheduleType : null,
+          effort_rating: completion === "not_done" ? null : effort,
+          completion,
+          manual_distance_miles: !hasRecording && manualReady ? Number(manualMiles) : null,
+          manual_duration_minutes: !hasRecording && manualReady ? Number(manualMinutes) : null,
         }),
       });
       if (!res.ok) {
@@ -89,6 +114,8 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
       const data = await res.json();
       onSubmitted({
         feel_rating: data.feel_rating,
+        effort_rating: data.effort_rating ?? null,
+        reported_completion: data.reported_completion ?? null,
         feel_notes: notes || null,
         pace_assessment: data.pace_assessment,
         swapped: data.swapped,
@@ -112,12 +139,95 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
           How&apos;d it go?
         </p>
       )}
-      <p className="text-xs text-muted-foreground">Your rating adjusts the next few days of your plan.</p>
+      <p className="text-xs text-muted-foreground">Your answers adjust the next few days of your plan.</p>
 
-      {/* Feel rating — how it FELT, not effort (low scores trigger extra recovery) */}
+      {!hasRecording && (
+        <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+          <p className="text-sm text-muted-foreground">No watch recording. Log the run yourself:</p>
+          <div className="flex gap-2">
+            <label className="flex-1 text-xs text-muted-foreground">
+              Distance (mi)
+              <input
+                inputMode="decimal"
+                value={manualMiles}
+                onChange={(e) => setManualMiles(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="mt-1 h-11 w-full rounded-md border bg-background px-3 font-mono text-sm text-foreground"
+              />
+            </label>
+            <label className="flex-1 text-xs text-muted-foreground">
+              Time (min)
+              <input
+                inputMode="decimal"
+                value={manualMinutes}
+                onChange={(e) => setManualMinutes(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="mt-1 h-11 w-full rounded-md border bg-background px-3 font-mono text-sm text-foreground"
+              />
+            </label>
+          </div>
+          {manualMissing && (manualMiles || manualMinutes) && (
+            <p className="text-xs text-destructive">Enter distance and time as numbers (e.g. 3.1 and 32).</p>
+          )}
+        </div>
+      )}
+
+      {(isWorkout || !hasRecording) && (
+        <div>
+          <p className="mb-1.5 text-sm text-muted-foreground">{isWorkout ? "Did you complete the workout?" : "Did you run it?"}</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {COMPLETION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={completion === opt.value}
+                onClick={(e) => { e.stopPropagation(); setCompletion(opt.value); if (opt.value === "not_done") setEffort(null); }}
+                className={`h-11 rounded-md text-xs transition-colors ${
+                  completion === opt.value ? "bg-foreground text-background" : "bg-secondary hover:bg-secondary/80"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {isWorkout && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Counts even without watch laps. It&apos;s kept separate from what your watch measures.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Effort — how HARD the session was. Separate from how you felt afterward. */}
+      {isWorkout && completion !== "not_done" && (
+        <div>
+          <p className="mb-1.5 text-sm text-muted-foreground">How hard was the workout?</p>
+          <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How hard was the workout, 1 to 10">
+            {FEEL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={effort === opt.value}
+                onClick={(e) => { e.stopPropagation(); setEffort(opt.value); }}
+                className={`h-11 rounded-md font-mono text-sm transition-colors ${
+                  effort === opt.value ? "bg-foreground text-background" : "bg-secondary hover:bg-secondary/80"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+            <span>1 = very easy</span>
+            <span>6 = controlled</span>
+            <span>10 = all-out</span>
+          </div>
+        </div>
+      )}
+
+      {/* Feel rating — how you FELT afterward, not effort (low scores trigger extra recovery) */}
       <div>
-        {!compact && <p className="mb-1.5 text-sm text-muted-foreground">How did it feel?</p>}
-        <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How did the run feel, 1 to 10">
+        {(!compact || isWorkout) && <p className="mb-1.5 text-sm text-muted-foreground">How do you feel afterward?</p>}
+        <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How do you feel afterward, 1 to 10">
           {FEEL_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -142,7 +252,8 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
         </div>
       </div>
 
-      {/* Pace assessment */}
+      {/* Pace assessment: only meaningful when the session prescribed a pace */}
+      {hasPaceTarget && (
       <div>
         <p className="text-xs text-muted-foreground mb-1.5">Pace vs target?</p>
         <div className="flex gap-1.5">
@@ -161,7 +272,18 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
           ))}
         </div>
       </div>
+      )}
 
+      <button
+        type="button"
+        aria-expanded={moreOpen}
+        onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen); }}
+        className="text-xs text-muted-foreground underline underline-offset-2"
+      >
+        {moreOpen ? "Fewer details" : "More details (swap, notes)"}
+      </button>
+
+      {moreOpen && (<>
       {/* Swap toggle */}
       <div>
         <button
@@ -234,6 +356,7 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
           className="h-16 text-xs resize-none"
         />
       </div>
+      </>)}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
@@ -243,7 +366,7 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
         disabled={!canSubmit || submitting}
         className="w-full"
       >
-        {submitting ? "Submitting..." : "Submit Feedback"}
+        {submitting ? "Saving..." : "Save"}
       </Button>
     </div>
   );

@@ -8,10 +8,36 @@
 Nothing matters more than total weekly volume sustained over time. A runner doing 50 easy
 miles per week will beat a runner doing 30 miles with fancy workouts every time.
 
-- Build mileage BEFORE adding intensity
-- A new runner should spend 4-8 weeks just building easy volume before any workouts
+- Build consistent easy running BEFORE adding full-dose intensity
+- A new runner first establishes two completed weeks of repeatable running. After that,
+  a short controlled effort may complement the easy base; the first 4-8 weeks still
+  prioritize aerobic consistency rather than full threshold/VO2 workouts.
 - An experienced runner returning from a break needs 2-4 weeks of easy running to rebuild
 - The plan generator should NEVER add hard workouts to a week where the mileage base isn't sufficient
+
+### Introductory beginner/intermediate quality
+
+Use **10min easy → 10min medium-to-hard, controlled effort → 10min easy** as the
+starting pattern, not a universal dose. Work is around 6/10 effort, with short phrases
+possible and enough control to finish able to do more. A post-run feel of 7/10 means
+the runner felt good afterward; it is a separate scale.
+
+- One controlled session per week can fit a three-day schedule after two consistent
+  weeks with at least two actual run days each and at least 6 mi/week of supported load.
+- Shorter work and 5-minute bookends fit smaller budgets. Work is capped near 15% of
+  estimated weekly miles; the complete session must fit 40% of the week and leave room
+  for the other runs. These are Stride heuristics, not validated physiological cutoffs.
+- Progress through continuous work, short reps and longer reps: 10min → 5x2min →
+  12min → 6x2min → 3x4min → 15min → 5x3min → 3x5min → 18min → 6x3min → 3x6min → 20min.
+- Four successful full-dose exposures earn a beginner's next step; intermediates need
+  two. Matching work durations plus good recovery earn a duration exposure, not proof
+  of threshold intensity. Unknown, reduced, alternative, taper and race-week doses do
+  not earn a step. Effort sessions never calibrate threshold or interval pace.
+- When a new step is introduced, hold mileage that week and repeat the workout while
+  building easy volume the next week. No preview of a harder workout in week two.
+- Preserve run frequency with shorter easy runs instead of imposing 2-3 mile floors.
+- Established intermediates with demonstrated full-quality tolerance keep their existing
+  program. Advanced/expert and ultra programs retain their existing rules.
 
 ### Minimum Mileage Guidelines by Goal
 | Goal | Minimum Weekly Avg | Target Weekly Avg |
@@ -49,6 +75,10 @@ miles per week will beat a runner doing 30 miles with fancy workouts every time.
 | Advanced (3yr+) | Max 15-20% per week | Every 5th-7th week |
 
 - Deload week = reduce volume by 20-30%, maintain some intensity
+- For introductory programs, the calendar cadence also needs actual accumulated stress:
+  three performed quality exposures since the last lighter week, or at least 25% mileage
+  growth across the latest four completed weeks. Old stable easy weeks alone do not force
+  a deload immediately after starting a program. Poor recovery can reduce training sooner.
 - After injury/break: start at 50% of previous volume, rebuild over 3-4 weeks
 - NEVER increase mileage AND intensity in the same week
 
@@ -142,6 +172,9 @@ Taper: reduce volume, maintain sharpness
 - The weekly long run is the most important single run of the week
 - For 5K/10K: long run = 25-30% of weekly mileage
 - For half/marathon: long run = 25-35% of weekly mileage
+- Introductory half/marathon programs use the upper end (35%) to develop endurance.
+  On low-frequency 5K schedules the long run may exceed the usual percentage so it is
+  at least as long as the easy days; consistency and an affordable total take priority.
 - Long runs should NOT always be easy — they should evolve with the training phase
 - But recovery long runs (pure easy) should alternate with quality long runs
 

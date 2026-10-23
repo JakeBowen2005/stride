@@ -33,7 +33,7 @@ def main():
     folder=ROOT/'.demo'/args.scenario;folder.mkdir(parents=True,exist_ok=True)
     target=folder/'stride.db'
     if not target.exists():subprocess.run([str(python),str(ROOT/'demo/seed.py'),'--scenario',args.scenario,'--database',str(target)],check=True)
-    env=dict(os.environ,DATABASE_URL=f'sqlite:///{target}',GARMIN_POLL_MINUTES='0',GARMIN_TOKENSTORE=str(folder/'no-garmin-tokens'),OPENAI_API_KEY='',ANTHROPIC_API_KEY='',OPENAI_AUTO_REVIEWS='false',ATHLETE_PROFILE_DOC='',
+    env=dict(os.environ,DATABASE_URL=f'sqlite:///{target}',GARMIN_POLL_MINUTES='0',GARMIN_API_KEY='',OPENAI_API_KEY='',ANTHROPIC_API_KEY='',OPENAI_AUTO_REVIEWS='false',ATHLETE_PROFILE_DOC='',
              BACKEND_URL=f'http://127.0.0.1:{api}',STRIDE_DEMO_SCENARIO=args.scenario,STRIDE_PASSWORD='')
     frontend=Path(tempfile.mkdtemp(prefix='frontend-',dir=folder))
     shutil.copytree(ROOT/'frontend',frontend,dirs_exist_ok=True,ignore=shutil.ignore_patterns('node_modules','.next*','.env*','*.tsbuildinfo'))

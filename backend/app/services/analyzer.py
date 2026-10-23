@@ -465,3 +465,27 @@ def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[d
         {"week_start": k, "actual": round(v, 1)}
         for k, v in sorted(weekly.items())
     ]
+
+
+def starter_analysis(user) -> dict | None:
+    """Baseline for an athlete with no recorded runs, from what they told us at onboarding.
+
+    Stride used to refuse to plan without activities. A real beginner has none, so the
+    first block comes from their stated starting point instead (fail safe: no workouts,
+    short sessions, run/walk when they can't yet run 20 minutes continuously). Returns
+    None when onboarding hasn't captured a starting point either.
+    """
+    if user.continuous_run_minutes is None and user.current_weekly_mileage is None:
+        return None
+    easy = 690.0  # 11:30/mi: a budgeting estimate only; sessions are prescribed by time/effort
+    if user.pr_5k:
+        easy = (user.pr_5k / 3.10686) * 1.6
+    pace = f"{int(easy // 60)}:{int(easy % 60):02d}"
+    reported = float(user.current_weekly_mileage or 0)
+    return {
+        "starter": True,
+        "overview": {"experience_level": user.experience_level or "beginner", "total_runs": 0},
+        "current_fitness": {"weekly_mileage_4w_avg": reported, "peak_weekly_mileage": float(user.peak_weekly_mileage or reported)},
+        "paces": {"easy_pace": pace, "recent_easy_pace": pace},
+        "injury_risk": {"assessment": "UNKNOWN — no recorded runs yet; starting conservatively"},
+    }

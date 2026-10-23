@@ -134,6 +134,8 @@ def context_for(plan, db):
     }
     token = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, default=str).encode()).hexdigest()
     return {'user': user, 'goal': goal, 'experience': experience, 'baseline': sum(full_weeks[-4:]) / 4,
+            'developmental': bool((_json(plan.load, {}) or {}).get('developmental')),
+            'completed_weeks': full_weeks, 'development_state': next(({'current_level': p.current_level} for p in progression if p.category == 'development'), {}),
             'recent_long': recent_long, 'evidence': evidence, 'quality': quality, 'paces': paces,
             'rows': rows, 'token': token, 'program': program}
 
@@ -196,6 +198,22 @@ def _quality_candidates(category, row, week, ctx, poor):
         return [], ['Recent recovery or a race/recovery week calls for easy running or rest instead of another hard session.']
     if week.hard_count >= week.capacity and not week.row_is_hard:
         return [], ['This week already has its hard sessions. Swap one of those instead, or keep this day easy.']
+    from app.core import developmental
+    if ctx.get('developmental'):
+        if not developmental.ready_for_workout(ctx['completed_weeks'], ctx['evidence']['weekly_run_days'],
+                                               ctx['baseline'], ctx['evidence'], None, poor):
+            return [], ['Build two consistent running weeks before adding a controlled effort session.']
+        from app.core.workout_ladders import program_key
+        approved = loads(row.prescription) or {}
+        level = min(ctx['development_state'].get('current_level', 1), approved.get('level') or 1)
+        shapes = ('continuous', 'long', 'short') if category == 'threshold' else ('short', 'long', 'continuous')
+        options = []
+        for shape in shapes:
+            wo = developmental.workout(level, ctx['paces']['long_run_pace'], week.budget,
+                program=program_key(ctx['program']), phase=week.phase, reduced=week.deload or week.phase == 'taper', shape=shape)
+            if wo:
+                options.append((shape, _as_patch(wo)))
+        return options, ['One controlled effort session with easy bookends. Alternative shapes hold the earned progression level; pace is guided by effort.']
     pace = ctx['paces']['broken_threshold_pace' if category == 'threshold' else 'interval_pace']
     volume = max(ctx['baseline'], week.budget or 0)
     band = dose_band(category, ctx['experience'], volume, pace, week.phase, week.deload)

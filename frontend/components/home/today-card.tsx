@@ -22,6 +22,7 @@ export interface PlanDayLite {
   distance_miles: number;
   warmup?: string | null;
   cooldown?: string | null;
+  prescription?: { segments?: { pace_range_sec_per_mile?: { fast: number; slow: number } | null }[] } | null;
   actual?: {
     activity_id?: number;
     distance_miles: number;
@@ -222,9 +223,18 @@ export function TodayCard({
 
         {done && today && today.type !== "rest" && !feedback?.feel_rating && (
           <div className="rounded-lg border p-3">
-            <p className="mb-2 text-sm font-medium">How did it feel?</p>
-            <FeedbackForm compact date={today.date} onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
+            <p className="mb-2 text-sm font-medium">How did it go?</p>
+            <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"} hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)} onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
           </div>
+        )}
+        {!done && today && today.type !== "rest" && !feedback?.feel_rating && (
+          <details className="rounded-lg border p-3">
+            <summary className="cursor-pointer text-sm text-muted-foreground">Ran without your watch? Log it</summary>
+            <div className="mt-3">
+              <FeedbackForm compact hasRecording={false} date={today.date} isWorkout={today.type === "workout"} hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
+                onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
+            </div>
+          </details>
         )}
         {feedback?.evaluation && (
           <p className="rounded-md border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">

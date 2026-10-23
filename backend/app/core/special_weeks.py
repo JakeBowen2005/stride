@@ -6,6 +6,7 @@ All functions return day dicts in the same shape plan_engine uses:
 """
 
 from datetime import date, timedelta
+import math
 
 from app.core.pacing import format_pace, pace_range
 from app.core.periodization import (
@@ -100,7 +101,11 @@ def _race_day(day_date: date, distance: str, target_time: float | None, paces: d
 def build_race_week(
     week_start: date, phase: WeekPhase, distance: str, target_time: float | None,
     target_mileage: float, rest_indices: list[int], paces: dict,
+    *, developing=False, development_state=None, days_per_week=None, include_workouts=True,
 ) -> list[dict]:
+    if developing:
+        return _developmental_race_week(week_start, phase, distance, target_time, target_mileage,
+                                        rest_indices, paces, development_state or {}, days_per_week, include_workouts)
     race_idx = (phase.race_date - week_start).days
     race_miles = RACE_DISTANCE_MILES[distance]
     if target_time and not is_ultra(distance):
@@ -143,6 +148,50 @@ def build_race_week(
         else:
             days.append(_day(d, "easy", "Easy Run", f"Easy and short. ({easy_range}/mi or slower)",
                              "Stay loose while the taper does its work.", per_easy))
+    return days
+
+
+def _developmental_race_week(start, phase, distance, target_time, budget, rest_indices, paces, state, days_per_week, include_workouts):
+    from app.core import developmental
+    from app.core.workout_ladders import program_key
+    race_idx = (phase.race_date - start).days
+    slots = [i for i in range(race_idx) if (start + timedelta(days=i)).weekday() not in rest_indices]
+    # The race replaces a training day, even when it falls on a normal rest day.
+    allowance = max(0, (days_per_week if days_per_week is not None else len(slots) + 1) - 1)
+    candidates = [i for i in slots if i <= race_idx - 3]
+    if allowance == 1 and candidates:
+        slots = [candidates[-1]]
+    else:
+        slots = slots[-allowance:] if allowance else []
+    sharp_idx = next((i for i in reversed(slots) if i <= race_idx - 3), None)
+    sharp = developmental.workout(state.get('current_level', 1), paces['long_run_pace'], budget,
+                                  program=program_key(distance), phase='race_week', reduced=True, shape='short') if include_workouts else None
+    days = []
+    for i in range(7):
+        d = start + timedelta(days=i)
+        if i == race_idx:
+            days.append(_race_day(d, distance, target_time, paces))
+        elif i == sharp_idx and sharp:
+            days.append(_day(d, 'workout', 'Race-Week Controlled Pickups', sharp['structure'],
+                             'Keep familiar rhythm with a reduced dose; arrive rested.', sharp['total_miles'], sharp['warmup'], sharp['cooldown']))
+            days[-1]['prescription'] = sharp['prescription']
+        elif i in slots:
+            days.append(_day(d, 'easy', 'Pre-Race Shakeout' if i == race_idx-1 else 'Easy Run',
+                             'Short conversational running; finish fresh.', 'Stay loose before the race.', 1))
+        else:
+            days.append(_rest(d))
+    # Race week is allowed to leave budget unused. Filling all spare miles into
+    # the shakeout would undo the taper on low-frequency schedules.
+    fixed = sum(d['distance_miles'] for d in days if d['type'] == 'workout')
+    easy = [d for d in days if d['type'] == 'easy']
+    each = min(2.5, max(0, budget - fixed) / len(easy)) if easy else 0
+    for d in easy:
+        d['distance_miles'] = math.floor(min(each, 1 if d['title'] == 'Pre-Race Shakeout' else each) * 10) / 10
+        if d['distance_miles'] < .5:
+            d.update(type='rest', title='Recovery / Rest', distance_miles=0)
+    # No forced sharpener when history/recovery or a tiny budget cannot support it.
+    if sharp_idx is not None and days[sharp_idx]['type'] != 'workout':
+        days[sharp_idx]['adjustment_reason'] = 'Keep race week easy: no affordable familiar quality dose.'
     return days
 
 

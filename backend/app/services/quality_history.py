@@ -40,6 +40,7 @@ def quality_history(user_id, db, today=None):
     hard_by_week = {}
     failures = set()
     latest_long = None
+    development_dates = set()
     for day, row in latest.items():
         activities = by_date.get(day, [])
         if not activities or row.swapped or row.session_status == 'skipped' or row.moved_to is not None:
@@ -58,6 +59,12 @@ def quality_history(user_id, db, today=None):
             continue
         execution = execution_from_activities(activities, spec) if spec else None
         category = (spec or {}).get('category')
+        if category == 'development':
+            development_dates.add(day)
+            from app.core.workout_evaluator import evaluate_workout
+            checked = evaluate_workout(None, None, None, 'workout', None, row.title, feel, spec, execution)
+            if checked.decision == 'regress' or (feel is not None and feel <= 4):
+                failures.add(day)
         if category in {'threshold','intervals'} and execution:
             from app.core.workout_evaluator import evaluate_workout
             checked = evaluate_workout(None,None,None,'workout',None,row.title,feel,spec,execution)
@@ -108,4 +115,5 @@ def quality_history(user_id, db, today=None):
             'recent_low_feel': any(f<=4 for f in recent.values()),
             'weekly_run_days': full_week_run_days,
             'evidence_window_days': 56,
+            'development_dates': sorted(development_dates),
             'matched_quality_dates': sorted(successful['primary'] | successful['support'])}

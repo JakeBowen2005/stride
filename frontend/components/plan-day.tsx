@@ -97,7 +97,10 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
   const repHr = executed?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;
-  const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
+  // Past/today days without a recording still take feedback: watchless runners log the run by hand
+  const isPastOrToday = workout.date <= new Date().toLocaleDateString("en-CA");
+  const showFeedbackForm = !readOnly && !hasFeedback && workout.type !== "rest"
+    && (hasActual || (isPastOrToday && isPrescribed && !["skipped", "moved"].includes(workout.session_status ?? "")));
 
   return (
     <div
@@ -349,6 +352,9 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <div className="border-t pt-3">
               <FeedbackForm
                 date={workout.date}
+                hasRecording={hasActual}
+                isWorkout={workout.type === "workout"}
+                hasPaceTarget={!!workout.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
                 onSubmitted={(fb) => {
                   setLocalFeedback(fb);
                   // Re-fetch plan to reflect any adjustments from feedback

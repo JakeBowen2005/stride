@@ -44,7 +44,7 @@ def main():
         common = ["-v", mount, "-e", "DATABASE_URL=sqlite:////var/data/stride.db",
                   "-e", "GARMIN_POLL_MINUTES=0", "-e", "OPENAI_AUTO_REVIEWS=false",
                   "-e", "OPENAI_API_KEY=", "-e", "ANTHROPIC_API_KEY=", "-e", "ATHLETE_PROFILE_DOC=",
-                  "-e", "GARMIN_TOKENSTORE=/var/data/no-garmin-tokens", "-e", "TZ=America/Los_Angeles"]
+                  "-e", "GARMIN_API_KEY=", "-e", "TZ=America/Los_Angeles"]
 
         def docker(*values, **kwargs):
             return subprocess.run(["docker", *values], check=True, text=True, capture_output=True, **kwargs).stdout

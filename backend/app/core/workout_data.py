@@ -39,6 +39,8 @@ def render(data):
             continue
         label = f"{reps}x{length}" if reps > 1 else length
         pace = s.get('pace_range_sec_per_mile')
+        if s.get('effort'):
+            label += f" at {s['effort']}"
         if pace:
             rng = format_pace(pace['fast'])
             if pace['slow'] != pace['fast']:

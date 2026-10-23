@@ -103,25 +103,30 @@ def test_feedback_rating_is_validated():
 
 
 class FakeGarmin:
+    """Personal API client double: runs only, newest first, optional date window."""
     def __init__(self, ids):
         self.ids = ids
         self.split_calls = []
+        self.searches = []
 
-    def get_full_name(self):
+    def display_name(self):
         return "Test Runner"
 
-    def get_activities(self, start, limit):
-        page = self.ids[start:start + limit]
-        return [{"activityId": i, "activityName": "Run", "activityType": {"typeKey": "running"},
-                 "startTimeLocal": (datetime(2026, 9, 1) - timedelta(days=n + start)).strftime("%Y-%m-%d %H:%M:%S"),
-                 "distance": 8000, "duration": 2700, "movingDuration": 2700} for n, i in enumerate(page)]
+    def _run(self, n, i):
+        return {"activityId": i, "activityName": f"Run {i}", "activityType": {"typeKey": "running"},
+                "startTimeLocal": (datetime(2026, 9, 1) - timedelta(days=n)).strftime("%Y-%m-%d %H:%M:%S"),
+                "distance": 8000, "duration": 2700, "movingDuration": 2700}
 
-    def get_activity_splits(self, aid):
+    def search_runs(self, start, limit, start_date=None, end_date=None):
+        self.searches.append((start, limit, start_date, end_date))
+        runs = [self._run(n, i) for n, i in enumerate(self.ids)]
+        if start_date:
+            runs = [r for r in runs if r["startTimeLocal"][:10] >= start_date.isoformat()]
+        return runs[start:start + limit]
+
+    def get_laps(self, aid):
         self.split_calls.append(aid)
-        return {"lapDTOs": []}
-
-    def get_activity(self, aid):
-        return {}
+        return []
 
 
 def test_interrupted_full_import_resumes(monkeypatch):
@@ -140,6 +145,90 @@ def test_interrupted_full_import_resumes(monkeypatch):
     assert result["new"] == 110  # backfilled the rest instead of stopping at the first known run
     assert "1" not in fake.split_calls  # didn't redo already-imported runs
     assert db.query(GarminConnection).filter_by(user_id=1).one().full_sync_done is True
+    db.close()
+
+
+def test_incremental_sync_is_one_windowed_request(monkeypatch):
+    fake = FakeGarmin(list(range(1, 151)))
+    monkeypatch.setattr(garmin, "get_client", lambda: fake)
+    db = SessionLocal()
+    # Everything but the newest run is stored; a full import already finished.
+    for n, i in enumerate(range(2, 151), start=1):
+        db.add(Activity(user_id=1, source="garmin", external_id=str(i), name="old name",
+                        date=datetime(2026, 9, 1) - timedelta(days=n), distance_meters=8000, duration_seconds=2700,
+                        splits='[{"distance_m": 8000, "duration_s": 2700}]'))
+    db.add(GarminConnection(user_id=1, connected=True, full_sync_done=True))
+    db.commit()
+
+    result = garmin.sync_garmin(1, db)
+    assert result["new"] == 1 and fake.split_calls == ["1"]
+    assert len(fake.searches) == 1  # no paging through history
+    _, _, since, _ = fake.searches[0]
+    assert since == (datetime(2026, 8, 31) - timedelta(days=garmin.OVERLAP_DAYS)).date()
+    # Runs inside the overlap window pick up renames
+    assert db.query(Activity).filter_by(external_id="2").one().name == "Run 2"
+    db.close()
+
+
+def test_runs_stored_without_laps_are_repaired_and_manual_runs_merge(monkeypatch):
+    class Lapped(FakeGarmin):
+        def get_laps(self, aid):
+            self.split_calls.append(aid)
+            return [{"mile": 1, "distance_m": 8000, "duration_s": 2700}]
+
+    fake = Lapped([1, 2])
+    monkeypatch.setattr(garmin, "get_client", lambda: fake)
+    db = SessionLocal()
+    # Run 2 was stored before its FIT download succeeded; run 1 was hand-logged at noon
+    db.add(Activity(user_id=1, source="garmin", external_id="2", name="Run 2",
+                    date=datetime(2026, 8, 31, 7), distance_meters=8000, duration_seconds=2700))
+    db.add(Activity(user_id=1, source="manual", external_id="manual-2026-09-01", name="Manual run",
+                    date=datetime(2026, 9, 1, 12), distance_meters=7900, duration_seconds=2600, feel_rating=7))
+    db.add(GarminConnection(user_id=1, connected=True, full_sync_done=True, display_name="x"))
+    db.commit()
+    result = garmin.sync_garmin(1, db)
+    assert result["merged"] == 1 and result["updated"] == 1
+    assert db.query(Activity).count() == 2  # the upload replaced the manual run, not added to it
+    merged = db.query(Activity).filter_by(external_id="1").one()
+    assert merged.source == "garmin" and merged.feel_rating == 7
+    assert db.query(Activity).filter_by(external_id="2").one().splits
+    db.close()
+
+
+def test_rejected_key_backs_off_instead_of_retrying_every_minute(monkeypatch):
+    from app.services.garmin_api import GarminAuthError
+
+    class Rejecting(FakeGarmin):
+        def search_runs(self, *a, **k):
+            raise GarminAuthError("nope")
+
+    monkeypatch.setattr(garmin, "get_client", lambda: Rejecting([]))
+    db = SessionLocal()
+    db.add(GarminConnection(user_id=1, connected=True, full_sync_done=True, display_name="x"))
+    db.commit()
+    with pytest.raises(GarminAuthError):
+        garmin.sync_garmin(1, db)
+    conn = db.query(GarminConnection).filter_by(user_id=1).one()
+    assert conn.connected is False and "personalApiToken" in conn.last_error
+    assert conn.backoff_until and conn.backoff_until > datetime.now() + timedelta(hours=1)
+    db.close()
+    assert garmin.poll_due(1) is False
+
+
+def test_poll_due_respects_recent_syncs_and_quiet_hours(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "garmin_poll_minutes", 15)
+    monkeypatch.setattr(settings, "garmin_quiet_hours", "22-5")
+    db = SessionLocal()
+    assert garmin.poll_due(1, datetime(2026, 10, 22, 12)) is True  # never synced
+    db.add(GarminConnection(user_id=1, connected=True, last_sync_at=datetime(2026, 10, 22, 11, 50)))
+    db.commit()
+    assert garmin.poll_due(1, datetime(2026, 10, 22, 12)) is False  # app-open sync 10 min ago
+    assert garmin.poll_due(1, datetime(2026, 10, 22, 12, 6)) is True
+    db.query(GarminConnection).one().last_sync_at = datetime(2026, 10, 22, 2, 30)
+    db.commit()
+    assert garmin.poll_due(1, datetime(2026, 10, 22, 3, 0)) is False  # overnight: hourly
+    assert garmin.poll_due(1, datetime(2026, 10, 22, 3, 31)) is True
     db.close()
 
 
@@ -285,3 +374,39 @@ def test_long_finished_block_is_not_assessed():
     db.close()
     body = client.post("/api/plans/1/generate").json()
     assert body["assessment"] is None  # months-old block is history, not evidence
+
+
+def test_fit_download_unzips_and_empty_fit_has_no_laps():
+    import io
+    import zipfile
+    from app.services.garmin_api import _unzip_fit, laps_from_fit
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("123_ACTIVITY.fit", b"FITDATA")
+    assert _unzip_fit(buf.getvalue()) == b"FITDATA"
+    assert _unzip_fit(b"raw") == b"raw"
+    assert laps_from_fit(b"") == []
+
+
+def test_token_is_exchanged_once_and_reexchanged_after_401():
+    import httpx
+    from app.services.garmin_api import PersonalApiClient
+
+    calls = {"token": 0, "get": 0}
+
+    def handler(request):
+        if request.url.path.endswith("/token"):
+            calls["token"] += 1
+            assert request.headers["Authorization"] == "ApiKey k"
+            return httpx.Response(200, text=f"tok{calls['token']}")
+        calls["get"] += 1
+        if request.headers["Authorization"] == "Bearer tok1" and calls["get"] == 2:
+            return httpx.Response(401)
+        return httpx.Response(200, json=[])
+
+    c = PersonalApiClient("k", http=httpx.Client(transport=httpx.MockTransport(handler)))
+    c.search_runs()
+    c.search_runs()  # 401 → one re-exchange, then success
+    c.search_runs()
+    assert calls["token"] == 2

@@ -13,7 +13,7 @@ from app.api.plans import router as plans_router
 from app.api.wellness import router as wellness_router
 from app.api.users import router as users_router
 from app.database import Base, add_missing_columns, engine
-from app.services.garmin import GarminNotConnected, has_tokens
+from app.services.garmin import GarminNotConnected, clear_backoff, has_api_key, poll_due
 import app.models  # noqa: F401 — registers all models so create_all picks them up
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -68,20 +68,24 @@ _refresh_lap_summaries()
 
 
 async def garmin_auto_sync():
-    """Poll Garmin for new runs. Garmin offers no webhooks for personal use,
-    so polling every few minutes is how new watch uploads appear automatically."""
+    """Check Garmin for new runs. The Personal API is pull-only (no webhooks), but a check
+    is a single date-windowed request, and opening the app also syncs. The loop wakes
+    every minute and only calls Garmin when `poll_due` says the last sync is old enough."""
     await asyncio.sleep(5)  # let the server finish starting
+    if has_api_key():
+        await asyncio.to_thread(clear_backoff, settings.default_user_id)
     while True:
-        if has_tokens():
+        if has_api_key():
             try:
-                result = await asyncio.to_thread(_sync_in_new_session, settings.default_user_id, False)
-                if result.get("new") or result.get("merged"):
-                    logger.info("Garmin auto-sync: %s", result.get("message"))
+                if await asyncio.to_thread(poll_due, settings.default_user_id):
+                    result = await asyncio.to_thread(_sync_in_new_session, settings.default_user_id, False)
+                    if result.get("new") or result.get("merged"):
+                        logger.info("Garmin auto-sync: %s", result.get("message"))
             except GarminNotConnected:
                 pass
             except Exception as e:
                 logger.warning("Garmin auto-sync failed: %s", e)
-        await asyncio.sleep(max(settings.garmin_poll_minutes, 1) * 60)
+        await asyncio.sleep(60)
 
 
 @asynccontextmanager

@@ -48,6 +48,8 @@ export default function OnboardingPage() {
   // Step 2: Running background
   const [yearsRunning, setYearsRunning] = useState("2");
   const [currentMileage, setCurrentMileage] = useState([42]);
+  // Longest non-stop run right now: the starting point when there's no Garmin history
+  const [continuousMinutes, setContinuousMinutes] = useState<number | null>(null);
   const [peakMileage, setPeakMileage] = useState([65]);
 
   // Step 3: Race history
@@ -71,7 +73,7 @@ export default function OnboardingPage() {
 
   // Step 6: Garmin
   const garmin = useGarminStatus();
-  const garminConnected = !!garmin?.tokens_present;
+  const garminConnected = !!garmin?.api_key_present;
 
   function next() {
     if (step < TOTAL_STEPS - 1) setStep(step + 1);
@@ -88,7 +90,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     getJson<{
       age: number | null; units: string; workout_format?: string; years_running: number | null;
-      current_weekly_mileage: number | null; peak_weekly_mileage: number | null;
+      current_weekly_mileage: number | null; peak_weekly_mileage: number | null; continuous_run_minutes?: number | null;
       days_per_week: number; rest_days: string | null; long_run_day?: string | null;
     }>(`/users/${USER_ID}`, { allowNotFound: true }).then((u) => {
       if (!u) return;
@@ -96,8 +98,9 @@ export default function OnboardingPage() {
       setUnits(u.units === "km" ? "kilometers" : "miles");
       if (u.workout_format === "time" || u.workout_format === "distance") setWorkoutFormat(u.workout_format);
       if (u.years_running != null) setYearsRunning(String(u.years_running));
-      if (u.current_weekly_mileage) setCurrentMileage([u.current_weekly_mileage]);
+      if (u.current_weekly_mileage) setCurrentMileage([Math.round(u.current_weekly_mileage)]);
       if (u.peak_weekly_mileage) setPeakMileage([u.peak_weekly_mileage]);
+      if (u.continuous_run_minutes != null) setContinuousMinutes(u.continuous_run_minutes);
       if (u.days_per_week) setDaysPerWeek([u.days_per_week]);
       if (u.rest_days) setRestDays(u.rest_days.split(",").map((d) => PICKER_DAYS.indexOf(d.trim())).filter((i) => i >= 0));
       if (u.long_run_day) setLongRunDay([PICKER_DAYS.indexOf(u.long_run_day)].filter((i) => i >= 0));
@@ -133,6 +136,7 @@ export default function OnboardingPage() {
         years_running: Number(yearsRunning) || 0,
         current_weekly_mileage: currentMileage[0],
         peak_weekly_mileage: peakMileage[0],
+        ...(continuousMinutes != null ? { continuous_run_minutes: continuousMinutes } : {}),
         days_per_week: daysPerWeek[0],
         rest_days: restDays.map((i) => PICKER_DAYS[i]),
         long_run_day: PICKER_DAYS[longRunDay[0] ?? 6],
@@ -292,6 +296,34 @@ export default function OnboardingPage() {
               <span>0 (not running)</span>
               <span>120+</span>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>How long can you run without stopping right now?</Label>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              {[
+                { v: 0, l: "Not yet" },
+                { v: 2, l: "2–4 min" },
+                { v: 5, l: "5–9 min" },
+                { v: 12, l: "10–19 min" },
+                { v: 20, l: "20–30 min" },
+                { v: 45, l: "30+ min" },
+              ].map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  aria-pressed={continuousMinutes === o.v}
+                  onClick={() => setContinuousMinutes(o.v)}
+                  className={`h-11 rounded-md text-xs transition-colors ${
+                    continuousMinutes === o.v ? "bg-foreground text-background" : "bg-secondary hover:bg-secondary/80"
+                  }`}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New to running? Under 20 minutes starts with run/walk sessions that grow each week.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>
@@ -483,18 +515,24 @@ export default function OnboardingPage() {
           ) : (
             <>
               <div className="w-full max-w-sm space-y-2 rounded-md bg-secondary/40 p-4 text-sm">
-                <p className="font-medium">On your computer, run:</p>
-                <pre className="overflow-x-auto rounded bg-background p-2 text-xs">
-                  cd backend{"\n"}venv/bin/python garmin_login.py
-                </pre>
-                <p className="text-muted-foreground">Sign in with your Garmin account there, then reload this page.</p>
+                <p className="font-medium">Create a Garmin Personal API key</p>
+                <p className="text-muted-foreground">
+                  In Garmin Connect, open{" "}
+                  <a
+                    className="underline underline-offset-2"
+                    href="https://connect.garmin.com/app/settings/personalApiToken"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Settings → Personal API Key
+                  </a>
+                  , create a key, and add it to the Stride server as <code>GARMIN_API_KEY</code>. Runs sync as soon
+                  as the server restarts with it; Settings shows the status.
+                </p>
               </div>
-              <button
-                className="text-sm text-muted-foreground underline underline-offset-2"
-                onClick={next}
-              >
-                Skip — I&apos;ll enter data manually
-              </button>
+              <Button className="h-11 w-full max-w-sm" onClick={next}>
+                Continue: I&apos;ll connect later or log runs myself
+              </Button>
             </>
           )}
         </div>

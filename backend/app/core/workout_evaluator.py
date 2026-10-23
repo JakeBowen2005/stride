@@ -258,6 +258,24 @@ def _extract_paced_reps(desc: str) -> tuple[int, list[float]]:
     return 0, []
 
 
+def _self_reported_development(result, status, feel, effort):
+    """Introductory sessions without matching laps: the athlete's report is the evidence."""
+    common = dict(evidence='self_reported', completion=1.0 if status == 'full' else None)
+    if status == 'not_done':
+        return result('hold', 'Not done this time. That is a schedule fact, not lost fitness: this session repeats next time.', evidence='self_reported')
+    if (feel is not None and feel <= 4) or (effort is not None and effort >= 9):
+        return result('regress', 'That one was very hard to absorb, so the next session gets a little shorter.', **common)
+    if status == 'partial':
+        return result('hold', 'Partly done. This session repeats before it gets longer.', evidence='self_reported')
+    if effort is None:
+        return result('hold', 'Done. Add how hard it felt next time so Stride can tell controlled from strained before making it longer.', **common)
+    if effort >= 8:
+        return result('hold', f'Done, but at {effort}/10 effort, above the ~6/10 target. It repeats until it feels controlled.', **common)
+    if feel is not None and feel >= 7:
+        return result('advance', 'Done at a controlled effort and you recovered well. Nice work: this counts toward the next, slightly longer session. (Your report sets workout length only, never your paces.)', **common)
+    return result('hold', 'Done at a controlled effort. Once you feel better afterward, the session gets longer.', **common)
+
+
 def evaluate_workout(
     actual_description: str | None,
     actual_avg_pace_sec: float | None,
@@ -268,6 +286,8 @@ def evaluate_workout(
     feel_rating: int | None,
     prescription: dict | None = None,
     execution: dict | None = None,
+    effort: int | None = None,
+    reported: dict | None = None,
 ) -> WorkoutEvaluation:
     """Evaluate a completed workout against its prescription.
 
@@ -280,6 +300,12 @@ def evaluate_workout(
        it is not treated as a fitness regression unless pace/feel also show a struggle.
     3. Fade before speed: a big fade blocks recalibration even if early reps were fast.
     4. One lever: advance changes the ladder level only; recalibrate changes pace only.
+
+    `effort` is "how hard was it?" (1-10), distinct from `feel` (how you felt after).
+    `reported` is athlete-reported completion ({"status": full|partial|not_done, ...}),
+    kept as evidence="self_reported": it can earn an introductory duration exposure
+    (those sessions are effort-based anyway) but never advances or recalibrates a
+    pace ladder, which needs measured laps.
     """
     feel = feel_rating  # None = not rated; never assumed
     reps_prescribed = sum(s["reps"] for s in prescription["segments"]) if prescription else extract_rep_count(prescribed_name)[0] if prescribed_name else 0
@@ -297,6 +323,32 @@ def evaluate_workout(
         return ev
 
     numeric = execution and execution.get("evidence_source") in ("garmin_labeled_laps", "garmin_inferred_work_laps")
+    status = (reported or {}).get('status')
+    if prescription and prescription.get('category') == 'development':
+        # Effort sessions establish duration/control, never threshold or VO2 pace.
+        if not numeric or execution.get('confidence') not in {'high', 'medium'}:
+            if status:
+                return _self_reported_development(result, status, feel, effort)
+            return result('insufficient', 'Matching work laps are needed to verify the controlled duration; a whole-run average is not enough. '
+                          'You can report whether you completed it instead.')
+        completion = execution.get('completion')
+        paces = execution.get('rep_paces_sec_per_mile', [])
+        common = dict(evidence=execution['evidence_source'], completion=completion, reps=len(paces))
+        if (feel is not None and feel <= 4) or (effort is not None and effort >= 9):
+            return result('regress', 'That one was very hard to absorb, so the next session gets a little shorter.', **common)
+        if completion is None or completion < 1:
+            return result('hold', 'Repeat the controlled dose: not every work duration was matched.', **common)
+        # No pace cutoff for an effort target: hills, weather and individual
+        # easy pace make a guessed percentage an unreliable intensity test.
+        # Labeled duration plus recovery earns only a duration exposure.
+        fade = calculate_fade(execution.get('work_lap_paces_sec_per_mile', paces))
+        if (fade or 0) >= 10:
+            return result('hold', 'Work duration matched; repeat until the effort stays controlled through the finish.', fade=fade, **common)
+        if effort is not None and effort >= 8:
+            return result('hold', f'You did all the work, but at {effort}/10 effort, above the ~6/10 target. It repeats until it feels controlled.', **common)
+        if feel is not None and feel >= 7:
+            return result('advance', 'Matched the labeled work durations and reported feeling good. This earns a duration exposure, not proof of threshold intensity or a calibrated pace.', **common)
+        return result('hold', 'Controlled duration matched. Rate recovery before progressing the dose.', **common)
     if numeric:
         if execution.get("confidence") not in ("high", "medium"):
             return result("insufficient", "Work laps are ambiguous or include extra work. Holding until the session can be matched confidently.", evidence="ambiguous_laps")
@@ -480,7 +532,7 @@ def gate_progression(evaluation, prescribed, current_level=None):
     if not prescribed:
         return evaluation
     adapted = (prescribed.get('progression_eligible') is False
-               or prescribed.get('phase') in {'base', 'taper', 'race_week', 'recovery'}
+               or prescribed.get('phase') in ({'taper', 'race_week', 'recovery'} if prescribed.get('category') == 'development' else {'base', 'taper', 'race_week', 'recovery'})
                or (current_level is not None and prescribed.get('level', 1) is not None and prescribed.get('level', 1) < current_level))
     if adapted and evaluation.decision == 'advance':
         evaluation.decision = 'hold'

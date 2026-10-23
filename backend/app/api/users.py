@@ -1,4 +1,5 @@
 import json
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Literal
@@ -70,6 +71,7 @@ class ProfileUpdate(BaseModel):
     years_running: float | None = Field(default=None, ge=0, le=80)
     current_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
     peak_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
+    continuous_run_minutes: int | None = Field(default=None, ge=0, le=600)  # longest non-stop run right now
     days_per_week: int | None = Field(default=None, ge=1, le=7)
     rest_days: list[str] | None = None  # day names, e.g. ["friday"]
     long_run_day: str | None = None
@@ -121,6 +123,9 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
     if 'long_run_day' in fields:
         fields['long_run_day'] = long_day
     mapping = {"pr_5k_seconds": "pr_5k", "pr_10k_seconds": "pr_10k", "pr_half_seconds": "pr_half", "pr_marathon_seconds": "pr_marathon"}
+    if 'continuous_run_minutes' in fields:
+        # Run/walk progress counts from here; earlier weeks are already in the stated ability
+        user.continuous_run_set_on = (date.today() - timedelta(days=date.today().weekday())).isoformat()
     for key, value in fields.items():
         if key == "rest_days":
             value = ",".join(d.lower() for d in value)
@@ -192,7 +197,10 @@ def set_goal(user_id: int, data: GoalData, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(goal)
 
-    return {"goal_id": goal.id, "message": "Goal set successfully", "readiness": readiness}
+    from app.api.plans import _outlook
+    # Preparation gaps are flagged when the goal is set, then reassessed every block
+    return {"goal_id": goal.id, "message": "Goal set successfully", "readiness": readiness,
+            "outlook": _outlook(user_id, None, db)}
 
 
 @router.post("/{user_id}/goal/check")
@@ -260,6 +268,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "workout_format": user.workout_format,
         "garmin_connected": _garmin_connected(user_id, db),
         "experience_level": user.experience_level,
+        "continuous_run_minutes": user.continuous_run_minutes,
     }
 
 
@@ -376,10 +385,10 @@ def highlight_workouts(user_id: int, data: WorkoutHighlights, db: Session = Depe
 
 def _garmin_connected(user_id: int, db: Session) -> bool:
     from app.models.garmin import GarminConnection
-    from app.services.garmin import has_tokens
+    from app.services.garmin import has_api_key
 
     conn = db.query(GarminConnection).filter(GarminConnection.user_id == user_id).first()
-    return bool(conn and conn.connected and has_tokens())
+    return bool(conn and conn.connected and has_api_key())
 
 
 def _seconds_to_pace(seconds_per_unit: float) -> str:

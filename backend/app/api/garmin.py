@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
 from app.models.garmin import GarminConnection
 from app.models.user import User
-from app.services.garmin import GarminNotConnected, has_tokens, sync_garmin
+from app.services.garmin import GarminNotConnected, has_api_key, sync_garmin
 from app.services.wellness import sync_wellness
 
 router = APIRouter(prefix="/api/garmin", tags=["garmin"])
@@ -25,8 +25,8 @@ def garmin_status(user_id: int, db: Session = Depends(get_db)):
         user_id=user_id, connected=False, full_sync_done=False
     )
     return {
-        "tokens_present": has_tokens(),
-        "connected": conn.connected and has_tokens(),
+        "api_key_present": has_api_key(),
+        "connected": conn.connected and has_api_key(),
         "display_name": conn.display_name,
         "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
         "last_new_activity_at": conn.last_new_activity_at.isoformat() if conn.last_new_activity_at else None,
@@ -54,8 +54,8 @@ async def garmin_sync(user_id: int, db: Session = Depends(get_db)):
 @router.post("/full-sync/{user_id}")
 async def garmin_full_sync(user_id: int, db: Session = Depends(get_db)):
     """Re-walk the entire Garmin history in the background (takes a few minutes)."""
-    if not has_tokens():
-        raise HTTPException(status_code=409, detail="Garmin not connected. Run `python garmin_login.py` in backend/.")
+    if not has_api_key():
+        raise HTTPException(status_code=409, detail="Garmin not connected. Set GARMIN_API_KEY (a Garmin Connect Personal API key).")
     job = _full_sync_jobs.get(user_id)
     if job and job["state"] == "running":
         return job
@@ -80,7 +80,9 @@ def _sync_in_new_session(user_id: int, full: bool) -> dict:
     db = SessionLocal()
     try:
         result = sync_garmin(user_id, db, full=full)
-        # Sleep / HRV / readiness etc. ride along (throttled inside; never fails the run sync)
+        if result.get("status") != "ok":
+            return result  # busy / backing off: don't spend more Garmin requests on wellness
+        # Sleep / HRV etc. ride along (throttled inside; never fails the run sync)
         try:
             result["wellness"] = sync_wellness(user_id, db)
         except Exception as e:
