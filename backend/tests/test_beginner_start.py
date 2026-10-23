@@ -40,9 +40,13 @@ def test_no_history_beginner_gets_run_walk_and_no_workouts():
     days = [d for w in plan["weeks"] for d in w["days"] if d["type"] != "rest" and d.get("prescribed", True)]
     assert days and all(d["title"].startswith("Run/Walk") for d in days)
     assert not any(d["type"] == "workout" for d in days)
-    week1 = [d for d in plan["weeks"][0]["days"] if d["title"].startswith("Run/Walk")]
-    assert "1min easy run + 2min walk" in week1[0]["description"]
+    # The first scheduled session starts at step one, whichever weekday the block starts on
+    first = next(d for w in plan["weeks"] for d in w["days"] if d["title"].startswith("Run/Walk"))
+    assert "1min easy run + 2min walk" in first["description"]
     assert any("Run/walk start" in n for n in plan["notes"])
+    # Every week with sessions keeps at least two of them, even from a near-zero baseline
+    for w in plan["weeks"][1:]:
+        assert sum(d["title"].startswith("Run/Walk") for d in w["days"]) >= 2
 
 
 def test_continuous_runner_without_history_gets_short_easy_runs():
@@ -74,7 +78,7 @@ def test_run_walk_progress_counts_only_after_the_starting_point_and_is_banked():
                                                 "days_per_week": 3, "rest_days": ["monday", "wednesday", "friday", "sunday"]})
     assert r.status_code == 200, r.text
     plan = client.post("/api/plans/1/preview", json={}).json()
-    first = next(d for d in plan["weeks"][0]["days"] if d["title"].startswith("Run/Walk"))
+    first = next(d for w in plan["weeks"] for d in w["days"] if d["title"].startswith("Run/Walk"))
     assert "1min easy run + 2min walk" in first["description"]  # earlier weeks are already in "1 minute"
     with SessionLocal() as db:
         assert db.get(User, 1).continuous_run_set_on is not None

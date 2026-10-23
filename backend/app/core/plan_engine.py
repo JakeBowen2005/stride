@@ -230,6 +230,7 @@ def generate_plan(
     workouts_per_week = min(workouts_per_week, quality.sessions)
     if quality.stage == 'support':
         workouts_per_week = 2
+    run_walk_ahead = 0  # block weeks so far with at least two run/walk sessions
     if run_walk[0] is not None:
         include_workouts = False  # earn continuous running before any workout
     if developing:
@@ -288,6 +289,11 @@ def generate_plan(
                 load.weekly_budgets = [round(min(b, wk_target * (1 + load.rate) ** min(i, 2)), 1)
                                        for i, b in enumerate(load.weekly_budgets)]
                 load.reasons.append('New controlled-workout step: repeat demonstrated volume in week one, then build easy mileage while repeating the dose.')
+        if run_walk[0] is not None:
+            # Run/walk sessions are prescribed by time. Size the week so every chosen run
+            # day survives (a tiny mileage baseline must not turn the week into all rest);
+            # each run day is rewritten as a ~25-30 minute run/walk below.
+            wk_target = max(wk_target, days_per_week * 2.0)
         if wk_phase.volume_multiplier is not None:
             # Taper / race week / post-race recovery: scale from current volume, no ramp
             wk_target = round(max(current_weekly_mileage, 10) * wk_phase.volume_multiplier, 1)
@@ -374,11 +380,18 @@ def generate_plan(
                 fit_notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
         longest_long = max([longest_long] + [d['distance_miles'] for d in week_days if d['type'] == 'long_run'])
 
+        if run_walk[0] is not None:
+            # Preview the next step only after a block week that actually had sessions:
+            # a first week with nothing left to run must not skip step one.
+            run_walk[wk] = developmental.run_walk_stage(continuous_run_minutes, run_walk_weeks,
+                                                       run_walk_ahead, holding)
         if run_walk[wk] is not None:
             for d in week_days:
                 if d.get('prescribed', True) and d['type'] in {'easy', 'long_run', 'recovery'} and d['distance_miles'] > 0:
                     developmental.run_walk_day(d, run_walk[wk], easy_pace_seconds, long=d['type'] == 'long_run')
             load.weekly_budgets[wk] = round(sum(d['distance_miles'] for d in week_days), 1)
+            if sum(d.get('prescribed', True) and d['title'].startswith('Run/Walk') for d in week_days) >= 2:
+                run_walk_ahead += 1
 
         weeks.append({
             "week_number": wk_num,
