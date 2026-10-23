@@ -123,7 +123,7 @@ def test_migration_adopts_old_lapless_rows_once_without_network():
         assert db.query(ActivitySource).one().enrichment_status == 'pending'
         assert db.query(SourceRevision).count() == 1
         assert db.query(Activity).one().feel_notes == 'keep'
-        assert db.execute(text('SELECT count(*) FROM schema_migrations')).scalar() == 1
+        assert set(db.execute(text('SELECT version FROM schema_migrations')).scalars()) == {'001-source-evidence', '002-history-facts'}
 
 
 def test_recovered_laps_enqueue_one_new_revision_not_a_history_storm(monkeypatch):

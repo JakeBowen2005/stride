@@ -76,3 +76,49 @@ def test_personal_api_range_payloads_map_to_wellness_fields():
 def test_good_signal_without_garmin_readiness():
     signals = recovery_signals({"hrv_last_night": 90, "hrv_baseline_low": 75, "sleep_seconds": 7.5 * 3600})
     assert [s["level"] for s in signals] == ["good"]
+
+
+def test_partial_endpoint_failure_has_separate_coverage_and_does_not_advance_backfill():
+    from app.database import SessionLocal
+    from app.models.history import HistoryCoverage, WellnessRevision
+    class Partial(RangeClient):
+        def hrv_range(self, start, end):
+            raise RuntimeError('provider failure')
+    start = date(2026, 10, 1); end = date(2026, 10, 28)
+    with SessionLocal() as db:
+        fetch_range(Partial(), start, end, user_id=1, db=db); db.commit()
+        assert db.query(HistoryCoverage).filter_by(stream='sleep').one().status == 'checked'
+        assert db.query(HistoryCoverage).filter_by(stream='hrv').one().status == 'failed'
+        assert db.query(HistoryCoverage).filter_by(stream='wellness').one().status == 'failed'
+        assert db.query(WellnessRevision).count() == 2
+        fetch_range(RangeClient(), start, end, user_id=1, db=db); db.commit()
+        assert db.query(HistoryCoverage).filter_by(stream='wellness').one().status == 'checked'
+        assert db.query(WellnessRevision).count() == 3  # unchanged successful evidence is deduplicated
+
+
+def test_wellness_history_backfill_is_bounded_resumable_and_offline(monkeypatch):
+    from datetime import datetime, timedelta
+    from app.database import SessionLocal
+    from app.models.activity import Activity
+    from app.models.wellness import DailyWellness
+    from app.models.history import HistoryCoverage
+    from app.services import wellness
+    calls = []
+    class Empty:
+        def daily_summaries(self, start, end):
+            calls.append((start, end)); return []
+        sleep_range = daily_summaries
+        hrv_range = daily_summaries
+    monkeypatch.setattr(wellness, 'get_client', Empty)
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source='manual', date=datetime.now()-timedelta(days=120), distance_meters=8000, duration_seconds=2700))
+        for back in range(7):
+            db.add(DailyWellness(user_id=1, date=(date.today()-timedelta(days=back)).isoformat(), resting_hr=50))
+        db.commit()
+        wellness._sync_wellness(1, db, True)
+        assert len(calls) == 6  # three recent requests plus three for one historical chunk
+        first = min(r.start_date for r in db.query(HistoryCoverage).filter_by(stream='wellness', status='checked'))
+        calls.clear()
+        wellness._sync_wellness(1, db, True)
+        assert len(calls) == 6
+        assert min(r.start_date for r in db.query(HistoryCoverage).filter_by(stream='wellness', status='checked')) < first

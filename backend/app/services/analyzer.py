@@ -10,6 +10,11 @@ from app.models.user import User
 
 
 def analyze_athlete(user_id: int, db: Session) -> dict:
+    from app.services.history_cache import cached
+    return cached(user_id, 'baseline', f'baseline-v1:{datetime.now().date()}', db, lambda: _analyze_athlete(user_id, db), persist=db.info.get('history_cache_write', False))
+
+
+def _analyze_athlete(user_id: int, db: Session) -> dict:
     """Analyze all of an athlete's running data to determine baseline fitness."""
     activities = (
         db.query(Activity)
