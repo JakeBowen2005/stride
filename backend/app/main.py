@@ -37,6 +37,8 @@ _protect_existing_database()
 # Create new tables, then add any new columns to existing ones
 Base.metadata.create_all(bind=engine)
 add_missing_columns()
+from app.migrations import migrate
+migrate(engine)
 
 
 def _refresh_lap_summaries():
