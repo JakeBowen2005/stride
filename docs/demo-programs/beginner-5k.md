@@ -20,13 +20,13 @@ Synthetic new runner aiming to break 30:00 in a first 5K, eight weeks out, runni
 | Week | Starts | Phase | Miles | Long run | Quality |
 |---|---|---|---|---|---|
 | 1 | Oct 19 | Base | 8.0 | 3 | 10min Controlled Effort |
-| 2 | Oct 26 | Build | 8.8 | 3.2 | 10min Controlled Effort |
-| 3 | Nov 02 | Build | 9.7 | 3.6 | 10min Controlled Effort |
-| 4 | Nov 09 | Build | 10.6 | 4.1 | 10min Controlled Effort |
-| 5 | Nov 16 | Build | 7.9 | 3 | 5min Controlled Effort |
-| 6 | Nov 23 | Peak | 10.6 | 3.8 | 5x2min Controlled Intervals |
-| 7 | Nov 30 | Peak | 11.7 | 4.4 | 5x2min Controlled Intervals |
-| 8 | Dec 07 | Peak | 12.8 | 4.9 | 5x2min Controlled Intervals |
+| 2 | Oct 26 | Build | 8.8 | 3.5 | 10min Controlled Effort |
+| 3 | Nov 02 | Build | 9.7 | 4 | 10min Controlled Effort |
+| 4 | Nov 09 | Build | 10.6 | 4.5 | 10min Controlled Effort |
+| 5 | Nov 16 | Build | 7.9 | 3.3 | 5min Controlled Effort |
+| 6 | Nov 23 | Peak | 10.6 | 4.2 | 5x2min Controlled Intervals |
+| 7 | Nov 30 | Peak | 11.7 | 4.8 | 5x2min Controlled Intervals |
+| 8 | Dec 07 | Peak | 12.8 | 5.4 | 5x2min Controlled Intervals |
 | 9 | Dec 14 | Race Week | 6.6 | — | Race-Week Controlled Pickups, RACE DAY — 5K |
 
 ## Coaching checks
@@ -51,63 +51,63 @@ No near-race endurance gap was flagged in this simulation.
 - **Mon Oct 26** · Rest
 - **Tue Oct 27** · 10min Controlled Effort · 2.5 mi — 10min at controlled medium-to-hard effort (about 6/10 effort) (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Oct 28** · Rest
-- **Thu Oct 29** · Easy Run + Strides · 3.1 mi — Conversational effort the whole run — easy means easy.
+- **Thu Oct 29** · Easy Run + Strides · 2.8 mi — Conversational effort the whole run — easy means easy.
 - **Fri Oct 30** · Rest
-- **Sat Oct 31** · Easy Long Run · 3.2 mi — 3.2mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Oct 31** · Easy Long Run · 3.5 mi — 3.5mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Nov 01** · Rest
 
 ### Week 3 · Nov 02–Nov 08 · Build · 9.7 mi
 - **Mon Nov 02** · Rest
 - **Tue Nov 03** · 10min Controlled Effort · 2.5 mi — 10min at controlled medium-to-hard effort (about 6/10 effort) (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Nov 04** · Rest
-- **Thu Nov 05** · Easy Run + Strides · 3.6 mi — Conversational effort the whole run — easy means easy.
+- **Thu Nov 05** · Easy Run + Strides · 3.2 mi — Conversational effort the whole run — easy means easy.
 - **Fri Nov 06** · Rest
-- **Sat Nov 07** · Easy Long Run · 3.6 mi — 3.6mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Nov 07** · Easy Long Run · 4 mi — 4mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Nov 08** · Rest
 
 ### Week 4 · Nov 09–Nov 15 · Build · 10.6 mi
 - **Mon Nov 09** · Rest
 - **Tue Nov 10** · 10min Controlled Effort · 2.5 mi — 10min at controlled medium-to-hard effort (about 6/10 effort) (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Nov 11** · Rest
-- **Thu Nov 12** · Easy Run + Strides · 4 mi — Conversational effort the whole run — easy means easy.
+- **Thu Nov 12** · Easy Run + Strides · 3.6 mi — Conversational effort the whole run — easy means easy.
 - **Fri Nov 13** · Rest
-- **Sat Nov 14** · Easy Long Run · 4.1 mi — 4.1mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Nov 14** · Easy Long Run · 4.5 mi — 4.5mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Nov 15** · Rest
 
 ### Week 5 · Nov 16–Nov 22 · Build · 7.9 mi
 - **Mon Nov 16** · Rest
 - **Tue Nov 17** · 5min Controlled Effort · 2 mi — 5min at controlled medium-to-hard effort (about 6/10 effort) (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Nov 18** · Rest
-- **Thu Nov 19** · Easy Run + Strides · 2.9 mi — Conversational effort the whole run — easy means easy.
+- **Thu Nov 19** · Easy Run + Strides · 2.6 mi — Conversational effort the whole run — easy means easy.
 - **Fri Nov 20** · Rest
-- **Sat Nov 21** · Easy Long Run · 3 mi — 3mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Nov 21** · Easy Long Run · 3.3 mi — 3.3mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Nov 22** · Rest
 
 ### Week 6 · Nov 23–Nov 29 · Peak · 10.6 mi
 - **Mon Nov 23** · Rest
 - **Tue Nov 24** · 5x2min Controlled Intervals · 3 mi — 5x2min at controlled medium-to-hard effort (about 6/10 effort) with 1min jog rest (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Nov 25** · Rest
-- **Thu Nov 26** · Easy Run + Strides · 3.8 mi — Conversational effort the whole run — easy means easy.
+- **Thu Nov 26** · Easy Run + Strides · 3.4 mi — Conversational effort the whole run — easy means easy.
 - **Fri Nov 27** · Rest
-- **Sat Nov 28** · Easy Long Run · 3.8 mi — 3.8mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Nov 28** · Easy Long Run · 4.2 mi — 4.2mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Nov 29** · Rest
 
 ### Week 7 · Nov 30–Dec 06 · Peak · 11.7 mi
 - **Mon Nov 30** · Rest
 - **Tue Dec 01** · 5x2min Controlled Intervals · 3 mi — 5x2min at controlled medium-to-hard effort (about 6/10 effort) with 1min jog rest (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Dec 02** · Rest
-- **Thu Dec 03** · Easy Run + Strides · 4.3 mi — Conversational effort the whole run — easy means easy.
+- **Thu Dec 03** · Easy Run + Strides · 3.9 mi — Conversational effort the whole run — easy means easy.
 - **Fri Dec 04** · Rest
-- **Sat Dec 05** · Easy Long Run · 4.4 mi — 4.4mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Dec 05** · Easy Long Run · 4.8 mi — 4.8mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Dec 06** · Rest
 
 ### Week 8 · Dec 07–Dec 13 · Peak · 12.8 mi
 - **Mon Dec 07** · Rest
 - **Tue Dec 08** · 5x2min Controlled Intervals · 3 mi — 5x2min at controlled medium-to-hard effort (about 6/10 effort) with 1min jog rest (warm up 10min easy, cool down 10min easy). *Why:* Build sustained aerobic effort and pacing control before longer or harder workouts.
 - **Wed Dec 09** · Rest
-- **Thu Dec 10** · Easy Run + Strides · 4.9 mi — Conversational effort the whole run — easy means easy.
+- **Thu Dec 10** · Easy Run + Strides · 4.4 mi — Conversational effort the whole run — easy means easy.
 - **Fri Dec 11** · Rest
-- **Sat Dec 12** · Easy Long Run · 4.9 mi — 4.9mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
+- **Sat Dec 12** · Easy Long Run · 5.4 mi — 5.4mi easy at 11:25-12:35/mi. Conversational the entire time. *Why:* Build aerobic endurance and durable time on feet.
 - **Sun Dec 13** · Rest
 
 ### Week 9 · Dec 14–Dec 20 · Race Week · 6.6 mi

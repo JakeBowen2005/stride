@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, render
@@ -150,6 +150,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
     baseline = round(sum(full_weeks[-4:]) / 4, 1)
     is_deload_due, deload_reason = deload_due(full_weeks, analysis["overview"]["experience_level"])
+    race_dates = {a.date.date() for a in db.query(Activity).filter(
+        Activity.user_id == user_id, runs_only(), or_(Activity.workout_type == "race", Activity.event_type == "race"),
+        Activity.date >= datetime.combine(monday - timedelta(weeks=8), datetime.min.time()),
+        Activity.date < datetime.combine(monday, datetime.min.time())).all()}
+    race_weeks = [any(monday - timedelta(weeks=i) <= d < monday - timedelta(weeks=i - 1) for d in race_dates)
+                  for i in range(8, 0, -1)]
 
     # Assess the previous block (what was prescribed and actually run) — drives
     # build / hold / reduce / recovery for the next block's volume.
@@ -211,7 +217,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         assessment=effective_assessment,
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
-        reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks,
+        reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks, race_weeks=race_weeks,
         continuous_run_minutes=user.continuous_run_minutes,
         run_walk_weeks=_run_days_since(user, db),
         previous_block=json.loads(prev_plan.load) if assessment and prev_plan and prev_plan.load else None,

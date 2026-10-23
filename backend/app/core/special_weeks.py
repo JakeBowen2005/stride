@@ -212,11 +212,13 @@ def ultra_long_run(
     miles = _round_half(minutes * 60 / pace)
 
     where = "on trail" if trail else "on road/flat"
-    parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi), easy conversational effort."]
+    if phase.phase == "peak":
+        parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi): easy conversational effort for the first and last thirds, "
+                 "goal race effort for the middle third on race-like terrain."]
+    else:
+        parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi), easy conversational effort."]
     if trail:
         parts.append("Power-hike grades steeper than ~15% — practice it, it's a race skill.")
-    if phase.phase == "peak":
-        parts.append("Run the middle third at goal race effort on race-like terrain.")
     if phase.fueling_g_per_hr:
         parts.append(f"Fuel {phase.fueling_g_per_hr}g carbs/hr + 300-600mg sodium/hr with race-day products.")
     title = "Ultra Long Run" if phase.phase != "peak" else "Race-Effort Long Run"

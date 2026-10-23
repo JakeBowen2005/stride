@@ -12,9 +12,17 @@ export interface Milestone {
   detail: string;
 }
 
+export interface OutlookDecision {
+  key: string;
+  required: boolean;
+  question: string;
+  options: { key: string; label: string; detail: string }[];
+}
+
 export interface Outlook {
   milestones: Milestone[];
   gaps: { milestone: string; message: string }[];
+  decision?: OutlookDecision | null;
   est_weeks_to_ready: number;
   note: string;
 }
@@ -38,6 +46,19 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
   if (!outlook.milestones.length) return null;
   return (
     <Panel label="Route to your goal" meta={outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-3 py-2">
+      {outlook.decision && (
+        <div role="alert" className="mb-2 rounded-md border border-amber-500/60 bg-amber-500/15 p-2 text-xs leading-relaxed">
+          <p className="font-medium">Decision needed: {outlook.decision.question}</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {outlook.decision.options.map((o) => (
+              <li key={o.key}>
+                {o.label} <span className="text-muted-foreground">({o.detail})</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-muted-foreground">Change the race or goal in Settings, or keep it as a completion goal.</p>
+        </div>
+      )}
       {outlook.gaps.map((g) => (
         <p key={g.milestone} role="alert" className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs leading-relaxed">
           {g.message}

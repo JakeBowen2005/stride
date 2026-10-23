@@ -8,16 +8,21 @@ not guarantees of readiness; they are reassessed from real training every block.
 """
 import math
 
-# Weekly volume / long run a goal typically needs, by experience band.
+from app.core.periodization import BUILD_WEEKS, PEAK_WEEKS, taper_weeks
+
+# Weekly volume / long run a goal typically needs, by experience band. Developing
+# half/marathon long runs are at most developmental.LONG_RUN_SHARE of the week (and
+# ~3 hours), so the developing long-run target must be reachable at the volume target.
 VOLUME_TARGETS = {  # (developing, established) mi/week
-    '5k': (15, 35), '10k': (20, 40), 'half': (25, 45), 'marathon': (35, 55),
+    '5k': (15, 35), '10k': (20, 40), 'half': (25, 45), 'marathon': (38, 55),
     '50k': (40, 55), '50mi': (45, 60), '100k': (50, 65), '100mi': (55, 70),
 }
 LONG_RUN_TARGETS = {  # (developing, established) miles
     '5k': (5, 10), '10k': (7, 12), 'half': (10, 14), 'marathon': (16, 20),
     '50k': (18, 22), '50mi': (22, 26), '100k': (24, 28), '100mi': (26, 30),
 }
-TAPER_WEEKS = {'5k': 1, '10k': 1, 'half': 2, 'marathon': 2, '50k': 2, '50mi': 3, '100k': 3, '100mi': 3}
+TAPER_WEEKS = {d: taper_weeks(d) for d in VOLUME_TARGETS}  # the plan's own taper (race week included)
+VOLUME_DECISION_SHARE = .5  # below this share of the volume target once build starts: the athlete decides
 DEVELOPMENT_TOP_LEVEL = 12
 
 
@@ -67,7 +72,7 @@ def goal_outlook(*, goal_type: str, distance: str | None, race_weeks_away: float
 
     long_target = LONG_RUN_TARGETS.get(distance, (None, None))[band] if goal_type == 'race' else None
     if long_target:
-        # Long runs grow with weekly volume (roughly a third of the week for developing runners)
+        # Long runs grow with weekly volume (about 40% of the week for developing marathoners)
         long_weeks = _weeks_to_grow(recent_long_run or 1, long_target, weekly_rate, 4 if developing else 6)
         add('long_run', f'Long run of {long_target:g} miles', round(recent_long_run, 1), long_target, 'miles',
             long_weeks, 'Rises with weekly volume, never as a one-off jump.')
@@ -86,11 +91,38 @@ def goal_outlook(*, goal_type: str, distance: str | None, race_weeks_away: float
                     f"{m['label']} needs about {m['est_weeks']} weeks at a safe ramp; about {max(0, round(usable))} "
                     f"remain before taper. Consider a later race or a shorter distance, or race it as a "
                     f"completion goal. Stride won't cram the missing work into the final weeks."})
+    decision = volume_gap_decision(goal_type, distance, race_weeks_away, baseline, volume)
     # Workout development continues past goal readiness; it doesn't set the headline
     remaining = [m['est_weeks'] for m in milestones if m['status'] != 'done' and m['key'] != 'workouts']
-    return {'milestones': milestones, 'gaps': gaps,
+    return {'milestones': milestones, 'gaps': gaps, 'decision': decision,
             'est_weeks_to_ready': max(remaining) if remaining else 0,
             'note': 'Estimates assume steady training at the current safe ramp. They are reassessed every block from what you actually run.'}
+
+
+def volume_gap_decision(goal_type: str, distance: str | None, race_weeks_away: float | None,
+                        baseline: float, volume_target: float | None) -> dict | None:
+    """Once build has started, volume under half the goal's target is the athlete's call.
+
+    A note is easy to scroll past; this asks how to race it (completion goal, a later
+    race, or a shorter distance) instead of quietly training on toward an unready race.
+    """
+    if goal_type != 'race' or not distance or race_weeks_away is None or not volume_target:
+        return None
+    before_taper = race_weeks_away - (taper_weeks(distance) - 1)
+    in_build = 0 < before_taper <= PEAK_WEEKS.get(distance, 4) + BUILD_WEEKS.get(distance, 4)
+    if not in_build or baseline >= volume_target * VOLUME_DECISION_SHARE:
+        return None
+    return {
+        'key': 'volume_gap', 'required': True,
+        'question': (f"Training is at {baseline:g} mi/week, under half the ~{volume_target:g} mi/week this race "
+                     f"usually needs, and the build phase has started. How do you want to approach it?"),
+        'options': [
+            {'key': 'completion', 'label': 'Keep the date and race it as a completion goal',
+             'detail': 'Training keeps its safe ramp; the target time is not the measure.'},
+            {'key': 'later_race', 'label': 'Choose a later race', 'detail': 'More weeks to build volume safely.'},
+            {'key': 'shorter', 'label': 'Switch to a shorter distance', 'detail': 'Race what current training supports.'},
+        ],
+    }
 
 
 def block_review(assessment: dict | None, load: dict | None, notes: list[str] | None = None) -> dict | None:

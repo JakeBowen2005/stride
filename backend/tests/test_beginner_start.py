@@ -164,7 +164,7 @@ def test_outlook_flags_a_marathon_gap_and_reports_milestones():
                      development_level=2, run_walk_stage=None)
     keys = {m["key"]: m for m in o["milestones"]}
     assert keys["consistency"]["status"] == "done"
-    assert keys["volume"]["target"] == 35 and keys["long_run"]["target"] == 16
+    assert keys["volume"]["target"] == 38 and keys["long_run"]["target"] == 16
     assert {g["milestone"] for g in o["gaps"]} >= {"volume", "long_run"}
     relaxed = goal_outlook(goal_type="race", distance="5k", race_weeks_away=30, destination=None, baseline=12,
                            recent_long_run=4, experience="beginner", run_days_recent=[3, 3, 3, 3],
