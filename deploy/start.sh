@@ -10,16 +10,7 @@ cd /app/backend
 # local backup is mandatory; optional S3 errors are recorded without losing it.
 python -m app.services.backups --if-exists --reason pre-start
 
-# One-time Garmin token bootstrap from a secret env var. The disk copy wins afterwards,
-# because garminconnect refreshes the tokens there.
-if [ -n "${GARMIN_TOKENS_JSON:-}" ] && [ -n "${GARMIN_TOKENSTORE:-}" ] \
-   && [ ! -f "$GARMIN_TOKENSTORE/garmin_tokens.json" ]; then
-  mkdir -p "$GARMIN_TOKENSTORE"
-  chmod 700 "$GARMIN_TOKENSTORE"
-  (umask 077 && printf '%s' "$GARMIN_TOKENS_JSON" > "$GARMIN_TOKENSTORE/garmin_tokens.json")
-  chmod 600 "$GARMIN_TOKENSTORE/garmin_tokens.json"
-  echo "start.sh: wrote Garmin tokens to $GARMIN_TOKENSTORE"
-fi
+# Garmin needs no bootstrap: GARMIN_API_KEY (a Personal API key) is read from the env.
 
 # One-time data import: an uploaded snapshot at /var/data/stride-upload.db replaces the DB
 # before the backend opens it. The previous DB (and its -wal/-shm) is kept as a timestamped backup.

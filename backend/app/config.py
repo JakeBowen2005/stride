@@ -14,9 +14,11 @@ class Settings(BaseSettings):
     openai_auto_reviews: bool = True
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"
 
-    # Garmin Connect — tokens are created once by `python garmin_login.py`
-    garmin_tokenstore: str = str(BACKEND_DIR / ".garmin")
-    garmin_poll_minutes: int = 10  # auto-sync interval; 0 disables
+    # Garmin Connect Personal API key (connect.garmin.com/app/settings/personalApiToken).
+    # Pull-only API: Stride checks for new runs when the app opens and on this interval.
+    garmin_api_key: str = ""
+    garmin_poll_minutes: int = 15  # background check interval; 0 disables
+    garmin_quiet_hours: str = "22-5"  # local hours checked only hourly (nobody uploads runs at 2am)
     default_user_id: int = 1
 
     model_config = {"env_file": ".env", "extra": "ignore"}

@@ -55,14 +55,6 @@ def test_demo_scenario_plan_follows_running_rules(scenario):
     assert_plan_invariants(plan, completed_weeks=completed)
 
 
-# Known gap, found by this matrix: build_race_week sizes the sharpener (5 mi) and
-# the easy days (≥2 mi each) with fixed doses and race weeks skip budget fitting,
-# so a ~7.5 mpw beginner gets a 9 mi race week whose sharpener is longer than
-# their long run. Fixing it means choosing a beginner race-week dose, which is a
-# policy call; strict xfail so the test flags itself once that lands.
-LOW_VOLUME_RACE_WEEK_GAP = {"beginner-5k"}
-
-
 @pytest.mark.parametrize("weeks_to_race", [0, 1, 2])
 @pytest.mark.parametrize("scenario", RACE_SCENARIOS)
 def test_race_approach_plan_follows_running_rules(scenario, weeks_to_race, request):
@@ -70,12 +62,6 @@ def test_race_approach_plan_follows_running_rules(scenario, weeks_to_race, reque
     phases = [w["phase"]["phase"] for w in plan["weeks"]]
     if weeks_to_race < len(phases):  # 2-week (Mon-Wed) blocks end before a race 2 weeks out
         assert "race_week" in phases, phases
-    race_weeks = [w for w in plan["weeks"] if w["phase"]["phase"] == "race_week"]
-    sharpener_ahead = any(d["type"] == "workout" and d.get("prescribed", True) for w in race_weeks for d in w["days"])
-    if scenario in LOW_VOLUME_RACE_WEEK_GAP and sharpener_ahead:
-        request.applymarker(pytest.mark.xfail(strict=True, reason=(
-            "Race week uses fixed sharpener/easy doses and skips budget fitting, so a low-volume "
-            "beginner's race week exceeds the ramp ceiling; needs a policy decision.")))
     assert_plan_invariants(plan, completed_weeks=completed)
 
 

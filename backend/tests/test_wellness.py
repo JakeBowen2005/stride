@@ -1,5 +1,7 @@
 from app.api.wellness import recovery_signals, training_status_label
-from app.services.wellness import parse_day
+from datetime import date
+
+from app.services.wellness import fetch_range, flatten_summary, parse_day
 
 SUMMARY = {"restingHeartRate": 41, "lastSevenDaysAvgRestingHeartRate": 43, "bodyBatteryMostRecentValue": 58,
            "bodyBatteryAtWakeTime": 95, "averageStressLevel": 20, "totalSteps": 11996, "dailyStepGoal": 19840}
@@ -41,3 +43,36 @@ def test_recovery_signals():
 def test_training_status_label():
     assert training_status_label("PRODUCTIVE_3") == "Productive"
     assert training_status_label(None) is None
+
+
+V2 = {"calendarDate": "2026-10-21", "heartRate": {"restingValue": 42}, "stress": {"avgLevel": 32},
+      "bodyBattery": {"minValue": 15, "maxValue": 80, "latestValue": 20},
+      "movement": {"steps": {"goal": 19340, "value": 18251}}, "pulseOx": {"avgValue": 95},
+      "respiration": {"avgValue": 13}}
+
+
+class RangeClient:
+    def daily_summaries(self, start, end):
+        return [V2]
+
+    def sleep_range(self, start, end):
+        return [{"calendarDate": "2026-10-21", "sleepTimeSeconds": 25000, "deepSleepSeconds": 3600,
+                 "sleepScores": {"overall": {"value": 71, "qualifierKey": "FAIR"}}}]
+
+    def hrv_range(self, start, end):
+        return [{"calendarDate": "2026-10-21", "lastNightAvg": 90, "weeklyAvg": 85, "status": "BALANCED",
+                 "baseline": {"balancedLow": 75, "balancedUpper": 110}}]
+
+
+def test_personal_api_range_payloads_map_to_wellness_fields():
+    assert flatten_summary(V2)["restingHeartRate"] == 42
+    day = fetch_range(RangeClient(), date(2026, 10, 21), date(2026, 10, 21))["2026-10-21"]
+    assert day["resting_hr"] == 42 and day["stress_avg"] == 32 and day["steps"] == 18251
+    assert day["sleep_score"] == 71 and day["sleep_seconds"] == 25000
+    assert day["hrv_last_night"] == 90 and day["hrv_baseline_low"] == 75
+    assert "readiness_score" not in day  # not exposed by the Personal API
+
+
+def test_good_signal_without_garmin_readiness():
+    signals = recovery_signals({"hrv_last_night": 90, "hrv_baseline_low": 75, "sleep_seconds": 7.5 * 3600})
+    assert [s["level"] for s in signals] == ["good"]

@@ -40,7 +40,7 @@ def laps_for(day, easy_pace, mi):
     work = []
     for index, seg in enumerate(segments):
         pace_range = seg.get("pace_range_sec_per_mile") or {}
-        pace = ((pace_range.get("fast") or 0) + (pace_range.get("slow") or 0)) / 2 or easy_pace
+        pace = ((pace_range.get("fast") or 0) + (pace_range.get("slow") or 0)) / 2 or spec.get('estimated_work_pace_sec_per_mile') or easy_pace
         reps = seg.get("reps") or 1
         for rep in range(reps):
             seconds = seg.get("duration_seconds") or (seg.get("distance_meters") or 0) / mi * pace
@@ -57,6 +57,10 @@ def laps_for(day, easy_pace, mi):
     remaining = max(0.0, day["distance_miles"] * mi - sum(lap["distance_m"] for lap in work))
     warm = (spec.get("warmup") or {}).get("distance_meters")
     cool = (spec.get("cooldown") or {}).get("distance_meters")
+    if (spec.get('warmup') or {}).get('duration_seconds'):
+        warm = spec['warmup']['duration_seconds'] / easy_pace * mi
+    if (spec.get('cooldown') or {}).get('duration_seconds'):
+        cool = spec['cooldown']['duration_seconds'] / easy_pace * mi
     if warm is None and cool is None:
         warm = cool = remaining / 2
     else:
@@ -91,12 +95,44 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--weeks", type=int, default=16, help="length for goals without a race date")
     parser.add_argument("--keep-db", type=Path, help="copy the simulated database here for inspection")
+    parser.add_argument('--start-date', type=date.fromisoformat, default=date.today(), help='freeze seeding and the whole program to this date')
+    parser.add_argument('--experience', choices=['beginner', 'intermediate'], help='inspect the same starting history with another developmental tier')
+    parser.add_argument('--miss-week', type=int, help='stress test: miss every run in this 1-based calendar week')
+    parser.add_argument('--poor-week', type=int, help='stress test: rate hard days 3/10 in this calendar week')
+    parser.add_argument('--no-laps', action='store_true', help='realistic: no lap data; the runner self-reports completion and effort')
+    parser.add_argument('--hard-from-week', type=int, help='realistic: workouts feel harder than intended (effort 8/10) from this week')
+    parser.add_argument('--skip-every', type=int, help='realistic: inconsistent schedule, skip every Nth scheduled run')
+    parser.add_argument('--goal-change-week', type=int, help='realistic: switch goal at the start of this week (see --goal-change-to)')
+    parser.add_argument('--goal-change-to', default='10k', help='race distance for --goal-change-week (race 16 weeks later)')
     args = parser.parse_args()
+    if any(w is not None and w < 1 for w in (args.miss_week, args.poor_week, args.hard_from_week, args.skip_every, args.goal_change_week)):
+        parser.error('Stress-test week numbers must be positive.')
+    import time_machine
+    with time_machine.travel(datetime.combine(args.start_date, time(12)), tick=False):
+        simulate(args)
+
+
+def simulate(args):
 
     profile = json.loads((ROOT / "demo/scenarios" / f"{args.scenario}.json").read_text())
+    deviations = [f'missed week {args.miss_week}' if args.miss_week else None,
+                  f'poor-recovery week {args.poor_week}' if args.poor_week else None,
+                  'no lap data (self-reported completion)' if args.no_laps else None,
+                  f'workouts harder than intended from week {args.hard_from_week}' if args.hard_from_week else None,
+                  f'skips every {args.skip_every}th run' if args.skip_every else None,
+                  f'goal changes to {args.goal_change_to} in week {args.goal_change_week}' if args.goal_change_week else None]
+    deviations = [d for d in deviations if d]
+    if deviations:
+        text = '; '.join(deviations)
+        profile = {**profile, 'simulation_deviation': text[0].upper() + text[1:] + '.',
+                   'description': profile['description'] + f' Stress test: {text}.'}
+    if args.experience:
+        profile = {**profile, 'experience': args.experience,
+                   'name': profile['name'] + f' ({args.experience})',
+                   'description': f"{args.experience.title()} progression comparison using the {args.scenario} starting history."}
     workdir = Path(tempfile.mkdtemp(prefix="stride-sim-"))
     os.environ.update(DATABASE_URL=f"sqlite:///{workdir / 'sim.db'}", GARMIN_POLL_MINUTES="0",
-                      GARMIN_TOKENSTORE=str(workdir / "no-garmin"), OPENAI_API_KEY="", OPENAI_AUTO_REVIEWS="false",
+                      GARMIN_API_KEY="", OPENAI_API_KEY="", OPENAI_AUTO_REVIEWS="false",
                       STRIDE_BACKUP_DIR=str(workdir / "backups"))
     sys.path.insert(0, str(ROOT / "backend"))
     import time_machine
@@ -128,9 +164,19 @@ def main():
                 history[day["date"]] = day  # lived before the simulation began
 
     current = start
+    scheduled_runs = 0
     try:
         while current <= end:
+            week_number = (current - monday).days // 7 + 1
+            missed = week_number == args.miss_week
             with time_machine.travel(datetime.combine(current, time(12)), tick=False):
+                if args.goal_change_week and week_number == args.goal_change_week and current.weekday() == 0:
+                    changed = client.post("/api/users/1/goal", json={
+                        "goal_type": "race", "race_distance": args.goal_change_to, "override_readiness": True,
+                        "race_date": (current + timedelta(weeks=16)).isoformat()})
+                    if changed.status_code != 200:
+                        raise SystemExit(f"{current}: goal change failed: {changed.text}")
+                    end = max(end, current + timedelta(weeks=4))
                 plan = client.get("/api/plans/1/current").json()
                 if current.isoformat() > plan["end_date"]:
                     draft = client.post("/api/plans/1/preview", json={"scope": "next"})
@@ -147,12 +193,16 @@ def main():
                 day = next((d for w in plan["weeks"] for d in w["days"] if d["date"] == current.isoformat()), None)
                 if day:
                     days[day["date"]] = {**day, "phase": phase_by_date.get(day["date"], {})}
+                if day and not missed and day["type"] != "rest" and day["distance_miles"] and day.get("prescribed", True):
+                    scheduled_runs += 1
+                    if args.skip_every and scheduled_runs % args.skip_every == 0 and day["type"] != "race":
+                        missed = True  # life happens: this run doesn't
                 with SessionLocal() as db:
-                    if day and day["type"] != "rest" and day["distance_miles"]:
+                    if day and not missed and day["type"] != "rest" and day["distance_miles"]:
                         # Any session with paced work (workouts, marathon-pace long runs) gets matching laps.
                         spec = day.get("prescription") or {}
                         structured = any(seg.get("category") for seg in spec.get("segments") or [])  # MP / steady / race effort
-                        laps = laps_for(day, easy_pace, MI) if day["type"] == "workout" or structured else []
+                        laps = laps_for(day, easy_pace, MI) if (day["type"] == "workout" or structured) and not args.no_laps else []
                         seconds = sum(l["duration_s"] for l in laps) if laps else day["distance_miles"] * easy_pace
                         category = (day.get("prescription") or {}).get("category")
                         db.add(Activity(user_id=1, source="manual", external_id=f"sim-{current}", name=f"Simulated {day['title']}",
@@ -165,8 +215,14 @@ def main():
                                              hrv_last_night=70, hrv_baseline_low=60, hrv_baseline_high=80, resting_hr=48,
                                              readiness_score=80, acwr=1.0))
                     db.commit()
-                if day and day["type"] in ("workout", "long_run", "race") and day["distance_miles"]:
-                    feedback = client.post(f"/api/plans/1/feedback/{current.isoformat()}", json={"feel_rating": FEEL})
+                if day and not missed and day["type"] in ("workout", "long_run", "race") and day["distance_miles"]:
+                    body = {"feel_rating": 3 if week_number == args.poor_week else FEEL}
+                    if day["type"] == "workout":
+                        hard = args.hard_from_week and week_number >= args.hard_from_week
+                        body["effort_rating"] = 8 if hard else 6
+                        if args.no_laps:
+                            body["completion"] = "full"
+                    feedback = client.post(f"/api/plans/1/feedback/{current.isoformat()}", json=body)
                     if feedback.status_code != 200:
                         raise SystemExit(f"{current}: feedback failed: {feedback.text}")
             current += timedelta(days=1)
@@ -219,13 +275,24 @@ def write_doc(out, profile, seeded, start, end, race_day, history, days, blocks)
         why = [r for r in (block.get("assessment") or {}).get("reasons") or [] if r][:3]
         block_lines.append(f"- **Block {i}** ({date.fromisoformat(block['start']):%b %d}–{date.fromisoformat(block['end']):%b %d}): "
                            f"**{decision}** → {mode}. {' '.join(reasons[-1:])}" + (f" Why: {' '.join(why)}" if why else ""))
+    extra = ''
+    if profile['experience'] in {'beginner', 'intermediate'}:
+        checks = list(dict.fromkeys(note for b in blocks for note in b.get('notes', []) if note.startswith('Endurance preparation gap:')))
+        extra = ('\n\n## Coaching checks\n\n'
+                 'Controlled efforts use easy warmup and cooldown bookends, with medium-to-hard work at about 6/10 effort. '
+                 'The 7/10 post-run feel rating means recovery felt good; it is a different scale. '
+                 'Effort-session pace is an estimate for simulation and budgeting, not a measured threshold pace. '
+                 'Reduced deload/taper doses do not earn progression.\n\n'
+                 + ('\n'.join('- ' + note for note in checks) if checks else 'No near-race endurance gap was flagged in this simulation.') + '\n')
+    execution_note = ('Every prescribed run is completed exactly (distance, and workouts at the middle of their pace range) with a 7/10 feel after hard days.'
+                      if not profile.get('simulation_deviation') else 'Stress simulation: ' + profile['simulation_deviation'] + ' The schedule below shows prescriptions, including missed runs.')
     body = f"""# {athlete['name']}: the whole program, run exactly as prescribed
 
 {athlete['description']}
 
 - **Athlete:** {athlete['experience']}, {athlete.get('days_per_week', 6)} run days/week, rest on {', '.join(d.title() for d in athlete.get('rest_days', ['sunday'])) or 'no fixed day'}, long run on {athlete.get('long_run_day', 'saturday').title()}
 - **Goal:** {goal}
-- **Simulated:** {start:%b %d, %Y} → {end:%b %d, %Y}. Every prescribed run is completed exactly (distance, and workouts at the middle of their pace range) with a 7/10 feel after hard days. Every two weeks Stride builds the next block from what was run and it is approved.
+- **Simulated:** {start:%b %d, %Y} → {end:%b %d, %Y}. {execution_note} Every two weeks Stride builds the next block from what was run and it is approved.
 - Generated by `backend/scripts/simulate_demo_program.py` on today's engine; regenerate after plan-engine changes.
 
 ## How each block was decided
@@ -236,7 +303,7 @@ def write_doc(out, profile, seeded, start, end, race_day, history, days, blocks)
 
 | Week | Starts | Phase | Miles | Long run | Quality |
 |---|---|---|---|---|---|
-{chr(10).join(rows)}
+{chr(10).join(rows)}{extra}
 
 ## Week by week
 

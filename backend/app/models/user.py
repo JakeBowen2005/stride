@@ -27,6 +27,10 @@ class User(Base):
     current_weekly_mileage: Mapped[float | None] = mapped_column(Float)
     peak_weekly_mileage: Mapped[float | None] = mapped_column(Float)
     experience_level: Mapped[str | None] = mapped_column(String(20))  # beginner, intermediate, advanced, expert
+    # Starting point for someone with no running history: longest continuous run right now,
+    # and the Monday it was last set (run/walk progress counts only weeks after it)
+    continuous_run_minutes: Mapped[int | None] = mapped_column(Integer)
+    continuous_run_set_on: Mapped[str | None] = mapped_column(String(10))  # beginner, intermediate, advanced, expert
 
     # PRs (stored in seconds)
     pr_5k: Mapped[float | None] = mapped_column(Float)

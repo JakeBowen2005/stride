@@ -7,7 +7,7 @@ import tempfile
 _tmp = tempfile.mkdtemp(prefix="stride-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["GARMIN_POLL_MINUTES"] = "0"
-os.environ["GARMIN_TOKENSTORE"] = os.path.join(_tmp, "garmin")
+os.environ["GARMIN_API_KEY"] = ""  # never call the real Garmin API, regardless of local .env
 os.environ["ANTHROPIC_API_KEY"] = ""  # coach uses template responses
 os.environ["OPENAI_API_KEY"] = ""  # all normal tests are offline, regardless of local .env
 os.environ["OPENAI_AUTO_REVIEWS"] = "false"

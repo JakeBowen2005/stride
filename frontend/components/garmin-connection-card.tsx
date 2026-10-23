@@ -9,7 +9,7 @@ import { GarminSync } from "@/components/garmin-sync";
 
 
 interface Status {
-  tokens_present: boolean;
+  api_key_present: boolean;
   connected: boolean;
   display_name: string | null;
   last_sync_at: string | null;
@@ -58,40 +58,44 @@ export function GarminConnectionCard() {
       <CardContent className="space-y-4 pt-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">Garmin Connect</h2>
-          {status?.tokens_present ? (
+          {status?.api_key_present && !status.connected && status.last_error ? (
+            <Badge variant="destructive" className="text-xs">Needs attention</Badge>
+          ) : status?.api_key_present ? (
             <Badge variant="secondary" className="text-xs">
               Connected{status.display_name ? ` · ${status.display_name}` : ""}
             </Badge>
           ) : (
             <Badge variant="outline" className="text-xs">
-              Not connected
+              Not set up
             </Badge>
           )}
         </div>
 
         {offline && <p className="text-sm text-destructive">Can&apos;t reach the Stride backend.</p>}
 
-        {status && !status.tokens_present && (
+        {status && !status.api_key_present && (
           <div className="space-y-2 rounded-md bg-secondary/40 p-3 text-sm">
-            <p className="font-medium">Garmin needs to be connected (or reconnected) from your computer.</p>
+            <p className="font-medium">Connect Garmin with a Personal API key.</p>
             <p className="text-muted-foreground">
-              Garmin doesn&apos;t offer a sign-in button for personal apps, so this is a one-time step on the computer
-              that runs Stride. Your password is never stored, only a session token.
+              Create a key in Garmin Connect (Settings → Personal API Key), then add it to the Stride server as{" "}
+              <code>GARMIN_API_KEY</code> and restart. Keys last 30 days to a year; Garmin emails you before one expires.
             </p>
-            <details>
-              <summary className="cursor-pointer text-muted-foreground">Show the command</summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-background p-2 text-xs">
-                cd backend{"\n"}venv/bin/python garmin_login.py
-              </pre>
-            </details>
+            <a
+              className="text-sm underline underline-offset-2"
+              href="https://connect.garmin.com/app/settings/personalApiToken"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open Garmin&apos;s Personal API Key page
+            </a>
           </div>
         )}
 
-        {status?.tokens_present && (
+        {status?.api_key_present && (
           <>
             <div className="flex items-start justify-between gap-4 text-sm">
               <div className="space-y-1 text-muted-foreground">
-                <p>New runs sync automatically every few minutes while Stride is running, and whenever you open the app.</p>
+                <p>New runs sync whenever you open the app, and Stride checks Garmin every 15 minutes in the background (hourly overnight).</p>
                 {status.last_error && <p className="text-destructive">{status.last_error}</p>}
               </div>
               <GarminSync autoSync={false} label="Sync now" onNewActivities={load} />

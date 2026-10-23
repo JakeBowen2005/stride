@@ -103,7 +103,13 @@ def test_beginner_scenarios_are_conservative(scenario,phase):
         # 10% rule: week one stays within ~1.1x the recent 4-week average.
         recent=sum(profile['weekly_miles'][-4:])/4
         assert sum(r.distance_miles for r in rows if r.week_number==1)<=recent*1.1+0.5
-        assert not any(r.type=='workout' for r in rows if r.week_number==1)  # no early speed work
+        for week in (1,2):
+            workouts=[r for r in rows if r.week_number==week and r.type=='workout']
+            assert len(workouts)<=1
+            for row in workouts:
+                spec=json.loads(row.prescription)
+                assert spec['category']=='development'
+                assert all(s.get('pace_range_sec_per_mile') is None for s in spec['segments'])
     _feedback_preview_approve(profile)
 
 

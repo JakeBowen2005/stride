@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 
 interface GarminStatus {
-  tokens_present: boolean;
+  api_key_present: boolean;
   connected: boolean;
   display_name: string | null;
   last_sync_at: string | null;
@@ -114,10 +114,10 @@ export function GarminSync({
     };
   }, [autoSync, loadStatus, sync]);
 
-  const notConnected = status && !status.tokens_present;
+  const notConnected = status && !status.api_key_present;
 
   if (variant === "sidebar") {
-    const healthy = status?.tokens_present && !status.last_error;
+    const healthy = status?.api_key_present && !status.last_error;
     return (
       <div className="space-y-1 text-xs text-[#c9c9c3]">
         <div className="flex items-center gap-2">
@@ -129,6 +129,13 @@ export function GarminSync({
           <button type="button" onClick={() => sync(true)} disabled={syncing}
             className="underline underline-offset-2 hover:text-white disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
       </div>
+    );
+  }
+
+  // Watchless athletes (no key ever set up) get a quiet link, not a disabled sync button
+  if (notConnected && !status?.last_sync_at) {
+    return (
+      <Link href="/settings" className="text-xs text-muted-foreground underline underline-offset-2">Connect Garmin</Link>
     );
   }
 

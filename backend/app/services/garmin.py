@@ -1,15 +1,14 @@
-"""Garmin Connect integration.
+"""Garmin Connect integration (official Personal API).
 
-Garmin's official Activity API is enterprise-only, so Stride uses the
-`garminconnect` library, which talks to Garmin Connect as you. Login happens
-once via `python garmin_login.py` (email, password, MFA code if enabled);
-the resulting tokens are saved to `settings.garmin_tokenstore` and reused
-here — your password is never stored.
+Stride reads the athlete's own Garmin data with a Garmin Connect Personal API key
+(`GARMIN_API_KEY`, created at connect.garmin.com/app/settings/personalApiToken).
+See `services/garmin_api.py` for the client and what the API does not expose.
 
 Sync modes:
-- incremental: newest activities first, stops at the first one already stored.
-  Cheap enough to run every few minutes (auto-sync loop in main.py).
-- full: walks the entire Garmin history (first connect / repair).
+- incremental: one date-windowed request for runs since the newest stored run
+  (minus a 2-day overlap so renamed/late-uploaded runs come through). Garmin
+  filters non-runs server-side; only new runs cost a FIT download (for laps).
+- full: walks the entire running history (first connect / repair). Resumable.
 
 Activities previously imported from Strava are matched by start time + distance
 and upgraded in place (keeping their descriptions, feel ratings and plan links)
@@ -22,68 +21,72 @@ import logging
 import statistics
 import threading
 import time
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import date, datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models.activity import Activity, runs_only
 from app.models.garmin import GarminConnection
 from app.services.descriptions import is_workout_description
-from app.services.lap_analyzer import lap_pace_per_mile, summarize_workout
+from app.services.garmin_api import (
+    GarminAuthError, GarminNotConnected, GarminRateLimited, get_client, has_api_key, laps_from_fit, reset_client,
+)
+from app.services.lap_analyzer import summarize_workout
 
 logger = logging.getLogger("stride.garmin")
 
 METERS_PER_MILE = 1609.34
-METERS_TO_FEET = 3.28084
-TOKEN_FILE = "garmin_tokens.json"
-PAGE_SIZE_INCREMENTAL = 20
-PAGE_SIZE_FULL = 100
-FULL_SYNC_DELAY = 0.4  # seconds between per-activity requests during full sync
+PAGE_SIZE = 100
+OVERLAP_DAYS = 2  # incremental window reaches back past the newest stored run
+FULL_SYNC_DELAY = 0.4  # seconds between FIT downloads during a full import
 RATE_LIMIT_BACKOFF = timedelta(minutes=30)  # after a Garmin 429, stop calling for this long
+ERROR_BACKOFF = timedelta(minutes=10)  # network / 5xx: don't hammer Garmin every minute
+AUTH_BACKOFF = timedelta(hours=12)  # rejected key: needs a new key (and restart) anyway
 
-_client = None
-_client_lock = threading.Lock()
 _sync_lock = threading.Lock()
 # Serializes every network call through the shared Garmin client (activity + wellness sync)
 garmin_io_lock = threading.RLock()
 
-
-class GarminNotConnected(Exception):
-    pass
+__all__ = ["GarminNotConnected", "has_api_key", "laps_from_fit", "poll_due", "sync_garmin", "garmin_io_lock"]
 
 
-# ── Auth ────────────────────────────────────────────────────────
-
-def token_dir() -> Path:
-    return Path(settings.garmin_tokenstore).expanduser()
-
-
-def has_tokens() -> bool:
-    return (token_dir() / TOKEN_FILE).exists()
+def _in_quiet_hours(hour: int, spec: str) -> bool:
+    try:
+        start, end = (int(x) for x in spec.split("-"))
+    except ValueError:
+        return False
+    return start <= hour or hour < end if start > end else start <= hour < end
 
 
-def get_client():
-    """Return a logged-in Garmin client, built from saved tokens."""
-    global _client
-    with _client_lock:
-        if _client is not None:
-            return _client
-        if not has_tokens():
-            raise GarminNotConnected("No Garmin tokens. Run `python garmin_login.py` in backend/.")
-        from garminconnect import Garmin
-
-        client = Garmin()
-        client.login(str(token_dir()))
-        _client = client
-        return client
+def clear_backoff(user_id: int):
+    """On startup: the process may have a new key, so give it a fresh chance."""
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        conn = db.query(GarminConnection).filter(GarminConnection.user_id == user_id).first()
+        if conn and conn.backoff_until:
+            conn.backoff_until = None
+            db.commit()
 
 
-def reset_client():
-    global _client
-    with _client_lock:
-        _client = None
+def poll_due(user_id: int, now: datetime | None = None) -> bool:
+    """Is a background check due? Any sync (including the app-open one) resets the clock,
+    and overnight checks drop to hourly."""
+    from app.config import settings
+    from app.database import SessionLocal
+
+    if settings.garmin_poll_minutes <= 0:
+        return False
+    now = now or datetime.now()
+    interval = timedelta(minutes=settings.garmin_poll_minutes)
+    if _in_quiet_hours(now.hour, settings.garmin_quiet_hours):
+        interval = max(interval, timedelta(hours=1))
+    with SessionLocal() as db:
+        conn = db.query(GarminConnection).filter(GarminConnection.user_id == user_id).first()
+        if conn and conn.backoff_until and conn.backoff_until > now:
+            return False
+        last = conn.last_sync_at if conn else None
+    return last is None or now - last >= interval
 
 
 def get_connection(user_id: int, db: Session) -> GarminConnection:
@@ -150,29 +153,6 @@ def parse_activity(raw: dict) -> dict | None:
         "calories": raw.get("calories"),
         "workout_type": "race" if event == "race" else None,
     }
-
-
-def parse_laps(splits_response: dict | None) -> list[dict]:
-    """Normalize Garmin lapDTOs into Stride's split format."""
-    laps = []
-    for i, lap in enumerate((splits_response or {}).get("lapDTOs") or [], 1):
-        distance = lap.get("distance") or 0.0
-        duration = lap.get("movingDuration") or lap.get("duration") or 0.0
-        entry = {
-            "mile": i,  # lap number (kept as "mile" for frontend compatibility)
-            "distance_m": round(distance, 1),
-            "distance_miles": round(distance / METERS_PER_MILE, 2),
-            "duration_s": round(duration, 1),
-            "duration_seconds": round(duration, 1),
-            "heart_rate": round(lap["averageHR"]) if lap.get("averageHR") else None,
-            "elevation_diff_ft": round(((lap.get("elevationGain") or 0) - (lap.get("elevationLoss") or 0)) * METERS_TO_FEET, 1),
-            "intensity": lap.get("intensityType"),
-        }
-        pace = lap_pace_per_mile(entry)
-        entry["pace_seconds"] = round(pace, 1) if pace else None
-        entry["pace"] = f"{int(pace // 60)}:{int(pace % 60):02d}/mi" if pace else "—"
-        laps.append(entry)
-    return laps
 
 
 def build_description(user_desc: str | None, laps: list[dict], easy_pace_sec: float | None) -> str | None:
@@ -257,8 +237,19 @@ def recent_easy_pace(user_id: int, db: Session, as_of: datetime | None = None) -
 
 
 def _find_legacy_match(user_id: int, parsed: dict, db: Session) -> Activity | None:
-    """Find a non-Garmin activity (e.g. Strava import) that is the same run."""
+    """Find a non-Garmin activity (e.g. Strava import) that is the same run.
+
+    A hand-logged run (source="manual", one per day, stored at noon) has no real start
+    time, so it matches the watch run on the same calendar day: the upload replaces it
+    instead of counting the day twice. Its feedback and plan links are kept."""
     start = parsed["date"]
+    day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    manual = db.query(Activity).filter(
+        Activity.user_id == user_id, Activity.source == "manual",
+        Activity.date >= day, Activity.date < day + timedelta(days=1),
+    ).first()
+    if manual:
+        return manual
     window = timedelta(minutes=10)
     candidates = db.query(Activity).filter(
         Activity.user_id == user_id,
@@ -304,24 +295,18 @@ def _store_activity(client, user_id: int, raw: dict, parsed: dict, db: Session, 
     _apply(activity, parsed)
 
     try:
-        laps = parse_laps(client.get_activity_splits(parsed["external_id"]))
+        laps = client.get_laps(parsed["external_id"])
+    except (GarminAuthError, GarminRateLimited):
+        raise
     except Exception as e:  # laps are a bonus; never fail the sync over them
         logger.warning("Lap fetch failed for %s: %s", parsed["external_id"], e)
         laps = []
     if laps:
         activity.splits = json.dumps(laps)
 
-    user_desc = raw.get("description")
-    if user_desc is None and outcome == "new":
-        try:
-            detail = client.get_activity(parsed["external_id"]) or {}
-            user_desc = detail.get("description")
-        except Exception:
-            pass
-    # Keep hand-written Strava descriptions on merged runs
-    base_desc = user_desc or (legacy_desc if outcome != "new" else None)
-    if base_desc and base_desc.startswith("Garmin laps:"):
-        base_desc = None  # regenerate our own summary rather than nesting it
+    # The Personal API carries no activity notes; keep hand-written Strava text on merged runs.
+    base_desc = legacy_desc if outcome != "new" else None
+    base_desc = _strip_lap_summary(base_desc)  # regenerate our own summary rather than nesting it
     activity.description = build_description(base_desc, laps, easy_pace)
     activity.has_workout_description = is_workout_description(activity.description)
     if outcome in {'new', 'merged'}:
@@ -345,6 +330,18 @@ def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
         _sync_lock.release()
 
 
+def _pages(client, start_date: date | None = None, end_date: date | None = None):
+    """Yield pages of runs (newest first) until Garmin returns a short page."""
+    start = 0
+    while True:
+        batch = client.search_runs(start, PAGE_SIZE, start_date, end_date)
+        if batch:
+            yield batch
+        if len(batch) < PAGE_SIZE:
+            return
+        start += PAGE_SIZE
+
+
 def _sync(user_id: int, db: Session, full: bool) -> dict:
     conn = get_connection(user_id, db)
     try:
@@ -355,63 +352,65 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         db.commit()
         raise
     except Exception as e:
-        reset_client()
         _record_failure(conn, e)
         db.commit()
         raise
 
     if not conn.display_name:
         try:
-            conn.display_name = client.get_full_name()
+            conn.display_name = client.display_name()
+        except (GarminAuthError, GarminRateLimited):
+            pass  # the activity request below reports these properly
         except Exception:
-            pass
-
-    known = {
-        ext for (ext,) in db.query(Activity.external_id).filter(
-            Activity.user_id == user_id, Activity.source == "garmin"
-        )
-    }
+            pass  # cosmetic; never fail a sync over the profile name
+    known, lapless = set(), set()
+    for ext, splits in db.query(Activity.external_id, Activity.splits).filter(
+            Activity.user_id == user_id, Activity.source == "garmin"):
+        known.add(ext)
+        if not splits or splits == "[]":
+            lapless.add(ext)
     # Until one full import has completed (it may have been interrupted), keep walking the
     # whole history — but skip runs already stored, so a resume doesn't redo finished work.
     backfill = not full and not conn.full_sync_done
     full = full or backfill
-    page_size = PAGE_SIZE_FULL if full else PAGE_SIZE_INCREMENTAL
     easy_paces = EasyPaceIndex(user_id, db)
-    counts = {"new": 0, "merged": 0, "updated": 0, "skipped_non_runs": 0, "seen": 0}
-    refresh_cutoff = datetime.now() - timedelta(hours=48)
+    counts = {"new": 0, "merged": 0, "updated": 0, "seen": 0, "requests": 0}
 
-    start = 0
+    if full:
+        pages = _pages(client)
+    else:
+        newest = db.query(func.max(Activity.date)).filter(
+            Activity.user_id == user_id, Activity.source == "garmin").scalar()
+        since = (newest or datetime.now()).date() - timedelta(days=OVERLAP_DAYS)
+        pages = _pages(client, since, date.today() + timedelta(days=1))
+
     try:
-        while True:
-            batch = client.get_activities(start, page_size) or []
-            if not batch:
-                break
-            reached_known = False
+        for batch in pages:
+            counts["requests"] += 1
             for raw in batch:
                 counts["seen"] += 1
                 parsed = parse_activity(raw)
                 if parsed is None:
-                    counts["skipped_non_runs"] += 1
                     continue
-                if parsed["external_id"] in known and backfill:
+                if parsed["external_id"] in known:
+                    if parsed["external_id"] in lapless and not backfill:
+                        # A FIT download failed earlier: retry, or the workout can never be evaluated
+                        counts["requests"] += 1
+                        if _repair_laps(client, user_id, parsed, db, easy_paces.at(parsed["date"])):
+                            counts["updated"] += 1
+                            lapless.discard(parsed["external_id"])
+                    if not backfill:
+                        _refresh_summary(user_id, parsed, db)
                     continue
-                if parsed["external_id"] in known and not full:
-                    # Re-check the last 48h so renamed runs / added notes come through
-                    if parsed["date"] >= refresh_cutoff:
-                        _refresh_summary(user_id, raw, parsed, db)
-                        continue
-                    reached_known = True
-                    break
                 outcome = _store_activity(client, user_id, raw, parsed, db, easy_paces.at(parsed["date"]))
+                counts["requests"] += 1
                 counts[outcome] += 1
+                known.add(parsed["external_id"])
                 if full:
                     time.sleep(FULL_SYNC_DELAY)
-                    if (counts["new"] + counts["merged"] + counts["updated"]) % 25 == 0:
+                    if (counts["new"] + counts["merged"]) % 25 == 0:
                         db.commit()
             db.commit()
-            if reached_known or len(batch) < page_size:
-                break
-            start += page_size
     except Exception as e:
         db.rollback()
         conn = get_connection(user_id, db)
@@ -446,35 +445,49 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
 
 
 def _record_failure(conn: GarminConnection, e: Exception):
-    """Classify a Garmin failure: expired session (rebuild client), rate limit (back off)."""
-    from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
-
-    if isinstance(e, GarminConnectAuthenticationError):
+    """Classify a Garmin failure: rejected key (needs a new one), rate limit (back off)."""
+    if isinstance(e, GarminAuthError):
         reset_client()
         conn.connected = False
-        conn.last_error = "Garmin session expired. Re-run `python garmin_login.py` in backend/."
-    elif isinstance(e, GarminConnectTooManyRequestsError):
+        conn.backoff_until = datetime.now() + AUTH_BACKOFF  # a restart with a new key clears it
+        conn.last_error = ("Garmin rejected the API key (expired or deleted). Create a new Personal API key "
+                           "at connect.garmin.com/app/settings/personalApiToken and update GARMIN_API_KEY.")
+    elif isinstance(e, GarminRateLimited):
         conn.backoff_until = datetime.now() + RATE_LIMIT_BACKOFF
         conn.last_error = "Garmin rate limit hit; pausing sync for 30 minutes."
     else:
+        conn.backoff_until = datetime.now() + ERROR_BACKOFF
         conn.last_error = f"Sync error: {type(e).__name__}"
     logger.warning("Garmin sync failed for user %s: %s", conn.user_id, e)
 
 
-def _refresh_summary(user_id: int, raw: dict, parsed: dict, db: Session):
+def _repair_laps(client, user_id: int, parsed: dict, db: Session, easy_pace: float | None) -> bool:
+    activity = db.query(Activity).filter(
+        Activity.user_id == user_id, Activity.source == "garmin", Activity.external_id == parsed["external_id"]).first()
+    try:
+        laps = client.get_laps(parsed["external_id"])
+    except (GarminAuthError, GarminRateLimited):
+        raise
+    except Exception as e:
+        logger.warning("Lap retry failed for %s: %s", parsed["external_id"], e)
+        return False
+    if not activity or not laps:
+        return False
+    activity.splits = json.dumps(laps)
+    activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace)
+    activity.has_workout_description = is_workout_description(activity.description)
+    return True
+
+
+def _refresh_summary(user_id: int, parsed: dict, db: Session):
+    """Runs inside the overlap window: pick up renames (the API carries no notes)."""
     activity = db.query(Activity).filter(
         Activity.user_id == user_id,
         Activity.source == "garmin",
         Activity.external_id == parsed["external_id"],
     ).first()
-    if not activity:
-        return
-    activity.name = parsed["name"]
-    user_desc = raw.get("description")
-    if user_desc and user_desc not in (activity.description or ""):
-        laps = json.loads(activity.splits) if activity.splits else []
-        activity.description = build_description(user_desc, laps, recent_easy_pace(user_id, db, activity.date))  # rare path
-        activity.has_workout_description = is_workout_description(activity.description)
+    if activity and parsed["name"] and activity.name != parsed["name"]:
+        activity.name = parsed["name"]
 
 
 def _strip_lap_summary(description: str | None) -> str | None:

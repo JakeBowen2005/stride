@@ -171,6 +171,7 @@
   --type-intervals: #7c3aed; --type-intervals-tint: #efe7fe;
   --type-hills: #4d7c0f;    --type-hills-tint: #eef6df;
   --type-support: #0e7490;  --type-support-tint: #def4f8;
+  --type-controlled: #0e7490; --type-controlled-tint: #def4f8;
   --type-race: #be123c;     --type-race-tint: #fde4ea;
   --type-rest: #6b6b66;     --type-rest-tint: #efefec;
   --row-hover: #f3f3ef;

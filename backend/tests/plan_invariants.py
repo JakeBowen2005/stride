@@ -122,7 +122,10 @@ def plan_invariant_violations(
     if load.get("mode") == "start":  # no usable history: the policy's starting load is the anchor
         anchor = max(anchor, *(load.get("weekly_budgets") or [0]))
     ceiling = anchor * (1 + rate)
+    developmental = bool(load.get('developmental'))
     for w in weeks:
+        if developmental:
+            ceiling = anchor * (1 + min(rate, .10)) ** min(w['week_number'], 2)
         locked = sum(d["distance_miles"] for d in w["days"] if not d.get("prescribed", True))
         if _training_miles(w) > max(ceiling, locked) + MILES_TOLERANCE:
             problems.append(f"ramp: week {w['week_number']} schedules {_training_miles(w):.1f} mi, above "
@@ -139,6 +142,11 @@ def plan_invariant_violations(
     deload_week = load.get("deload_week")
     if completed_weeks is not None:
         due, _ = deload_due(completed_weeks, experience)
+        if developmental:
+            from app.core.developmental import deload_supported
+            dates = [date.fromisoformat(d['date']) for w in weeks for d in w['days'] if d.get('prescribed', True)]
+            evidence = (plan.get('quality_policy') or (athlete.get('quality_policy') or {})).get('evidence', {})
+            due = due and deload_supported(completed_weeks, evidence, min(dates))
         if (plan.get("assessment") or {}).get("decision") in ("reduce", "recovery"):
             due = False  # a reduced block already is the lighter block
         eligible = [i for i, w in enumerate(weeks) if _fully_prescribed(w) and _phase(w) in PRE_TAPER]
@@ -148,13 +156,14 @@ def plan_invariant_violations(
                             f"expects deload week index {expected}, plan has {deload_week}")
     if deload_week is not None and 0 <= deload_week < len(weeks):
         w = weeks[deload_week]
-        if w["budget_miles"] > baseline * DELOAD_FACTOR + MILES_TOLERANCE:
+        deload_anchor = anchor if developmental else baseline
+        if w["budget_miles"] > deload_anchor * DELOAD_FACTOR + MILES_TOLERANCE:
             problems.append(f"deload: week {w['week_number']} budget {w['budget_miles']} is not "
                             f"≤ {DELOAD_FACTOR:.0%} of baseline {baseline}")
         if sum(d["type"] == "workout" for d in w["days"]) > 1:
             problems.append(f"deload: week {w['week_number']} keeps more than one quality session")
         for after in weeks[deload_week + 1:]:
-            if _training_miles(after) > baseline + MILES_TOLERANCE and _phase(after) in PRE_TAPER:
+            if _training_miles(after) > deload_anchor + MILES_TOLERANCE and _phase(after) in PRE_TAPER:
                 problems.append(f"deload: week {after['week_number']} jumps past baseline right after the deload")
 
     # 4. Taper: volume never rises from the first taper week through race week.

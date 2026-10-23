@@ -110,6 +110,8 @@ export interface ActualRun {
 
 export interface DayFeedback {
   feel_rating: number | null;
+  effort_rating?: number | null;
+  reported_completion?: { status: string; reps?: number | null; minutes?: number | null; source: string } | null;
   feel_notes: string | null;
   pace_assessment: string | null;
   swapped: boolean;

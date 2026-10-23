@@ -44,6 +44,13 @@ class FeedbackRequest(BaseModel):
     swap_reason: str | None = None
     actual_workout_type: str | None = None  # what they did if swapped
     desired_reschedule_type: str | None = None  # what they want rescheduled as
+    effort_rating: int | None = Field(default=None, ge=1, le=10)  # how hard the session was (not how you felt)
+    completion: Literal["full", "partial", "not_done"] | None = None  # self-reported, for runs without laps
+    completed_reps: int | None = Field(default=None, ge=0, le=100)
+    completed_minutes: float | None = Field(default=None, ge=0, le=600)
+    # No watch? Log the run itself (stored as a source="manual" activity for this date)
+    manual_distance_miles: float | None = Field(default=None, gt=0, le=150)
+    manual_duration_minutes: float | None = Field(default=None, gt=0, le=1800)
 
 
 @router.post("/{user_id}/generate")
@@ -66,7 +73,12 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     analysis = analyze_athlete(user_id, db)
     if "error" in analysis:
-        raise HTTPException(status_code=400, detail="Not enough data to generate a plan. Sync activities first.")
+        from app.services.analyzer import starter_analysis
+        analysis = starter_analysis(user)
+        if analysis is None:
+            raise HTTPException(status_code=400, detail=(
+                "Stride needs a starting point: sync Garmin, or tell us in Settings how long you can run "
+                "without stopping right now."))
 
     current_fitness = analysis["current_fitness"]
     paces = analysis["paces"]
@@ -200,6 +212,9 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
         reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks,
+        continuous_run_minutes=user.continuous_run_minutes,
+        run_walk_weeks=_run_days_since(user, db),
+        previous_block=json.loads(prev_plan.load) if assessment and prev_plan and prev_plan.load else None,
         fatigue_recovery=bool(fatigue),
         workout_format=user.workout_format or 'distance',
         quality_evidence=quality_evidence, previous_quality_stage=prior_quality,
@@ -211,6 +226,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
     )
+    _save_run_walk_progress(user, analysis["overview"]["experience_level"], goal, db)
     plan_data["notes"].insert(0, "Reduced recovery load already provides a lighter block; no additional deload added."
                               if is_deload_due and effective_assessment in ("reduce", "recovery") else deload_reason)
     if assessment:
@@ -569,6 +585,8 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
             "walks": [_activity_line(a) for a in walks_by_date.get(pw.date, [])],
             "feedback": {
                 "feel_rating": pw.feel_rating,
+                "effort_rating": pw.effort_rating,
+                "reported_completion": _reported(pw),
                 "feel_notes": pw.feel_notes,
                 "pace_assessment": pw.pace_assessment,
                 "swapped": pw.swapped,
@@ -613,7 +631,94 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         "notes": json.loads(db_plan.notes) if db_plan.notes else [],
         "goal": json.loads(db_plan.goal_snapshot) if db_plan.goal_snapshot else {},
         "athlete": json.loads(db_plan.athlete_snapshot) if db_plan.athlete_snapshot else {},
+        "outlook": _outlook(user_id, db_plan, db),
+        "review": _review(db_plan),
     }
+
+
+def _run_days_since(user: User, db: Session) -> list[int]:
+    """Run days in each completed calendar week since the athlete set their starting point."""
+    if user.continuous_run_minutes is None:
+        return []
+    monday = date.today() - timedelta(days=date.today().weekday())
+    start = date.fromisoformat(user.continuous_run_set_on) if user.continuous_run_set_on else monday
+    start = max(start - timedelta(days=start.weekday()), monday - timedelta(weeks=8))
+    rows = db.query(Activity.date).filter(
+        Activity.user_id == user.id, runs_only(),
+        Activity.date >= datetime.combine(start, datetime.min.time()),
+        Activity.date < datetime.combine(monday, datetime.min.time())).all()
+    days = {d.date() for (d,) in rows}
+    weeks = (monday - start).days // 7
+    return [len({d for d in days if start + timedelta(weeks=w) <= d < start + timedelta(weeks=w + 1)}) for w in range(weeks)]
+
+
+def _save_run_walk_progress(user: User, experience: str, goal: Goal, db: Session):
+    """Bank completed run/walk steps so old history falling out of the window never resets them."""
+    from app.core import developmental
+    if user.continuous_run_minutes is None or not developmental.uses_developmental(experience, goal.goal_type, goal.race_distance):
+        return
+    weeks = _run_days_since(user, db)
+    if not weeks:
+        return
+    stage = developmental.run_walk_stage(user.continuous_run_minutes, weeks)
+    minutes = developmental.stage_minutes(stage)
+    if minutes != user.continuous_run_minutes:
+        user.continuous_run_minutes = minutes
+    user.continuous_run_set_on = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+
+
+def _review(db_plan: Plan) -> dict | None:
+    from app.core.outlook import block_review
+    return block_review(json.loads(db_plan.assessment) if db_plan.assessment else None,
+                        json.loads(db_plan.load) if db_plan.load else None)
+
+
+def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
+    """The route to the active goal from real training, reassessed on every read."""
+    from app.core import developmental
+    from app.core.load_policy import ramp_rate
+    from app.core.outlook import goal_outlook
+    from app.services.analyzer import compute_weekly_mileage
+
+    goal = db.query(Goal).filter(Goal.user_id == user_id, Goal.active == True).first()  # noqa: E712
+    user = db.get(User, user_id)
+    if not goal or not user:
+        return None
+    monday = date.today() - timedelta(days=date.today().weekday())
+    weekly = {w['week_start']: w['actual'] for w in compute_weekly_mileage(user_id, db, weeks=10)}
+    full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
+    baseline = round(sum(full_weeks[-4:]) / 4, 1)
+    runs = db.query(Activity.date, Activity.distance_meters).filter(
+        Activity.user_id == user_id, runs_only(),
+        Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time())).all()
+    run_days = [len({d.date() for d, _ in runs if monday - timedelta(weeks=i) <= d.date() < monday - timedelta(weeks=i - 1)})
+                for i in range(4, 0, -1)]
+    recent_long = max((m / 1609.34 for d, m in runs if d.date() >= date.today() - timedelta(days=28)), default=0)
+    experience = (json.loads(db_plan.athlete_snapshot or '{}').get('experience_level') if db_plan else None) \
+        or user.experience_level or 'beginner'
+    from app.core.workout_ladders import program_key
+    dev = db.query(WorkoutProgression).filter_by(user_id=user_id, category='development',
+                                                 program_key=program_key(goal.race_distance or goal.goal_type)).first()
+    developing = developmental.uses_developmental(experience, goal.goal_type, goal.race_distance)
+    weeks_away = ((date.fromisoformat(goal.race_date) - date.today()).days / 7) if goal.race_date else None
+    if weeks_away is not None and weeks_away < 0:
+        weeks_away = None  # race is past: no preparation gap to report
+    rate = min(ramp_rate(max(baseline, 1), user.peak_weekly_mileage or baseline, experience, goal.goal_type), .10)
+    return goal_outlook(
+        goal_type=goal.goal_type, distance=goal.race_distance, race_weeks_away=weeks_away,
+        destination=goal.target_weekly_mileage, baseline=baseline, recent_long_run=recent_long,
+        experience=experience, run_days_recent=run_days, days_per_week=user.days_per_week or 6,
+        development_level=(dev.current_level if dev else 1) if developing else None,
+        run_walk_stage=developmental.run_walk_stage(user.continuous_run_minutes, _run_days_since(user, db)) if developing else None,
+        weekly_rate=rate or .08,
+    )
+
+
+@router.get("/{user_id}/outlook")
+def get_outlook(user_id: int, db: Session = Depends(get_db)):
+    """Milestones toward the active goal and any preparation gaps (no plan needed)."""
+    active = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()  # noqa: E712
+    return _outlook(user_id, active, db)
 
 
 @router.get("/{user_id}/goal")
@@ -797,11 +902,17 @@ def submit_feedback(
         raise HTTPException(status_code=404, detail="No planned workout for this date")
 
     activities = _get_activities_for_date(feedback_date, user_id, db)
+    if req.manual_distance_miles and req.manual_duration_minutes:
+        _log_manual_run(user_id, feedback_date, req, activities, db)
+        activities = _get_activities_for_date(feedback_date, user_id, db)
 
     # Claim the side effects atomically. Only the first successful submission for a
     # day applies progression / rescheduling / fatigue changes; edits, retries and
     # concurrent duplicates update the rating and notes only.
-    claimed = db.query(PlannedWorkout).filter(
+    # Without a run or a completion report there is no evidence yet: save the rating, but leave
+    # the day's adjustments for when the run (e.g. a later Garmin upload) arrives.
+    has_evidence = bool(activities) or req.completion is not None or req.swapped
+    claimed = has_evidence and db.query(PlannedWorkout).filter(
         PlannedWorkout.id == pw.id, PlannedWorkout.side_effects_applied_at.is_(None)
     ).update({"side_effects_applied_at": datetime.now()}, synchronize_session=False) == 1
 
@@ -812,6 +923,10 @@ def submit_feedback(
     pw.swapped = req.swapped
     pw.swap_reason = req.swap_reason
     pw.actual_workout_type = req.actual_workout_type
+    pw.effort_rating = req.effort_rating
+    pw.reported_completion = json.dumps({
+        "status": req.completion, "reps": req.completed_reps, "minutes": req.completed_minutes,
+        "source": "self_reported"}) if req.completion else None
 
     evidence_act = _work_evidence_activity(activities)
     if evidence_act:
@@ -847,6 +962,8 @@ def submit_feedback(
     return {
         "date": feedback_date,
         "feel_rating": pw.feel_rating,
+        "effort_rating": pw.effort_rating,
+        "reported_completion": _reported(pw),
         "pace_assessment": pw.pace_assessment,
         "swapped": pw.swapped,
         "coach_response": coach_response,
@@ -857,6 +974,40 @@ def submit_feedback(
         "evaluation": evaluation,
         "side_effects_applied": claimed,
     }
+
+
+def _previous_development_effort(pw: PlannedWorkout, db: Session) -> int:
+    """Effort rating of the athlete's previous controlled-effort session (0 if none)."""
+    rows = db.query(PlannedWorkout).join(Plan).filter(
+        Plan.user_id == pw.plan.user_id, PlannedWorkout.date < pw.date, PlannedWorkout.type == "workout",
+        PlannedWorkout.effort_rating.isnot(None)).order_by(PlannedWorkout.date.desc()).limit(5).all()
+    previous = next((r for r in rows if (loads(r.prescription) or {}).get("category") == "development"), None)
+    return previous.effort_rating if previous else 0
+
+
+def _reported(pw: PlannedWorkout) -> dict | None:
+    try:
+        return json.loads(pw.reported_completion) if pw.reported_completion else None
+    except ValueError:
+        return None
+
+
+def _log_manual_run(user_id: int, day: str, req: FeedbackRequest, activities: list[Activity], db: Session):
+    """A watchless run: one manual activity per day, edited in place on resubmission.
+    Never added next to a recorded (Garmin) run, which is better evidence."""
+    if any(a.source != "manual" for a in activities):
+        raise HTTPException(409, "A recorded run already exists for this day; manual entry is for runs without a watch.")
+    meters = req.manual_distance_miles * 1609.34
+    seconds = req.manual_duration_minutes * 60
+    row = next((a for a in activities if a.source == "manual"), None) or Activity(
+        user_id=user_id, source="manual", external_id=f"manual-{day}",
+        date=datetime.combine(date.fromisoformat(day), datetime.min.time()).replace(hour=12))
+    row.name = "Manual run"
+    row.distance_meters = meters
+    row.duration_seconds = row.elapsed_seconds = seconds
+    row.average_pace_per_km = seconds / (meters / 1000)
+    db.add(row)
+    db.commit()
 
 
 def _work_evidence_activity(activities: list[Activity]) -> Activity | None:
@@ -903,7 +1054,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
         pw.actual_workout_type = req.actual_workout_type or evaluation["executed"]["category"]
     elif pw.type == "workout" and not req.swapped:
         prescribed = loads(pw.prescription)
-        category = (prescribed["category"] if prescribed["category"] in {"threshold", "intervals"} else None) if prescribed else _detect_workout_category(pw.title)
+        category = (prescribed["category"] if prescribed["category"] in {"threshold", "intervals", "development"} else None) if prescribed else _detect_workout_category(pw.title)
         if category:
             execution = execution_from_activities(activities, prescribed) if prescribed else None
             if execution:
@@ -921,9 +1072,16 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 prescribed_name=pw.title,
                 feel_rating=req.feel_rating,
                 prescription=prescribed, execution=execution,
+                effort=req.effort_rating, reported=_reported(pw),
             )
             state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=_plan_program(db_plan)).first()
             ev = gate_progression(ev, prescribed, state.current_level if state else None)
+            if category == "development" and ev.decision == "hold" and (req.effort_rating or 0) >= 8 \
+                    and _previous_development_effort(pw, db) >= 8:
+                # Twice in a row above the controlled target: the dose is too big, not just one off day.
+                ev.decision = "regress"
+                ev.reason = ("Two sessions in a row felt harder than the ~6/10 target, so the next one gets shorter. "
+                             "6/10 is slower than most people expect: you should be able to speak in short sentences.")
             evaluation = ev.to_dict() | {"category": category, "activity_ids": [a.id for a in activities]}
             pw.evaluation = json.dumps(evaluation)
             if not prescribed:
@@ -954,7 +1112,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
         if choice in {"tempo", "intervals", "threshold"}:
             slot, why_not = _find_safe_slot(db_plan, feedback_date, db)
             workout = _generate_swap_workout(user_id, choice, db_plan, db, slot.date) if slot else None
-            if slot and not _fits_week_budget(db_plan, slot, workout.get("total_miles", pw.distance_miles), db):
+            if slot and (not workout or not _fits_week_budget(db_plan, slot, workout.get("total_miles", pw.distance_miles), db)):
                 slot, why_not = None, (
                     "The extra workout doesn't fit that week's mileage budget without overloading it, "
                     "so it was dropped rather than added on top."
@@ -1041,6 +1199,7 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     def original_miles(row):
         return json.loads(row.original_prescription).get('distance_miles', row.distance_miles) if row.original_prescription else row.distance_miles
     budget = budgets[slot.week_number - 1] if 0 < slot.week_number <= len(budgets) else sum(original_miles(row) for row in week)
+    developmental = bool((json.loads(db_plan.load or '{}') or {}).get('developmental'))
     acts = _activities_by_date(db_plan.user_id, min(d.date for d in week), max(d.date for d in week), db)
     actual_miles = lambda row: sum(a.distance_meters for a in acts.get(row.date, [])) / 1609.34 if acts.get(row.date) else row.distance_miles
     total = sum(actual_miles(row) for row in week if row.id != slot.id) + new_miles
@@ -1058,8 +1217,9 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     cuts = []
     import math
     for row in flexible:
-        room = max(0, row.distance_miles - MIN_EASY)
-        cut = min(room, math.ceil(over * 2 - 1e-9) / 2)
+        room = max(0, row.distance_miles - (.5 if developmental else MIN_EASY))
+        precision = 10 if developmental else 2
+        cut = min(room, math.ceil(over * precision - 1e-9) / precision)
         if cut > 0:
             cuts.append((row, cut))
             over -= cut
@@ -1105,7 +1265,7 @@ def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
     """A real run that counts as a hard day for spacing: a classified workout/race/long
     run, or a run that's long relative to the athlete's week (≥8 mi and ≥25% of it)."""
     miles = (a.distance_meters or 0) / 1609.34
-    return (a.workout_type in HARD_ACTIVITY_TYPES) or (miles >= 8 and miles >= 0.25 * baseline_mpw)
+    return (a.workout_type in HARD_ACTIVITY_TYPES or a.workout_type == 'development') or (miles >= 8 and miles >= 0.25 * baseline_mpw)
 
 
 def _assess_previous_block(prev_plan: Plan, db: Session):
@@ -1141,6 +1301,18 @@ def _assess_previous_block(prev_plan: Plan, db: Session):
                         verified = None  # Full distance/duration without intensity evidence is not verified quality.
                     elif verified:
                         verified = evaluation.get("pace_diff_sec", 0) <= 5 and evaluation.get("fade_sec", 0) < 10
+                elif prescribed.get('category') == 'development':
+                    evaluation = evaluate_workout(None, None, None, pw.type, None, pw.title,
+                                                  pw.feel_rating, prescribed, execution, effort=pw.effort_rating).to_dict()
+                    # The session sets its own dose. For volume, completing the work counts;
+                    # only a session that was too much to absorb (regress) holds the block.
+                    verified = evaluation.get('decision') in {'advance', 'hold'} and (completion or 0) >= 1
+            elif prescribed.get('category') == 'development' and pw.reported_completion:
+                # No matching laps: the athlete's own completion report is the (weaker) evidence.
+                evaluation = evaluate_workout(None, None, None, pw.type, None, pw.title, pw.feel_rating,
+                                              prescribed, execution, effort=pw.effort_rating,
+                                              reported=_reported(pw)).to_dict()
+                verified = evaluation.get('decision') in {'advance', 'hold'} and evaluation.get('completion') == 1
         elif pw.type == "long_run" and prescribed and prescribed.get("segments") and demanding_long_run(pw):
             # Marathon-pace / steady / race-effort segments are checked like workout reps: every
             # segment run at its distance, and paced ones no more than 10s/mi slower than target.
@@ -1351,7 +1523,13 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
     from app.core.workout_ladders import program_key
     key = program_key(goal_distance)
     result = {}
-    for category in ("intervals", "threshold"):
+    from app.core.developmental import uses_developmental
+    user = db.get(User, user_id)
+    categories = ['intervals', 'threshold']
+    goal = db.query(Goal).filter(Goal.user_id == user_id, Goal.active == True).first()  # noqa: E712
+    if user and uses_developmental(user.experience_level, goal.goal_type if goal else None, goal_distance):
+        categories.append('development')
+    for category in categories:
         prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=key).first()
         if not prog:
             legacy = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=None).first()
@@ -1370,6 +1548,11 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
         result[category] = {"current_level": prog.current_level, "current_pace_sec": prog.current_pace_sec,
                             "format_rotation": prog.format_rotation, "last_execution": prog.last_execution,
                             "sessions_at_level": prog.sessions_at_level, "program_key": key}
+        if category == 'development':
+            last = db.query(PlannedWorkout).join(Plan).filter(Plan.user_id == user_id,
+                Plan.preview_state.is_(None), PlannedWorkout.date == str(prog.last_workout_date)).order_by(PlannedWorkout.id.desc()).all()
+            result[category]['last_completed_level'] = next(((loads(r.prescription) or {}).get('level') for r in last
+                if (loads(r.prescription) or {}).get('category') == 'development'), None)
 
     # No commit here: the caller's transaction (plan generation) owns it
     db.flush()
@@ -1410,6 +1593,23 @@ def _update_progression_from_evaluation(
     prog.last_workout_name = workout_name
     prog.last_execution = evaluation_decision
 
+    if category == 'development':
+        # Four successful exposures for beginners, two for intermediates.
+        # Repeated feedback is idempotent at the caller; holds/unknown work
+        # never count as successes. This category never stores a numeric pace.
+        prog.current_pace_sec = None
+        if evaluation_decision == 'advance':
+            prog.sessions_at_level += 1
+            needed = 4 if db.get(User, user_id).experience_level == 'beginner' else 2
+            if prog.sessions_at_level >= needed:
+                prog.current_level = min(prog.current_level + 1, 12)
+                prog.sessions_at_level = 0
+        elif evaluation_decision == 'regress':
+            prog.current_level = max(prog.current_level - 1, 1)
+            prog.sessions_at_level = 0
+        db.add(prog)
+        return
+
     # One lever per decision: advance moves the level, recalibrate moves the pace.
     if evaluation_decision == "advance":
         prog.current_level = min(prog.current_level + 1, 12)
@@ -1428,7 +1628,7 @@ def _update_progression_from_evaluation(
     db.add(prog)
 
 
-def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: Session, session_date: str | None = None) -> dict:
+def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: Session, session_date: str | None = None) -> dict | None:
     """Generate a workout from the ladder based on user's desired type."""
     from app.core.workout_ladders import get_workout_at_level
     from app.services.pace_calibrator import calibrate_paces as _calibrate
@@ -1455,6 +1655,14 @@ def _generate_swap_workout(user_id: int, desired_type: str, db_plan: Plan, db: S
 
     from app.core.quality_policy import format_bookends
     user = db.get(User, user_id)
+    from app.core import developmental
+    if json.loads(db_plan.load or '{}').get('developmental'):
+        state = db.query(WorkoutProgression).filter_by(user_id=user_id, category='development', program_key=_plan_program(db_plan)).first()
+        budgets = json.loads(db_plan.load or '{}').get('weekly_budgets', [])
+        budget = budgets[week_index] if week_index < len(budgets) else 0
+        result = developmental.workout(state.current_level if state else 1, paces['long_run_pace'], budget,
+                                       program=_plan_program(db_plan), phase=phase, shape='short' if category == 'intervals' else 'continuous')
+        return result
     return format_bookends(get_workout_at_level(category, level, paces, goal_distance, phase),
                            paces, user.workout_format or 'distance')
 

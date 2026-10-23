@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
+import { BlockReviewPanel, GoalRoute, type BlockReview, type Outlook } from "@/components/goal-route";
 import { PlanDay } from "@/components/plan-day";
 import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
@@ -103,6 +104,8 @@ interface ApiPlan {
     planning_anchor?: number | null;
   } | null;
   assessment?: { decision: string | null; reasons: string[] } | null;
+  outlook?: Outlook | null;
+  review?: BlockReview | null;
   weeks: ApiWeek[];
   pacing_guide: Record<string, string>;
   notes: string[];
@@ -467,6 +470,12 @@ export default function PlanPage() {
           <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
         </div>
       </div>
+      {(plan.review || plan.outlook) && (
+        <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
+          {plan.review && <BlockReviewPanel review={plan.review} />}
+          {plan.outlook && <GoalRoute outlook={plan.outlook} />}
+        </div>
+      )}
       {/* Reference panels under the coach. */}
       <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
         {changes.length === 0 && !plan.assessment?.reasons?.length ? (
