@@ -35,3 +35,65 @@ All regression tests use disposable databases, fake clients and a minimal FIT
 fixture with distinct timer/elapsed times. No Garmin or model credentials are
 needed. Original summary payloads retain local/UTC metadata when supplied;
 canonical `Activity.date` remains the existing local training-calendar timestamp.
+
+## Derived facts and caches
+
+`GET /api/analysis/{user_id}/history` exposes an observed historical profile:
+current completed weeks, up to three non-overlapping sustained four-week blocks,
+long-run evidence and recording gaps. Historical capacity is explicitly separate
+from current fitness. Every block references real activity IDs; absent weeks are
+unknown recording coverage, not a claim that the athlete rested.
+
+Activity edits dirty their affected calendar dates; moving a run dirties both
+old and new dates. The next materialization rebuilds those daily facts and folds
+weekly facts from them. Athlete input revisions invalidate persistent historical
+and baseline snapshots. Feedback, wellness, goals, profile and schedule edits
+also invalidate dependent analysis. Rollbacks roll back invalidation. Bulk ORM
+edits conservatively invalidate all facts because they bypass per-object history.
+Snapshot keys include calculation version and local as-of date, so midnight and
+algorithm updates cannot silently reuse yesterday's interpretation. Read-only
+schedule trials never flush or populate caches. The explicit analysis endpoints
+serialize cache materialization with the existing SQLite write mechanism.
+
+Wellness records immutable range responses and independent endpoint coverage.
+One historical chunk of at most 28 days is attempted per sync after the initial
+recent import, working backward to the first stored activity. An empty successful
+response records access without inventing measurements; partial endpoint failure
+does not advance the common history cursor. Corrected resting HR recalculates the
+following seven days' derived baseline. History does not imply that the athlete
+wore a compatible device for that entire interval.
+
+## Grounded coaching and audit
+
+Coaching receives a compact dossier: recent completed weeks, sustained historical
+blocks, previous race buildups, recording gaps, descriptive recovery comparisons,
+and up to 120 source-reference records. The API profile retains full weekly
+history; years of individual laps are never sent to the model. Recovery comparisons
+require at least four recent and fourteen prior measurements and establish no
+causal relationship or readiness diagnosis.
+
+Model-selected historical highlights must reference a supplied insight ID. The
+server resolves that ID to its own observed fact, activity IDs and dates; unknown
+IDs reject the response. Effort and reported completion are explicit subjective
+inputs, distinct from feel/recovery and measured lap verification. The deterministic
+plan engine still owns prescriptions and progression; importing or repairing
+history never replays past workout progression or changes approved sessions.
+
+Each coaching review retains the exact JSON model input, input revision, model,
+policy version, token usage and result. Credentials and raw FIT/GPS evidence are
+not part of that input. Expensive context and candidate construction is cached
+by athlete revision, date, scope, model, instructions and research content. Prior
+coach notes remain freshly retrieved without invalidating training facts. Saved
+review GETs never initiate provider/model requests. Disposable computation caches
+expire after 45 days; review input snapshots and source evidence are retained.
+
+`POST /api/analysis/{user_id}/history/reparse-fits?force=true&limit=100` reprocesses
+original stored FIT evidence without contacting Garmin, with at most 200 files
+per request. Without `force`, it selects sources not yet parsed by the current
+parser version. Existing records with normalized laps but no original FIT need
+an explicit full sync to acquire that original evidence first. Missing/corrupt
+files do not remove existing athlete feedback.
+
+The History page shows current recorded volume separately from earlier sustained
+training, recording limitations and lap repair status. Historical block evidence
+opens the original run details, including runs outside the first history page.

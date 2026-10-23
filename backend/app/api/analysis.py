@@ -24,7 +24,11 @@ def get_baseline(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    db.info['history_cache_write'] = True
+    from app.api.plans import _begin_schedule_write
+    _begin_schedule_write(db)
     analysis = analyze_athlete(user_id, db)
+    db.commit()
     return analysis
 
 
@@ -293,3 +297,27 @@ def operations(user_id: int, db: Session = Depends(get_db)):
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
                        'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
                        'last_error_type':info.get('last_error_type')}, 'app': {'policy_version':VERSION}}
+
+
+@router.get("/{user_id}/history")
+def get_history(user_id: int, db: Session = Depends(get_db)):
+    from app.services.history_facts import historical_profile
+    from app.services.history_cache import revision
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Athlete not found")
+    from app.api.plans import _begin_schedule_write
+    _begin_schedule_write(db)
+    result = historical_profile(user_id, db)
+    result['revision'] = revision(user_id, db)
+    db.commit()
+    return result
+
+
+@router.post('/{user_id}/history/reparse-fits')
+def reparse_history(user_id: int, force: bool = False, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    from app.services.history_evidence import reparse_fits
+    if not db.get(User, user_id):
+        raise HTTPException(404, 'Athlete not found')
+    _begin_schedule_write(db)
+    return reparse_fits(user_id, db, limit=limit, force=force)

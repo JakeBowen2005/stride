@@ -24,6 +24,7 @@ interface Review {
   plan_fit: "consistent" | "consider_change" | "insufficient_evidence";
   observations: string[];
   uncertainties: string[];
+  history_insights?: { id: string; text: string; dates: string[]; activity_ids: number[] }[];
   research: { id: string; path: string }[];
   suggestions: { id: string; date: string; reason: string;
     before: { title: string; distance_miles: number };
@@ -108,7 +109,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     finally { setBusy(false); }
   }
   const when = review ? new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")) : null;
-  const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0);
+  const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0 || (review.history_insights?.length ?? 0) > 0);
   const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
   return <section className={cn(presentation === "today" ? "space-y-3 text-sm" : "space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
     <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
@@ -156,6 +157,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       {expanded && <div className="space-y-2 text-xs text-muted-foreground">
         {review.observations.length > 0 && <ul className="list-disc space-y-1 pl-4 text-foreground">{review.observations.map((text, i) => <li key={i}>{text}</li>)}</ul>}
         {review.uncertainties.length > 0 && <ul className="list-disc space-y-1 pl-4">{review.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul>}
+        {review.history_insights?.map(insight => <p key={insight.id} className="text-foreground">{insight.text}<span className="block text-muted-foreground">Evidence: {insight.dates.map(formatDateShort).join(" · ")}{insight.activity_ids.length ? ` · ${insight.activity_ids.length} recorded runs` : ""}</span></p>)}
         {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
         <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
       </div>}
