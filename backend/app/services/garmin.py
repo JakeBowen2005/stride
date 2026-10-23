@@ -457,7 +457,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
                     if not backfill:
                         updated = _refresh_summary(user_id, parsed, db, raw)
                         source = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin', external_id=parsed['external_id']).one()
-                        if (explicit_full or parsed['external_id'] in lapless or source.enrichment_status == 'pending') and (explicit_full or source.next_retry_at is None or source.next_retry_at <= datetime.now()):
+                        if explicit_full or (source.enrichment_status in {'pending', 'retry'} and (source.next_retry_at is None or source.next_retry_at <= datetime.now())):
                             attempted.add(parsed['external_id'])
                             activity = db.get(Activity, source.activity_id)
                             if _enrich(client, activity, source, db, easy_paces.at(parsed['date'])):
