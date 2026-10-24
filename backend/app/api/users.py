@@ -395,3 +395,37 @@ def _seconds_to_pace(seconds_per_unit: float) -> str:
     minutes = int(seconds_per_unit // 60)
     secs = int(seconds_per_unit % 60)
     return f"{minutes}:{secs:02d}"
+
+
+class GoalDecision(BaseModel):
+    goal_id: int
+    choice: Literal['completion', 'later_race', 'shorter']
+    race_date: date | None = None
+    race_distance: str | None = None
+
+
+@router.post('/{user_id}/goal/decision')
+def decide_goal(user_id: int, data: GoalDecision, db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write, _outlook
+    _begin_schedule_write(db)
+    goal = db.query(Goal).filter_by(user_id=user_id, active=True).first()
+    if not goal or goal.id != data.goal_id:
+        raise HTTPException(409, 'The goal changed. Refresh before deciding.')
+    if goal.goal_type != 'race':
+        raise HTTPException(422, 'Choose a race goal first.')
+    before = {'race_date': goal.race_date, 'distance': goal.race_distance, 'target_time': goal.target_time_seconds}
+    if data.choice == 'completion':
+        goal.intent, goal.target_time_seconds = 'completion', None
+    elif data.choice == 'later_race':
+        if not data.race_date or data.race_date <= date.today() or (goal.race_date and data.race_date <= date.fromisoformat(goal.race_date)):
+            raise HTTPException(422, 'Choose a later race date.')
+        goal.race_date = data.race_date.isoformat()
+    else:
+        ordered = ['5k', '10k', 'half', 'marathon', '50k', '50mi', '100k', '100mi']
+        if data.race_distance not in ordered or goal.race_distance not in ordered or ordered.index(data.race_distance) >= ordered.index(goal.race_distance):
+            raise HTTPException(422, 'Choose a shorter distance.')
+        goal.race_distance, goal.target_time_seconds = data.race_distance, None
+    goal.decision = json.dumps({'choice': data.choice, 'at': date.today().isoformat(), 'before': before})
+    goal.description = f"{goal.race_distance} on {goal.race_date or 'a date to choose'}" + (' · completion goal' if goal.intent == 'completion' else '')
+    db.commit()
+    return {'outlook': _outlook(user_id, None, db), 'message': 'Goal decision saved. Preview a revised block before approving changes.'}

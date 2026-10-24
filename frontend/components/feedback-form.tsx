@@ -50,6 +50,7 @@ const COMPLETION_OPTIONS = [
 
 interface FeedbackFormProps {
   date: string;
+  activityId?: number;
   /** A Garmin recording exists for the day; otherwise offer manual logging */
   hasRecording?: boolean;
   /** Workout days ask how hard the session was */
@@ -65,7 +66,7 @@ interface FeedbackFormProps {
   fromWatch?: boolean;
 }
 
-export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording = true, isWorkout = false, hasPaceTarget = false, initial, fromWatch = false }: FeedbackFormProps) {
+export function FeedbackForm({ date, activityId, onSubmitted, compact = false, hasRecording = true, isWorkout = false, hasPaceTarget = false, initial, fromWatch = false }: FeedbackFormProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [feel, setFeel] = useState<number | null>(initial?.feel ?? null);
   const [effort, setEffort] = useState<number | null>(initial?.effort ?? null);
@@ -92,7 +93,7 @@ export function FeedbackForm({ date, onSubmitted, compact = false, hasRecording 
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/feedback/${date}`), {
+      const res = await fetch(apiUrl(activityId ? `/analysis/${USER_ID}/activities/${activityId}/feedback` : `/plans/${USER_ID}/feedback/${date}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

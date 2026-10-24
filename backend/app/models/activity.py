@@ -67,6 +67,8 @@ class Activity(Base):
 
     # User feedback (post-run)
     feel_rating: Mapped[int | None] = mapped_column(Integer)  # 1-10
+    effort_rating: Mapped[int | None] = mapped_column(Integer)
+    reported_completion: Mapped[str | None] = mapped_column(String(20))
     feel_notes: Mapped[str | None] = mapped_column(Text)  # free text
     # The watch's own post-run self-evaluation, on Garmin's scales: feel 0/25/50/75/100
     # (very weak .. very strong) and perceived effort 10-100. Stride app ratings win.

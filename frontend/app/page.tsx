@@ -103,7 +103,7 @@ export default function TodayPage() {
   const planStale = !!plan?.is_stale;
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;
-  const awaitingFeedback = runsAwaitingFeedback(plan?.weeks.flatMap((w) => w.days) ?? [], today);
+  const awaitingFeedback = runsAwaitingFeedback(recentRuns, today);
   const todayRunId = primaryRunId(recentRuns, today, todayPlan?.actual?.activity_id);
 
   const weekDone = thisWeek ? thisWeek.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0) : null;
