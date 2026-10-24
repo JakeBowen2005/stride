@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import fitdecode
 from app.models.activity import Activity
 from app.models.user import User
+from app.models.history import ActivitySource
 from app.services.garmin_api import laps_from_fit
 from app.services.history_evidence import source_for,capture,PARSER_VERSION
 
@@ -35,7 +36,8 @@ def import_fit(user_id,blob,db):
     if not blob or len(blob)>MAX_BYTES:
         raise ValueError('Choose a FIT file no larger than 10 MiB.')
     digest=hashlib.sha256(blob).hexdigest()
-    existing=db.query(Activity).filter_by(user_id=user_id,source='manual',external_id='fit-'+digest).first()
+    alias=db.query(ActivitySource).filter_by(user_id=user_id,provider='fit_upload',external_id=digest).first()
+    existing=db.get(Activity,alias.activity_id) if alias else db.query(Activity).filter_by(user_id=user_id,source='manual',external_id='fit-'+digest).first()
     if existing:return {'activity_id':existing.id,'duplicate':True}
     data=read_summary(blob)
     user=db.get(User,user_id)
@@ -58,7 +60,8 @@ def import_fit(user_id,blob,db):
         blob_reference=put_fit(user_id,blob)
     from app.api.plans import _begin_schedule_write
     _begin_schedule_write(db)
-    existing=db.query(Activity).filter_by(user_id=user_id,source='manual',external_id='fit-'+digest).first()
+    alias=db.query(ActivitySource).filter_by(user_id=user_id,provider='fit_upload',external_id=digest).first()
+    existing=db.get(Activity,alias.activity_id) if alias else db.query(Activity).filter_by(user_id=user_id,source='manual',external_id='fit-'+digest).first()
     if existing:
         return {'activity_id':existing.id,'duplicate':True}
     db.add(activity);db.flush()

@@ -67,6 +67,7 @@ class ProfileUpdate(BaseModel):
     name: str | None = None
     timezone: str | None = None
     ai_consent: bool | None = None
+    day_time_budgets: dict[str,int] | None = None
     age: int | None = Field(default=None, ge=10, le=100)
     units: Literal["miles", "km"] | None = None
     workout_format: Literal["distance", "time"] | None = None
@@ -100,6 +101,11 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
             ZoneInfo(fields['timezone'])
         except (TypeError, ValueError, ZoneInfoNotFoundError):
             raise HTTPException(422, 'Choose a valid IANA timezone.')
+    if 'day_time_budgets' in fields:
+        limits=fields['day_time_budgets'] or {}
+        if any(k not in DAY_NAMES or v!=0 and not 15<=v<=720 for k,v in limits.items()):
+            raise HTTPException(422,'Use valid weekdays and 15–720 available minutes (or 0 for unavailable).')
+        fields['day_time_budgets']=json.dumps(limits)
     # Validate the merged schedule: PATCH-like requests must not bypass constraints.
     required = {'units', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
     if any(key in required and value is None for key, value in fields.items()):
@@ -116,6 +122,9 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
         raise HTTPException(422, "Long run day can't also be a rest day.")
     if days > 7 - len(rest):
         raise HTTPException(422, f"{days} run days don't fit with {len(rest)} rest days.")
+    limits=json.loads(fields.get('day_time_budgets',user.day_time_budgets) or '{}')
+    if limits.get(long_day)==0 or days>len([d for d in DAY_NAMES if d not in rest and limits.get(d)!=0]):
+        raise HTTPException(422,'Run days and long-run day must fit the available weekdays.')
     # Preserve the approved block's original rules before changing preferences.
     # Legacy blocks acquire the previously saved rules once, never the new rules.
     if {'rest_days', 'days_per_week', 'long_run_day'} & fields.keys():
@@ -262,6 +271,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     return {
         "id": user.id,
         "name": user.name,
+        "day_time_budgets": json.loads(user.day_time_budgets or "{}"),
         "timezone": user.timezone, "today": athlete_today().isoformat(), "ai_consent": bool(user.ai_consent),
         "age": user.age,
         "units": user.units,

@@ -522,6 +522,10 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
 
     try:
         for batch in pages:
+            if settings.accounts_enabled:
+                from app.services.provider_connections import configured
+                if not configured(user_id,db):
+                    raise GarminNotConnected('Provider connection was removed during sync.')
             counts["requests"] += 1
             # Manual placeholders must have exactly one plausible Garmin counterpart.
             candidates = db.info.setdefault('garmin_day_candidates', {})

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./stride.db"
     openai_api_key: str = ""
     openai_coach_model: str = "gpt-5.4-mini"
+    openai_coach_global_daily_limit: int = 100
     openai_coach_daily_limit: int = 12
     openai_coach_timeout_seconds: float = 35
     openai_auto_reviews: bool = True

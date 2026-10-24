@@ -41,6 +41,8 @@ class User(Base):
     pr_half: Mapped[float | None] = mapped_column(Float)
     pr_marathon: Mapped[float | None] = mapped_column(Float)
 
+    day_time_budgets: Mapped[str | None] = mapped_column(Text)
+
     # Schedule preferences
     days_per_week: Mapped[int] = mapped_column(Integer, default=6)
     rest_days: Mapped[str | None] = mapped_column(String(50))  # comma-separated: "friday,sunday"

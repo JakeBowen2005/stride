@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -89,13 +90,18 @@ def get_weekly_mileage(user_id: int, weeks: int = Query(default=52), db: Session
 def get_activities_list(
     user_id: int,
     type: str | None = None,
-    limit: int = Query(default=100),
-    offset: int = Query(default=0),
+    limit: int = Query(default=100,ge=1,le=200),
+    offset: int = Query(default=0,ge=0),
+    before_date: datetime | None = None,
+    before_id: int | None = Query(default=None,ge=1),
     db: Session = Depends(get_db),
 ):
     """Get activities for the history tab."""
     query = db.query(Activity).filter(Activity.user_id == user_id)
 
+    if before_date is not None:
+        from sqlalchemy import or_,and_
+        query=query.filter(or_(Activity.date<before_date,and_(Activity.date==before_date,Activity.id<before_id))) if before_id else query.filter(Activity.date<before_date)
     if type and type != "all":
         if type == "workouts":
             query = query.filter(Activity.workout_type.in_(["tempo", "intervals", "threshold", "fartlek", "hill_repeats", "time_trial", "race", "workout"]))
@@ -105,7 +111,7 @@ def get_activities_list(
             query = query.filter(Activity.workout_type.in_(["easy", "recovery", None]))
 
     activities = (
-        query.order_by(Activity.date.desc())
+        query.order_by(Activity.date.desc(),Activity.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -183,7 +189,7 @@ def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db:
     db.commit()
     release_synced_jobs(user_id, db)
     return {**result, 'activity_id': activity.id, 'feel_rating': activity.feel_rating,
-            'effort_rating': activity.effort_rating, 'reported_completion': activity.reported_completion,
+            'effort_rating': activity.effort_rating, 'reported_completion': {'status':activity.reported_completion,'source':'self_reported'} if activity.reported_completion else None,
             'coach_response': result.get('coach_response', 'Feedback saved for your next training assessment.')}
 
 
@@ -328,7 +334,14 @@ def operations(user_id: int, db: Session = Depends(get_db)):
         info = json.loads((Path(folder) / 'status.json').read_text()) if folder else {}
     except (OSError, ValueError, TypeError):
         info = {}
-    return {'queue': {'queued': counts.get('queued',0)+counts.get('waiting_sync',0), 'running':counts.get('running',0),
+    from app.models.coaching import CoachingAttempt,CoachingReview
+    from datetime import datetime,timezone
+    day=datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0)
+    usage=db.query(func.count(CoachingAttempt.id),func.coalesce(func.sum(CoachingAttempt.input_tokens),0),
+        func.coalesce(func.sum(CoachingAttempt.output_tokens),0),func.avg(CoachingAttempt.latency_ms)).join(CoachingReview,CoachingReview.id==CoachingAttempt.review_id).filter(CoachingReview.user_id==user_id,CoachingAttempt.created_at>=day).one()
+    return {'ai_usage':{'attempts_today':usage[0],'input_tokens_today':usage[1],'output_tokens_today':usage[2],
+                       'mean_latency_ms':round(usage[3]) if usage[3] is not None else None,'daily_review_limit':settings.openai_coach_daily_limit},
+            'queue': {'queued': counts.get('queued',0)+counts.get('waiting_sync',0), 'running':counts.get('running',0),
                       'failed':counts.get('failed',0), 'oldest_queued_at':oldest.isoformat() if oldest else None},
             'backup': {'configured': bool(info.get('last_local_success')), 'offsite_configured':bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET')),
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
@@ -380,3 +393,14 @@ async def upload_fit(user_id:int,request:Request,db:Session=Depends(get_db)):
         db.rollback();raise HTTPException(422,str(exc))
     except Exception:
         db.rollback();raise HTTPException(422,'Unable to import this FIT file. Check it is an original running activity.')
+
+
+@router.get('/{user_id}/trends')
+def training_trends(user_id:int,db:Session=Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    from app.services.longitudinal import analyze
+    if not db.get(User,user_id):raise HTTPException(404,'Athlete not found')
+    _begin_schedule_write(db)
+    result=analyze(user_id,db)
+    db.commit()
+    return result

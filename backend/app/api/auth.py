@@ -71,7 +71,7 @@ def register(data: Registration, request: Request, response: Response, db: Sessi
     except (ZoneInfoNotFoundError,ValueError):
         raise HTTPException(422,'Choose a valid IANA timezone.')
     try:
-        user = User(name=data.name.strip(), timezone=data.timezone, ai_consent=data.ai_consent)
+        user = User(name=data.name.strip(), timezone=data.timezone, ai_consent=data.ai_consent,days_per_week=3,rest_days='monday,wednesday,friday,sunday',long_run_day='saturday')
         db.add(user); db.flush()
         db.add(Account(user_id=user.id,email=email,password_hash=PASSWORDS.hash(data.password)))
         db.flush()
@@ -120,7 +120,7 @@ class Reset(BaseModel):
 
 @router.post('/reset', dependencies=[Depends(enabled)])
 def reset(data: Reset, request: Request, response: Response, db: Session=Depends(get_db)):
-    throttle(request,'recovery',db)
+    throttle(request,'recovery:'+digest(data.token),db)
     from app.api.plans import _begin_schedule_write
     _begin_schedule_write(db)
     token=db.query(AccountSession).filter_by(token_hash=digest(data.token),kind='recovery').with_for_update().first()

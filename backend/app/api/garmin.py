@@ -132,6 +132,8 @@ def disconnect(user_id:int,db:Session=Depends(get_db)):
         row=ProviderCredential(user_id=user_id,kind='disabled',ciphertext='');db.add(row)
     from app.services.accounts import utcnow
     row.ciphertext,row.revoked_at='',utcnow()
+    from app.services.provider_connections import _personal_client,_owner_client
+    _personal_client.cache_clear();_owner_client.cache_clear()
     job=db.get(SyncJob,user_id)
     if job:
         job.status,job.lease_token='cancelled',None

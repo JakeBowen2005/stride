@@ -57,11 +57,18 @@ def dossier(user_id, db, today=None, *, persist=False):
                 'prior_mean': round(sum(getattr(r, metric) for r in earlier)/len(earlier), 1),
                 'recent_days': len(recent), 'prior_days': len(earlier), 'dates': [r.date for r in recent],
                 'interpretation': 'Descriptive comparison only; not a readiness diagnosis or proof of workout response.'}
+    from app.services.longitudinal import analyze
+    trends=analyze(user_id,db,today,persist=persist)
+    recent_window=trends['windows'][0]
+    if recent_window['recorded_runs']:
+        insights.append({'id':'recent-consistency','kind':'observed',
+            'text':f"Across four completed weeks, recorded {recent_window['recorded_mpw']:g} mi/week and {recent_window['run_days_per_week']:g} run days/week. Missing records are not proven rest.",
+            'activity_ids':recent_window['activity_ids'],'dates':[today.isoformat()]})
     coverage = db.query(HistoryCoverage).filter_by(user_id=user_id).order_by(HistoryCoverage.checked_at.desc()).limit(20).all()
     return {'version': VERSION, 'as_of': today.isoformat(), 'input_revision': revision(user_id, db, flush=persist),
         'coverage': profile['coverage'], 'current': profile['current'],
         'historical_capacity': profile['historical_capacity'], 'race_buildups': race_blocks,
-        'recovery_comparisons': recovery, 'insights': insights,
+        'recovery_comparisons': recovery, 'longitudinal':trends, 'insights': insights,
         'stream_freshness': [{'stream': r.stream, 'start': r.start_date, 'end': r.end_date,
                               'status': r.status, 'checked_at': r.checked_at.isoformat()} for r in coverage]}
 

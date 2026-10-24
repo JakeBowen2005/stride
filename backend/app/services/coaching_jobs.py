@@ -57,7 +57,12 @@ def process_one():
         if not job:
             db.commit(); return False
         activity = db.get(Activity, job.activity_id)
-        if not activity or is_walk(activity) or activity.date.date() < athlete_today()-timedelta(days=7):
+        from app.models.user import User
+        from app.athlete_clock import athlete_zone
+        athlete=db.get(User,job.user_id)
+        with athlete_zone(athlete.timezone if athlete else None,job.user_id):
+            calendar_day=athlete_today()
+        if not activity or is_walk(activity) or activity.date.date() < calendar_day-timedelta(days=7):
             job.status, job.last_error = 'failed', 'Activity is not eligible for an automatic running review'
             db.commit(); return True
         if job.attempts >= 3:
@@ -76,7 +81,7 @@ def process_one():
             from app.models.user import User
             from app.athlete_clock import athlete_zone
             athlete=db.get(User,user_id)
-            with athlete_zone(athlete.timezone if athlete else None):
+            with athlete_zone(athlete.timezone if athlete else None,user_id):
                 review = review_training(user_id, db, activity_id=activity_id)
         state = 'done' if review['status']=='ready' else 'queued'
         error = None if state=='done' else 'Review unavailable; retry scheduled'

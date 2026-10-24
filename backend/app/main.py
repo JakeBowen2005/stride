@@ -192,5 +192,5 @@ async def athlete_identity(request, call_next):
     with SessionLocal() as db:
         user=db.get(User,uid)
         zone=user.timezone if user else None
-    with athlete_zone(zone):
+    with athlete_zone(zone,uid):
         return await call_next(request)

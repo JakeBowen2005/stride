@@ -23,6 +23,7 @@ export interface OutlookDecision {
 }
 
 export interface Outlook {
+  schedule_gap?: {capacity_mpw:number;target_mpw:number;message:string};
   goal_id?: number;
   intent?: string;
   accepted_decision?: { choice: string } | null;
@@ -68,7 +69,8 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
   }
   if (!outlook.milestones.length) return null;
   return (
-    <Panel label="Route to your goal" meta={outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-3 py-2">
+    <Panel label="Route to your goal" meta={outlook.schedule_gap ? "Availability decision" : outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-3 py-2">
+      {outlook.schedule_gap && <p role="alert" className="mb-2 rounded border p-2 text-sm">{outlook.schedule_gap.message} <a className="underline" href="/settings">Review daily time and goal</a></p>}
       {outlook.decision && (
         <div role="alert" className="mb-2 rounded-md border border-amber-500/60 bg-amber-500/15 p-2 text-xs leading-relaxed">
           <p className="font-medium">Decision needed: {outlook.decision.question}</p>
@@ -104,7 +106,7 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
             <li key={m.key} className="text-sm">
               <div className="flex items-baseline justify-between gap-3">
                 <span className={cn(m.status === "done" && "text-muted-foreground line-through decoration-1")}>{m.label}</span>
-                <span className="num shrink-0 text-xs text-muted-foreground">{m.status === "done" ? "Done ✓" : weeks(m.est_weeks)}</span>
+                <span className="num shrink-0 text-xs text-muted-foreground">{m.status === "done" ? "Done ✓" : outlook.schedule_gap && ["volume","long_run"].includes(m.key) ? "Review availability" : weeks(m.est_weeks)}</span>
               </div>
               <div className="mt-1 h-1.5 rounded-full bg-secondary" aria-hidden="true">
                 <div className="h-1.5 rounded-full bg-foreground" style={{ width: `${pct}%` }} />

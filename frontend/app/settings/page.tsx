@@ -1,10 +1,11 @@
 "use client";
+import { TimeAvailability } from "@/components/time-availability";
 import { FitImport } from "@/components/fit-import";
 import { AccountSettings } from "@/components/account-settings";
 
 import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
 import Link from "next/link";
-import { apiUrl, USER_ID } from "@/lib/api";
+import { apiUrl, USER_ID, baselineOrEmpty } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { ProfilePreferences } from "@/components/profile-preferences";
 import { GoalEditor } from "@/components/goal-editor";
@@ -22,7 +23,7 @@ interface PR {
 }
 
 interface Workload { acute_week_start?: string; acute_week_end?: string; acute_miles?: number; chronic_week_starts?: string[]; baseline_miles?: number; ratio?: number | null; label?: string; as_of?: string }
-interface Operations { queue: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; backup: { configured: boolean; offsite_configured: boolean; last_success_at: string | null; restore_verified: boolean; offsite_last_success_at?: string | null; offsite_error_type?: string | null; last_error_type: string | null }; app: { policy_version: string } }
+interface Operations { ai_usage?:{attempts_today:number;input_tokens_today:number;output_tokens_today:number;mean_latency_ms:number|null}; queue: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; backup: { configured: boolean; offsite_configured: boolean; last_success_at: string | null; restore_verified: boolean; offsite_last_success_at?: string | null; offsite_error_type?: string | null; last_error_type: string | null; storage?:{database_bytes:number;backup_bytes:number;free_bytes:number;warning:boolean;budget_exceeded?:boolean} }; app: { policy_version: string } }
 interface AnalysisData {
   workload?: Workload;
   overview: {
@@ -108,7 +109,7 @@ export default function SettingsPage() {
         if (operationsRes?.ok) setOperations(await operationsRes.json());
         if (prRes.ok) setPrs(await prRes.json());
         if (userRes.ok) setUser(await userRes.json());
-        if (analysisRes.ok) setAnalysis(await analysisRes.json());
+        if (analysisRes.ok) setAnalysis(baselineOrEmpty<AnalysisData>(await analysisRes.json()));
         if (goalRes.ok) {
           const data = await goalRes.json();
           if (data) setGoal(data);
@@ -139,7 +140,7 @@ export default function SettingsPage() {
   const workload = analysis?.workload ?? analysis?.injury_risk;
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button variant="outline" size="sm">Sign out</Button></form></div>
+      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
       {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="rounded-md border p-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
 
       {/* Profile */}
@@ -153,6 +154,7 @@ export default function SettingsPage() {
       <Card>
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Training</h2>
+          {!analysis && <p className="text-sm text-muted-foreground">No running history yet. Import original FIT files below or complete onboarding to establish your starting point.</p>}
           <div className="space-y-2 text-sm">
             <Row
               label="Latest baseline (four completed calendar weeks)"
@@ -299,6 +301,8 @@ export default function SettingsPage() {
 
       <Card><CardContent className="space-y-3 pt-4"><h2 className="text-sm font-medium">Operations</h2>
         {!operations ? <p className="text-sm text-muted-foreground">Operational status is unavailable. Backup and review status could not be verified.</p> : <>
+          {operations.ai_usage && <p className="text-sm">AI today: {operations.ai_usage.attempts_today} attempts · {operations.ai_usage.input_tokens_today} input / {operations.ai_usage.output_tokens_today} output tokens{operations.ai_usage.mean_latency_ms!=null?` · mean ${(operations.ai_usage.mean_latency_ms/1000).toFixed(1)} seconds`:''}.</p>}
+          {operations.backup.storage && <p role={operations.backup.storage.warning?'alert':undefined} className="text-sm">Storage: {(operations.backup.storage.database_bytes/1024**2).toFixed(1)} MiB database · {(operations.backup.storage.backup_bytes/1024**2).toFixed(1)} MiB local backups · {(operations.backup.storage.free_bytes/1024**3).toFixed(1)} GiB free.{operations.backup.storage.warning?' Low free space: operator attention needed.':''}</p>}
           <p className="text-sm">Coaching jobs: {operations.queue.queued} queued · {operations.queue.running} running · {operations.queue.failed} failed{operations.queue.oldest_queued_at ? ` · oldest queued ${operations.queue.oldest_queued_at}` : ""}</p>
           <p className="text-sm">Local backups: {operations.backup.configured ? "configured" : "not configured"}. Offsite export: {operations.backup.offsite_configured ? "configured" : "not configured"}.</p>
           <p className="text-xs text-muted-foreground">Last successful backup: {operations.backup.last_success_at ?? "none reported"}. Restore verification: {operations.backup.restore_verified ? "passed for the last successful backup" : "not verified"}.{operations.backup.last_error_type ? ` Last backup error: ${operations.backup.last_error_type}.` : ""}</p>
@@ -306,6 +310,7 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground">Configuration alone does not prove recovery. Keep a verified offsite backup. Coaching policy {operations.app.policy_version}.</p>
         </>}
       </CardContent></Card>
+      <TimeAvailability />
       <AccountSettings />
       {/* Connections */}
       <GarminConnectionCard />

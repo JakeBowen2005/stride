@@ -140,3 +140,13 @@ def test_imported_fit_only_matches_precise_time_not_another_same_day_run():
         assert _find_legacy_match(1,parsed,db) is None
         parsed['date']=stamp
         assert _find_legacy_match(1,parsed,db).id==row.id
+
+
+def test_fit_upload_dedup_survives_garmin_identity_merge():
+    from app.services.fit_import import import_fit
+    with SessionLocal() as db:
+        first=import_fit(1,running_fit(),db)
+        row=db.get(Activity,first['activity_id']);row.source='garmin';row.external_id='provider-identity';db.commit()
+        repeated=import_fit(1,running_fit(),db)
+        assert repeated['duplicate'] and repeated['activity_id']==first['activity_id']
+        assert db.query(Activity).count()==1

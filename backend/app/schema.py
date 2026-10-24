@@ -4,7 +4,7 @@ from alembic.config import Config
 from alembic import command
 from sqlalchemy import inspect, text
 from app.database import engine
-HEAD='0001_invite_beta'
+HEAD='0002_schedule_minutes'
 
 
 def upgrade(bind=engine):
@@ -25,6 +25,9 @@ def check(bind=engine):
             raise RuntimeError('Schema upgrade required: python -m app.schema')
         import json
         manifest=json.loads((Path(__file__).resolve().parents[1]/'migrations/schema_v1.json').read_text())
+        for name,column in [('users','day_time_budgets'),('coaching_attempts','latency_ms')]:
+            if column not in {c['name'] for c in inspect(conn).get_columns(name)}:
+                raise RuntimeError('Schema drift detected in the schedule/analysis upgrade.')
         for table in manifest:
             if not inspect(conn).has_table(table['name']) or not {c['name'] for c in table['columns']} <= {c['name'] for c in inspect(conn).get_columns(table['name'])}:
                 raise RuntimeError('Schema drift detected; restore a verified snapshot or apply an explicit repair migration.')
