@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     signup_invite_code: str = Field(default="", validation_alias="STRIDE_SIGNUP_INVITE_CODE")
     cookie_secure: bool = Field(default=True, validation_alias="STRIDE_COOKIE_SECURE")
     public_app_url: str = Field(default="", validation_alias="STRIDE_PUBLIC_URL")
+    schema_auto_upgrade: bool = True
+    embedded_workers: bool = True
+    provider_encryption_keys: str = Field(default="", validation_alias="STRIDE_PROVIDER_ENCRYPTION_KEYS")
+    fit_blob_bucket: str = ""
+    fit_blob_prefix: str = "stride"
     database_url: str = "sqlite:///./stride.db"
     openai_api_key: str = ""
     openai_coach_model: str = "gpt-5.4-mini"

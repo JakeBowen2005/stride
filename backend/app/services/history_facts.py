@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Observed training history, with current state separated from historical capacity."""
 import json
 from datetime import date, datetime, timedelta
@@ -125,5 +126,5 @@ def _profile(user_id, db, today, persist=True):
 
 
 def historical_profile(user_id, db, today=None, *, persist=True):
-    today = today or date.today()
+    today = today or athlete_today()
     return cached(user_id, 'history-profile', f'{VERSION}:{today}', db, lambda: _profile(user_id, db, today, persist=persist), persist=persist)

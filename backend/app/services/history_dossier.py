@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Small, evidence-linked facts for the model. No causal/physiological guesses."""
 from datetime import date, datetime, timedelta
 from sqlalchemy import or_
@@ -10,7 +11,7 @@ from app.services.history_cache import revision
 
 
 def dossier(user_id, db, today=None, *, persist=False):
-    today = today or date.today()
+    today = today or athlete_today()
     profile = historical_profile(user_id, db, today, persist=persist)
     insights = []
     blocks = profile['historical_capacity']['sustained_blocks']

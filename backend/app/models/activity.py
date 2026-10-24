@@ -21,7 +21,7 @@ class Activity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     source: Mapped[str] = mapped_column(String(20))  # "garmin", "manual" ("strava" = legacy imports)
-    external_id: Mapped[str | None] = mapped_column(String(50))  # Garmin activity ID (Strava ID on legacy rows)
+    external_id: Mapped[str | None] = mapped_column(String(100))  # Garmin activity ID (Strava ID on legacy rows)
 
     # Core run data
     name: Mapped[str | None] = mapped_column(String(200))

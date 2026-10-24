@@ -8,7 +8,9 @@ cd /app/backend
 # Protect existing data BEFORE importing an upload or importing app.main (which
 # applies additive migrations and refreshes derived classifications). A verified
 # local backup is mandatory; optional S3 errors are recorded without losing it.
-python -m app.services.backups --if-exists --reason pre-start
+if [[ "${DATABASE_URL:-sqlite:///}" == sqlite:* ]]; then
+  python -m app.services.backups --if-exists --reason pre-start
+fi
 
 # Garmin needs no bootstrap: GARMIN_API_KEY (a Personal API key) is read from the env.
 
@@ -29,12 +31,16 @@ if [[ "${DATABASE_URL:-}" == sqlite:////* ]] && [ -f "$UPLOAD" ]; then
 fi
 
 cd /app/backend
+python -m app.schema
+export SCHEMA_AUTO_UPGRADE=false
+export EMBEDDED_WORKERS=false
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > /tmp/stride-backend.pid
 FRONTEND_PID=""
 BACKUP_PID=""
-trap 'kill $BACKEND_PID $FRONTEND_PID $BACKUP_PID 2>/dev/null || true' EXIT
+WORKER_PID=""
+trap 'kill $BACKEND_PID $FRONTEND_PID $BACKUP_PID $WORKER_PID 2>/dev/null || true' EXIT
 trap 'exit 143' TERM INT  # Render stops the container with SIGTERM
 
 for _ in $(seq 1 60); do
@@ -51,11 +57,18 @@ cd /app/frontend
 HOSTNAME=0.0.0.0 PORT="$PORT" node server.js &
 FRONTEND_PID=$!
 cd /app/backend
-python -m app.services.backups --loop &
-BACKUP_PID=$!
+python -m app.services.worker &
+WORKER_PID=$!
+if [[ "${DATABASE_URL:-sqlite:///}" == sqlite:* ]]; then
+  python -m app.services.backups --loop &
+  BACKUP_PID=$!
+else
+  # PostgreSQL backups/PITR belong to the managed database, not SQLite's worker.
+  BACKUP_PID="$WORKER_PID"
+fi
 
 # Exit non-zero as soon as either process dies (the EXIT trap stops the other one).
-while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null && kill -0 "$BACKUP_PID" 2>/dev/null; do
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null && kill -0 "$BACKUP_PID" 2>/dev/null && kill -0 "$WORKER_PID" 2>/dev/null; do
   sleep 2
 done
 echo "start.sh: backend, frontend or backup worker exited; stopping" >&2

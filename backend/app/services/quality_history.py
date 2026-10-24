@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Completed quality/recovery evidence for staging. Preview count never earns promotion."""
 import json
 
@@ -12,7 +13,7 @@ from app.models.plan import Plan, PlannedWorkout
 
 
 def quality_history(user_id, db, today=None):
-    today = today or date.today()
+    today = today or athlete_today()
     cutoff = today - timedelta(days=56)
     calendar_monday = today - timedelta(days=today.weekday())
     acts = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),

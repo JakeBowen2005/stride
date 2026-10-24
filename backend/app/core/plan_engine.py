@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """2-week rolling plan generator.
 
 Key principles:
@@ -46,7 +47,7 @@ def calculate_plan_params() -> dict:
       - Thu-Sun (weekday >= 3): 3 weeks (rest of this week + 2 full weeks)
     Days before today in the current week show as non-prescribed.
     """
-    today = date.today()
+    today = athlete_today()
     weekday = today.weekday()  # 0=Mon, 6=Sun
 
     # Start from Monday of current week
@@ -128,7 +129,7 @@ def generate_plan(
     completed_by_date = completed_by_date or {}
     prior_hard_dates = set(prior_hard_dates or ())
     if start_date is None:
-        today = date.today()
+        today = athlete_today()
         days_until_monday = (7 - today.weekday()) % 7
         if days_until_monday == 0:
             days_until_monday = 7
@@ -150,7 +151,7 @@ def generate_plan(
 
     # Deloads land on the first full week that hasn't started yet (a deload label on a
     # week that's already half run would be a deload in name only)
-    fpd = first_prescribe_date or date.today()
+    fpd = first_prescribe_date or athlete_today()
     deload_week = None
     due = _is_deload_block(block_number, experience_level) if deload_is_due is None else deload_is_due
     if developing:

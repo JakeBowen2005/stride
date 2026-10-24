@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Entirely synthetic, reproducible athlete fixtures. Requires an empty demo DB."""
 import json
 import math
@@ -24,7 +25,7 @@ def easy_week(profile,target,run_days,long_day):
 
 def seed_demo(db, profile):
     if db.query(User).count():raise ValueError('Refusing to overwrite a populated database')
-    today=date.today();monday=today-timedelta(days=today.weekday())
+    today=athlete_today();monday=today-timedelta(days=today.weekday())
     goal_type=profile.get('goal_type','race');workouts=profile.get('workouts',True)
     rest_days=profile.get('rest_days',['sunday']);days_per_week=profile.get('days_per_week',6);long_run_day=profile.get('long_run_day','saturday')
     race=monday+timedelta(weeks=profile['weeks_to_race'],days=6) if goal_type=='race' else None

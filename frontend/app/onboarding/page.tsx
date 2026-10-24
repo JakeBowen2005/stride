@@ -1,4 +1,5 @@
 "use client";
+import { FitImport } from "@/components/fit-import";
 
 import { useEffect, useState } from "react";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
@@ -497,11 +498,12 @@ export default function OnboardingPage() {
       <OnboardingLayout
         step={step}
         totalSteps={TOTAL_STEPS}
-        title="Connect Garmin"
-        subtitle="We'll pull your run history from Garmin Connect to understand your fitness level."
+        title="Bring in your history"
+        subtitle="Import original FIT files, use your owner Garmin connection, or begin with your current ability."
         onNext={next}
         onBack={back}
       >
+        <FitImport />
         <div className="flex flex-col items-center gap-4 py-8">
           {garminConnected ? (
             <div className="text-center">
@@ -515,20 +517,8 @@ export default function OnboardingPage() {
           ) : (
             <>
               <div className="w-full max-w-sm space-y-2 rounded-md bg-secondary/40 p-4 text-sm">
-                <p className="font-medium">Create a Garmin Personal API key</p>
-                <p className="text-muted-foreground">
-                  In Garmin Connect, open{" "}
-                  <a
-                    className="underline underline-offset-2"
-                    href="https://connect.garmin.com/app/settings/personalApiToken"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Settings → Personal API Key
-                  </a>
-                  , create a key, and add it to the Stride server as <code>GARMIN_API_KEY</code>. Runs sync as soon
-                  as the server restarts with it; Settings shows the status.
-                </p>
+                <p className="font-medium">Garmin connection</p><p>Separate athlete connections await Business API approval. You can import original FIT files or continue without recorded history.</p>
+                <p className="text-muted-foreground">The owner connection is managed in Settings. No Garmin password is collected by Stride.</p>
               </div>
               <Button className="h-11 w-full max-w-sm" onClick={next}>
                 Continue: I&apos;ll connect later or log runs myself

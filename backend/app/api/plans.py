@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 import hashlib
 import json
 import logging
@@ -68,7 +69,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     if req.mode == "schedule" and req.scope == "current" and not req.lighter and not req.start_date:
         active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
-        if active and active.start_date <= date.today().isoformat() <= active.end_date:
+        if active and active.start_date <= athlete_today().isoformat() <= active.end_date:
             return _revise_schedule(user, active, db)
 
     analysis = analyze_athlete(user_id, db)
@@ -104,25 +105,25 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     if req.scope == 'next':
         if not active:
             raise HTTPException(409, "Approve a current block first")
-        if date.today().isoformat() <= active.end_date:
+        if athlete_today().isoformat() <= active.end_date:
             raise HTTPException(409, "Finish this block before creating the next one; use current-block revision for changes now")
         if req.start_date and req.start_date.isoformat() <= active.end_date:
             raise HTTPException(422, "A next block cannot start inside the previous block")
     if req.start_date:
         start = req.start_date
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
-    elif req.scope == 'current' and active and active.start_date <= date.today().isoformat() <= active.end_date:
+    elif req.scope == 'current' and active and active.start_date <= athlete_today().isoformat() <= active.end_date:
         start, end = date.fromisoformat(active.start_date), date.fromisoformat(active.end_date)
         params = {"start_date": start, "end_date": end, "num_weeks": ((end - start).days // 7) + 1,
-                  "first_prescribe_date": date.today()}
+                  "first_prescribe_date": athlete_today()}
     else:
         params = calculate_plan_params()
     fpd = params.get("first_prescribe_date") or params["start_date"]
     baseline = current_fitness["weekly_mileage_4w_avg"]
-    if (params['start_date'] <= date.today() and fpd <= date.today()
-            and _get_activities_for_date(date.today().isoformat(), user_id, db)):
+    if (params['start_date'] <= athlete_today() and fpd <= athlete_today()
+            and _get_activities_for_date(athlete_today().isoformat(), user_id, db)):
         # A recorded run today is completed load, not another open prescription.
-        fpd = date.today() + timedelta(days=1)
+        fpd = athlete_today() + timedelta(days=1)
         params['first_prescribe_date'] = fpd
 
     # Real training already done in this block's first week, and real hard runs just
@@ -144,7 +145,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     from app.core.load_policy import deload_due
     from app.services.analyzer import compute_weekly_mileage
 
-    this_monday = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+    this_monday = (athlete_today() - timedelta(days=athlete_today().weekday())).isoformat()
     weekly = {w['week_start']: w['actual'] for w in compute_weekly_mileage(user_id, db, weeks=10)}
     monday = date.fromisoformat(this_monday)
     full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
@@ -188,7 +189,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
 
     quality_activities = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time()),
-        Activity.date < datetime.combine(date.today() + timedelta(days=1), datetime.min.time())).all()
+        Activity.date < datetime.combine(athlete_today() + timedelta(days=1), datetime.min.time())).all()
     from app.services.quality_history import quality_history
     quality_evidence = quality_history(user_id, db)
     prior_quality = (json.loads(active.athlete_snapshot or '{}').get('quality_policy') or {}).get('stage') if active else None
@@ -228,7 +229,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
                              if monday - timedelta(weeks=i) <= a.date.date() < monday - timedelta(weeks=i-1)})
                          for i in range(4, 0, -1)],
         recent_long_run_miles=max((a.distance_meters / 1609.34 for a in quality_activities
-                                  if date.today() - timedelta(days=28) <= a.date.date() <= date.today()), default=0),
+                                  if athlete_today() - timedelta(days=28) <= a.date.date() <= athlete_today()), default=0),
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
     )
@@ -251,7 +252,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "name": user.name,
         "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
-        "baseline_as_of": date.today().isoformat(), "baseline_definition": "four completed calendar weeks",
+        "baseline_as_of": athlete_today().isoformat(), "baseline_definition": "four completed calendar weeks",
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
@@ -361,7 +362,7 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
     if (old.days_per_week, old.rest_days, old.long_run_day) == (new.days_per_week, new.rest_days, new.long_run_day):
         raise HTTPException(409, "This block already uses your run days, rest days and long-run day.")
 
-    today = date.today()
+    today = athlete_today()
     first_open = today + timedelta(days=1) if _get_activities_for_date(today.isoformat(), user.id, db) else today
     editable_from = max(first_open.isoformat(), active.prescribed_from or active.start_date)
     rows = db.query(PlannedWorkout).filter_by(plan_id=active.id).order_by(PlannedWorkout.date, PlannedWorkout.id).all()
@@ -446,7 +447,7 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
             snapshot['session_status'] = 'completed'
         return json.dumps(snapshot, sort_keys=True) + str(workout.feel_rating) + str(workout.evaluation)
     data = {
-        "today": date.today().isoformat(),
+        "today": athlete_today().isoformat(),
         "user": {c.name: getattr(user, c.name) for c in User.__table__.columns},
         "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
         "active": active.id if active else None,
@@ -514,7 +515,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
         PlannedWorkout.plan_id == db_plan.id
     ).order_by(PlannedWorkout.date).all()
 
-    today = date.today().isoformat()
+    today = athlete_today().isoformat()
 
     # One query for every activity in the plan window, grouped by local date
     by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
@@ -533,7 +534,7 @@ def get_current_plan(user_id: int, db: Session = Depends(get_db)):
 
 def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id: int, db: Session) -> dict:
     """The plan as the app shows it: actual runs on past days, prescriptions after prescribed_from."""
-    today = date.today().isoformat()
+    today = athlete_today().isoformat()
     by_date = _activities_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
     walks_by_date = _walks_by_date(db_plan.user_id, db_plan.start_date, db_plan.end_date, db)
     # Days before generation were history, not prescriptions. Older plans fall back to
@@ -646,7 +647,7 @@ def _run_days_since(user: User, db: Session) -> list[int]:
     """Run days in each completed calendar week since the athlete set their starting point."""
     if user.continuous_run_minutes is None:
         return []
-    monday = date.today() - timedelta(days=date.today().weekday())
+    monday = athlete_today() - timedelta(days=athlete_today().weekday())
     start = date.fromisoformat(user.continuous_run_set_on) if user.continuous_run_set_on else monday
     start = max(start - timedelta(days=start.weekday()), monday - timedelta(weeks=8))
     rows = db.query(Activity.date).filter(
@@ -670,7 +671,7 @@ def _save_run_walk_progress(user: User, experience: str, goal: Goal, db: Session
     minutes = developmental.stage_minutes(stage)
     if minutes != user.continuous_run_minutes:
         user.continuous_run_minutes = minutes
-    user.continuous_run_set_on = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+    user.continuous_run_set_on = (athlete_today() - timedelta(days=athlete_today().weekday())).isoformat()
 
 
 def _review(db_plan: Plan) -> dict | None:
@@ -690,7 +691,7 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
     user = db.get(User, user_id)
     if not goal or not user:
         return None
-    monday = date.today() - timedelta(days=date.today().weekday())
+    monday = athlete_today() - timedelta(days=athlete_today().weekday())
     weekly = {w['week_start']: w['actual'] for w in compute_weekly_mileage(user_id, db, weeks=10)}
     full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
     baseline = round(sum(full_weeks[-4:]) / 4, 1)
@@ -699,14 +700,14 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
         Activity.date >= datetime.combine(monday - timedelta(weeks=4), datetime.min.time())).all()
     run_days = [len({d.date() for d, _ in runs if monday - timedelta(weeks=i) <= d.date() < monday - timedelta(weeks=i - 1)})
                 for i in range(4, 0, -1)]
-    recent_long = max((m / 1609.34 for d, m in runs if d.date() >= date.today() - timedelta(days=28)), default=0)
+    recent_long = max((m / 1609.34 for d, m in runs if d.date() >= athlete_today() - timedelta(days=28)), default=0)
     experience = (json.loads(db_plan.athlete_snapshot or '{}').get('experience_level') if db_plan else None) \
         or user.experience_level or 'beginner'
     from app.core.workout_ladders import program_key
     dev = db.query(WorkoutProgression).filter_by(user_id=user_id, category='development',
                                                  program_key=program_key(goal.race_distance or goal.goal_type)).first()
     developing = developmental.uses_developmental(experience, goal.goal_type, goal.race_distance)
-    weeks_away = ((date.fromisoformat(goal.race_date) - date.today()).days / 7) if goal.race_date else None
+    weeks_away = ((date.fromisoformat(goal.race_date) - athlete_today()).days / 7) if goal.race_date else None
     if weeks_away is not None and weeks_away < 0:
         weeks_away = None  # race is past: no preparation gap to report
     rate = min(ramp_rate(max(baseline, 1), user.peak_weekly_mileage or baseline, experience, goal.goal_type), .10)
@@ -838,7 +839,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
         raise HTTPException(409, "This day already has a recorded activity")
     if source.session_status in {"skipped", "moved"}:
         raise HTTPException(409, "This session has already been skipped or moved")
-    if req.action != "skip" and source.date < date.today().isoformat():
+    if req.action != "skip" and source.date < athlete_today().isoformat():
         raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
     try:
         if req.action == 'replace' and req.replacement in {'threshold','intervals','long_run'}:
@@ -853,7 +854,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             return {'date':source.date,'session_status':source.session_status,'moved_to':source.moved_to}
         if req.action == "move":
             target = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=req.target_date.isoformat() if req.target_date else "").first()
-            if not target or target.date <= source.date or target.date < date.today().isoformat():
+            if not target or target.date <= source.date or target.date < athlete_today().isoformat():
                 raise HTTPException(422, "Choose a later day in this block")
             if target.type not in {"easy", "rest"} or target.activity_id or _get_activities_for_date(target.date, user_id, db):
                 raise HTTPException(409, "Choose an unrun easy or rest day")
@@ -1147,7 +1148,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
 
     # 3. Feel ≤ 4: the next unrun hard workout becomes easy
     if req.feel_rating <= 4 and not req.swapped:
-        today = date.today().isoformat()
+        today = athlete_today().isoformat()
         next_hard = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == db_plan.id,
             PlannedWorkout.date > feedback_date,
@@ -1223,7 +1224,7 @@ def _fits_week_budget(db_plan: Plan, slot: PlannedWorkout, new_miles: float, db:
     over = total - budget
     if over <= BUDGET_OVER_TOLERANCE:
         return True
-    today = date.today().isoformat()
+    today = athlete_today().isoformat()
     flexible = sorted([d for d in week if d.id != slot.id and d.type == 'easy' and d.date > today
                        and d.date >= (db_plan.prescribed_from or db_plan.start_date)
                        and not d.activity_id and not acts.get(d.date)
@@ -1252,7 +1253,7 @@ def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[Planne
     """A future easy day with no run yet, on a non-rest day, with no hard day (planned
     workout, long run or race — or a real hard run) on either side. Never falls back
     to an unsafe day; returns the reason instead."""
-    today = date.today().isoformat()
+    today = athlete_today().isoformat()
     floor = max(after_date, today)
     days = db.query(PlannedWorkout).filter(PlannedWorkout.plan_id == db_plan.id).order_by(PlannedWorkout.date).all()
     by_date = {d.date: d for d in days}
@@ -1285,7 +1286,7 @@ def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
 def _assess_previous_block(prev_plan: Plan, db: Session):
     from app.core.block_assessment import DayRecord, assess_block
 
-    today = date.today().isoformat()
+    today = athlete_today().isoformat()
     start = prev_plan.prescribed_from or prev_plan.start_date
     by_date = _activities_by_date(prev_plan.user_id, prev_plan.start_date, prev_plan.end_date, db)
     records = []
@@ -1556,7 +1557,7 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
                 prog.program_key = key
             else:
                 prior = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category).order_by(WorkoutProgression.updated_at.desc()).first()
-                cutoff = date.today() - timedelta(days=84)
+                cutoff = athlete_today() - timedelta(days=84)
                 pace = prior.current_pace_sec if prior and prior.last_workout_date and prior.last_workout_date >= cutoff else None
                 prog = WorkoutProgression(user_id=user_id, category=category, program_key=key,
                                           current_level=1, current_pace_sec=pace, sessions_at_level=0, format_rotation=0)
@@ -1695,15 +1696,19 @@ def _begin_schedule_write(db: Session):
     from sqlalchemy import text
     if db.bind.dialect.name == "sqlite":
         db.execute(text("BEGIN IMMEDIATE"))
+    elif db.bind.dialect.name == 'postgresql':
+        # Short transaction-scoped lock protects schedule and quota read/validate/write.
+        # Network calls happen after commit. Worker row claims use SKIP LOCKED.
+        db.execute(text("SELECT pg_advisory_xact_lock(68743102)"))
 
 
 def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
     """Feel evidence can justify recovery before a block has five run days."""
     from app.core.block_assessment import BlockAssessment
-    cutoff = date.today() - timedelta(days=6)
+    cutoff = athlete_today() - timedelta(days=6)
     ratings = {}
     def add(day, feel):
-        if cutoff.isoformat() <= day <= date.today().isoformat() and feel is not None:
+        if cutoff.isoformat() <= day <= athlete_today().isoformat() and feel is not None:
             ratings[day] = min(ratings.get(day, 10), feel)
     for act in db.query(Activity).filter(Activity.user_id == user_id, Activity.date >= datetime.combine(cutoff, datetime.min.time()), (Activity.feel_rating.isnot(None)) | (Activity.garmin_feel.isnot(None)), runs_only()):
         add(act.date.date().isoformat(), act.effective_feel)  # the watch rating counts when the app wasn't used
@@ -1714,7 +1719,7 @@ def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
     if low >= 2:
         decision = 'recovery'
         reason = 'Two or more low feel ratings in the last seven days: reduce volume and keep the remaining current week easy.'
-    elif ratings and ratings[max(ratings)] <= 4 and (date.today() - date.fromisoformat(max(ratings))).days <= 2:
+    elif ratings and ratings[max(ratings)] <= 4 and (athlete_today() - date.fromisoformat(max(ratings))).days <= 2:
         decision = 'hold'
         reason = 'Your latest rated run felt poor: no mileage uplift, and the remaining current week stays easy before reassessing.'
     else:

@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Race-date periodization: which training phase each week is in.
 
 Phases are counted backwards from race day (CLAUDE.md "Periodization"):
@@ -222,7 +223,7 @@ def check_readiness(
 
     Returns {"ready": bool, "reasons": [...], "suggestion": str | None}.
     """
-    today = today or date.today()
+    today = today or athlete_today()
     reasons: list[str] = []
     suggestion = None
     weeks = (race_date - today).days / 7 if race_date else None

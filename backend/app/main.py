@@ -32,13 +32,12 @@ def _protect_existing_database():
                         keep=int(os.environ.get('STRIDE_BACKUP_KEEP', '28')), reason='before-app-migration')
 
 
-_protect_existing_database()
-
-# Create new tables, then add any new columns to existing ones
-Base.metadata.create_all(bind=engine)
-add_missing_columns()
-from app.migrations import migrate
-migrate(engine)
+from app.schema import upgrade, check
+if settings.schema_auto_upgrade:
+    _protect_existing_database()
+    upgrade()
+else:
+    check()
 
 
 def _refresh_lap_summaries():
@@ -92,16 +91,14 @@ async def garmin_auto_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = None
-    if settings.garmin_poll_minutes > 0:
-        task = asyncio.create_task(garmin_auto_sync())
-    from app.services.coaching_jobs import coaching_worker
-    coach_task = asyncio.create_task(coaching_worker()) if settings.openai_auto_reviews else None
+    task=None
+    if settings.embedded_workers and (settings.garmin_poll_minutes>0 or settings.openai_auto_reviews):
+        from app.services.worker import run
+        task=asyncio.create_task(run())
     yield
-    for running in (task, coach_task):
-        if running:
-            running.cancel()
-    await asyncio.gather(*(running for running in (task, coach_task) if running), return_exceptions=True)
+    if task:
+        task.cancel()
+        await asyncio.gather(task,return_exceptions=True)
 
 
 app = FastAPI(title="Stride", description="AI-Powered Running Coach", version="0.2.0", lifespan=lifespan)
@@ -190,4 +187,10 @@ async def athlete_identity(request, call_next):
         parts[position]=str(uid)
         request.scope['path']='/'.join(parts)
         request.scope['raw_path']=request.scope['path'].encode()
-    return await call_next(request)
+    from app.athlete_clock import athlete_zone
+    from app.models.user import User
+    with SessionLocal() as db:
+        user=db.get(User,uid)
+        zone=user.timezone if user else None
+    with athlete_zone(zone):
+        return await call_next(request)

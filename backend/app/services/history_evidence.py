@@ -26,11 +26,17 @@ def source_for(activity, provider, external_id, db):
     return row
 
 
-def capture(source, kind, db, *, payload=None, blob=None):
+def capture(source, kind, db, *, payload=None, blob=None, blob_reference=None):
     body = encoded(payload) if payload is not None else None
     digest = hashlib.sha256(kind.encode() + (blob if blob is not None else (body or '').encode())).hexdigest()
     if not db.query(SourceRevision.id).filter_by(source_id=source.id, content_hash=digest).first():
-        db.add(SourceRevision(source_id=source.id, content_hash=digest, kind=kind, payload=body, fit_bytes=blob))
+        from app.config import settings
+        key, checksum = blob_reference or (None, None)
+        if blob is not None and settings.fit_blob_bucket and blob_reference is None:
+            from app.services.blob_store import put_fit
+            key,checksum=put_fit(source.user_id,blob)
+        db.add(SourceRevision(source_id=source.id, content_hash=digest, kind=kind, payload=body,
+                              fit_bytes=None if key else blob, fit_blob_key=key, fit_sha256=checksum))
         db.flush()
     source.last_seen_at = datetime.now()
     if kind == 'summary':
@@ -63,7 +69,7 @@ def reparse_fits(user_id, db, *, limit=100, force=False):
     from app.services.garmin import reanalyze_laps
     from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
     from sqlalchemy import or_
-    query = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin')
+    query = db.query(ActivitySource).filter(ActivitySource.user_id==user_id,ActivitySource.provider.in_(['garmin','fit_upload']))
     if not force:
         query = query.filter(or_(ActivitySource.parser_version.is_(None), ActivitySource.parser_version != PARSER_VERSION))
     # Skip sources without original evidence before the limit, so legacy rows cannot starve newer files.
@@ -74,7 +80,8 @@ def reparse_fits(user_id, db, *, limit=100, force=False):
     for source in query.order_by(ActivitySource.id).limit(limit):
         original = db.query(SourceRevision).filter_by(source_id=source.id, kind='fit').order_by(SourceRevision.id.desc()).first()
         try:
-            laps = laps_from_fit(original.fit_bytes)
+            from app.services.blob_store import read_fit
+            laps = laps_from_fit(read_fit(original,user_id))
             if not laps:
                 failed += 1
                 continue

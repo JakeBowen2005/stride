@@ -1,4 +1,5 @@
 "use client";
+import { FitImport } from "@/components/fit-import";
 import { AccountSettings } from "@/components/account-settings";
 
 import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
@@ -308,6 +309,7 @@ export default function SettingsPage() {
       <AccountSettings />
       {/* Connections */}
       <GarminConnectionCard />
+      <FitImport />
 
     </div>
   );

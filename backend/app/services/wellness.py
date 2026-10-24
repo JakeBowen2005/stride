@@ -1,3 +1,5 @@
+from app.models.operations import ProviderCredential
+from app.athlete_clock import today as athlete_today
 """Pull daily Garmin wellness data: sleep, HRV, resting HR, body battery, stress.
 
 Uses the Personal API's range endpoints: three requests (daily summaries, sleep,
@@ -15,7 +17,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.wellness import DailyWellness
-from app.services.garmin import garmin_io_lock
+from app.services.garmin import garmin_io_lock, io_lock_for
 from app.services.garmin_api import GarminAuthError, GarminRateLimited, get_client
 
 logger = logging.getLogger("stride.wellness")
@@ -184,7 +186,8 @@ def sync_wellness(user_id: int, db: Session, force: bool = False) -> dict:
     if not _lock.acquire(blocking=False):
         return {"status": "busy"}
     # A full import can hold the Garmin lock for minutes; skip rather than block a request
-    if not garmin_io_lock.acquire(blocking=False):
+    io_lock=io_lock_for(user_id)
+    if not io_lock.acquire(blocking=False):
         _lock.release()
         return {"status": "busy"}
     try:
@@ -197,7 +200,7 @@ def sync_wellness(user_id: int, db: Session, force: bool = False) -> dict:
         _last_today_refresh[user_id] = time.monotonic()
         return {"status": "backoff"}
     finally:
-        garmin_io_lock.release()
+        io_lock.release()
         _lock.release()
 
 
@@ -205,8 +208,13 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
     now = time.monotonic()
     if not force and now - _last_today_refresh.get(user_id, -1e9) < WELLNESS_REFRESH_MINUTES * 60:
         return {"status": "fresh"}
-    client = get_client()
-    today = date.today()
+    from app.config import settings
+    if settings.accounts_enabled or db.get(ProviderCredential,user_id):
+        from app.services.provider_connections import client_for
+        client=client_for(user_id)
+    else:
+        client=get_client()
+    today = athlete_today()
     have = db.query(DailyWellness).filter(DailyWellness.user_id == user_id).count()
     # Yesterday is finalized overnight, so the routine refresh covers it too
     start = today - timedelta(days=(BACKFILL_DAYS if have < 7 else 2) - 1)

@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Personalized, deterministic replacement menus. The athlete (or the AI review)
 selects one concrete option; nothing here is authored by a model.
 
@@ -82,7 +83,7 @@ def context_for(plan, db):
     goal = db.query(Goal).filter_by(user_id=plan.user_id, active=True).first()
     analysis = analyze_athlete(plan.user_id, db)
     experience = user.experience_level or analysis.get('overview', {}).get('experience_level', 'beginner')
-    today = date.today()
+    today = athlete_today()
     monday = today - timedelta(days=today.weekday())
     weeks = {w['week_start']: w['actual'] for w in compute_weekly_mileage(plan.user_id, db, 10)}
     full_weeks = [weeks.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
@@ -366,7 +367,7 @@ def _dry_run(plan, row, ctx, candidates, db):
 
 def build_session_options(plan, row, category, db, context=None):
     from app.api.plans import _get_activities_for_date
-    locked = (not plan.is_active or row.date < max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
+    locked = (not plan.is_active or row.date < max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date)
               or row.type == 'race' or row.activity_id or row.moved_to or row.session_status == 'skipped'
               or _get_activities_for_date(row.date, plan.user_id, db))
     if locked:

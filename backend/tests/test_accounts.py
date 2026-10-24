@@ -78,3 +78,15 @@ def test_export_and_erasure_only_affect_own_athlete(accounts):
     with SessionLocal() as db:
         assert db.get(User,uid) is None
         assert db.get(User,1) is not None
+
+
+def test_request_calendar_is_per_athlete_and_ai_consent_is_enforced(accounts):
+    import time_machine
+    from datetime import datetime,timezone
+    uid=register(accounts)
+    with time_machine.travel(datetime(2026,10,24,1,tzinfo=timezone.utc),tick=False):
+        assert accounts.put('/api/users/me/profile',json={'timezone':'America/Los_Angeles'}).status_code==200
+        assert accounts.get('/api/users/me').json()['today']=='2026-10-23'
+        assert accounts.put('/api/users/me/profile',json={'timezone':'Asia/Tokyo'}).status_code==200
+        assert accounts.get('/api/users/me').json()['today']=='2026-10-24'
+        assert accounts.post('/api/coaching/me/review',json={}).status_code==403

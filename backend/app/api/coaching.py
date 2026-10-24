@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Explicit review generation and athlete-approved, revalidated suggestions."""
 import json
 from datetime import date, datetime, timezone
@@ -102,7 +103,7 @@ def accept(user_id: int, review_id: int, req: AcceptRequest, db: Session = Depen
     if not candidate:
         raise HTTPException(422, 'Unknown suggestion')
     row = db.query(PlannedWorkout).filter_by(id=candidate['session_id'], plan_id=plan.id).first()
-    if (not row or row.date < max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
+    if (not row or row.date < max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date)
             or (row.type != 'workout' and not candidate.get('session_option_id')) or row.activity_id or row.moved_to
             or _get_activities_for_date(row.date, user_id, db)):
         raise HTTPException(409, 'This session is no longer editable')
