@@ -133,7 +133,7 @@ def test_late_watch_rating_refreshes_and_enqueues_new_review(monkeypatch):
     class RecentGarmin(RatedGarmin):
         def _run(self, n, i):
             raw = super()._run(n, i)
-            raw['startTimeLocal'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            raw['startTimeLocal'] = datetime.combine(date.today(), datetime.min.time()).replace(hour=7).strftime('%Y-%m-%d %H:%M:%S')
             return raw
         def get_laps(self, aid):
             return [{'distance_m': 8000, 'duration_s': 2700}]
