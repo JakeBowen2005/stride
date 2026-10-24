@@ -4,9 +4,8 @@
  */
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-// Single-athlete app for now. When real auth lands this becomes the session user
-// (or the backend reads it from the session and drops it from paths entirely).
-export const USER_ID = 1;
+// The backend resolves the session athlete. Legacy owner mode resolves its configured owner.
+export const USER_ID = "me";
 
 export const apiUrl = (path: string) => `${API_BASE}/api${path}`;
 

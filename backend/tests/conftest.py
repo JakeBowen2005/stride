@@ -5,6 +5,7 @@ import os
 import tempfile
 
 _tmp = tempfile.mkdtemp(prefix="stride-test-")
+os.environ["STRIDE_ACCOUNTS_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["GARMIN_POLL_MINUTES"] = "0"
 os.environ["GARMIN_API_KEY"] = ""  # never call the real Garmin API, regardless of local .env

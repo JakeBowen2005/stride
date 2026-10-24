@@ -21,6 +21,10 @@ def enqueue_synced_run(activity, db):
     """Caller owns the import transaction. Never enqueue paid historical backfill."""
     if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < date.today()-timedelta(days=2) or activity.date.date() > date.today():
         return
+    if settings.accounts_enabled:
+        from app.models.user import User
+        if not db.get(User,activity.user_id).ai_consent:
+            return
     db.flush()
     evidence = [getattr(activity, key) for key in ('date', 'distance_meters', 'duration_seconds', 'splits', 'event_type', 'activity_kind_override', 'feel_rating', 'feel_notes', 'effort_rating', 'reported_completion', 'garmin_feel', 'garmin_rpe')]
     evidence = [float(v) if isinstance(v, (int, float)) else v for v in evidence]

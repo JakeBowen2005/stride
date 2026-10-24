@@ -5,16 +5,18 @@ import { Label } from "@/components/ui/label";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next = "/", error } = await searchParams;
+  const accounts = process.env.STRIDE_ACCOUNTS_ENABLED === "true";
   return (
     <div className="mx-auto w-full max-w-sm py-16">
       <Card>
         <CardContent className="space-y-4 pt-6">
           <div>
             <h1 className="text-xl font-semibold">Stride</h1>
-            <p className="text-sm text-muted-foreground">Enter your Stride password. Sessions last seven days on this device.</p>
+            <p className="text-sm text-muted-foreground">{accounts ? "Sign in to your athlete account." : "Enter your Stride password. Sessions last seven days on this device."}</p>
           </div>
           <form action="/auth" method="post" className="space-y-3">
             <input type="hidden" name="next" value={next} />
+            {accounts && <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" name="email" type="email" autoComplete="email" required /></div>}
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <Input id="password" name="password" type="password" autoComplete="current-password" required autoFocus />
@@ -24,7 +26,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               Sign in
             </Button>
           </form>
-          {!process.env.RENDER && <p className="text-xs text-muted-foreground">The app owner can find the local password in frontend/.env.local.</p>}
+          {accounts && <p className="text-sm"><a className="underline" href="/auth/register">Create an invited account</a> · <a className="underline" href="/auth/reset">Recover account</a></p>}
+          {!accounts && !process.env.RENDER && <p className="text-xs text-muted-foreground">The app owner can find the local password in frontend/.env.local.</p>}
         </CardContent>
       </Card>
     </div>

@@ -13,6 +13,15 @@ from app.models.coaching import CoachingReview, CoachingJob
 from app.models.plan import PlannedWorkout
 from app.services.coaching import VERSION, build_context, review_training, serialize_review
 
+def consent(user_id: int, db: Session = Depends(get_db)):
+    from app.config import settings
+    from app.models.user import User
+    if settings.accounts_enabled:
+        user=db.get(User,user_id)
+        if not user or not user.ai_consent:
+            raise HTTPException(403, 'AI coaching is off. Enable consent in Settings to use it.')
+
+
 router = APIRouter(prefix='/api/coaching', tags=['coaching'])
 
 
@@ -34,11 +43,13 @@ def status(user_id: int, db: Session = Depends(get_db)):
     used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(
         CoachingReview.user_id == user_id, CoachingReview.created_at >= day,
         CoachingReview.model.is_not(None)).scalar()
-    return {'configured': bool(settings.openai_api_key), 'model': settings.openai_coach_model,
+    from app.models.user import User
+    allowed = not settings.accounts_enabled or bool(db.get(User,user_id).ai_consent)
+    return {'configured': bool(settings.openai_api_key) and allowed, 'model': settings.openai_coach_model,
             'policy_version': VERSION, 'reviews_today': used, 'daily_limit': settings.openai_coach_daily_limit}
 
 
-@router.post('/{user_id}/review')
+@router.post('/{user_id}/review', dependencies=[Depends(consent)])
 def create_review(user_id: int, req: ReviewRequest, db: Session = Depends(get_db)):
     return review_training(user_id, db, req.activity_id, req.plan_id, req.athlete_concern)
 

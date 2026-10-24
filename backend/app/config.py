@@ -1,11 +1,16 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
+    accounts_enabled: bool = Field(default=False, validation_alias="STRIDE_ACCOUNTS_ENABLED")
+    signup_invite_code: str = Field(default="", validation_alias="STRIDE_SIGNUP_INVITE_CODE")
+    cookie_secure: bool = Field(default=True, validation_alias="STRIDE_COOKIE_SECURE")
+    public_app_url: str = Field(default="", validation_alias="STRIDE_PUBLIC_URL")
     database_url: str = "sqlite:///./stride.db"
     openai_api_key: str = ""
     openai_coach_model: str = "gpt-5.4-mini"

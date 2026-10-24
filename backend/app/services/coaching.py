@@ -439,6 +439,11 @@ def serialize_review(row, *, stale=False):
 
 
 def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
+    if settings.accounts_enabled:
+        from app.models.user import User
+        user=db.get(User,user_id)
+        if not user or not user.ai_consent:
+            raise HTTPException(403, 'AI coaching consent is required.')
     from app.api.plans import _begin_schedule_write
     # Reserve before calling OpenAI: concurrent retries reuse the same review;
     # quota checks and reservations share a SQLite write lock.
