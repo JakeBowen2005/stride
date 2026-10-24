@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -59,15 +60,15 @@ def recovery_signals(today: dict | None) -> list[dict]:
 
 @router.get("/{user_id}")
 def get_wellness(user_id: int, days: int = Query(default=28, le=120), db: Session = Depends(get_db)):
-    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    since = (athlete_today() - timedelta(days=days - 1)).isoformat()
     rows = (
         db.query(DailyWellness)
-        .filter(DailyWellness.user_id == user_id, DailyWellness.date >= since)
+        .filter(DailyWellness.user_id == user_id, DailyWellness.date >= since, DailyWellness.date <= athlete_today().isoformat())
         .order_by(DailyWellness.date.asc())
         .all()
     )
     history = [wellness_to_dict(r) for r in rows]
-    today_row = next((h for h in reversed(history) if h["date"] == date.today().isoformat()), None)
+    today_row = next((h for h in reversed(history) if h["date"] == athlete_today().isoformat()), None)
     latest = history[-1] if history else None
     # Fresh = today's Garmin data. An older row is shown as "as of <date>" but never
     # drives readiness or recovery signals (stale data mustn't imply readiness).

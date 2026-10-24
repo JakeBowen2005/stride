@@ -35,6 +35,8 @@ class SourceRevision(Base):
     kind: Mapped[str] = mapped_column(String(20))  # summary, fit, legacy
     payload: Mapped[str | None] = mapped_column(Text)
     # Content-addressed evidence kept in a separate table, covered by existing DB backups.
+    fit_blob_key: Mapped[str | None] = mapped_column(String(512))
+    fit_sha256: Mapped[str | None] = mapped_column(String(64))
     fit_bytes: Mapped[bytes | None] = mapped_column(LargeBinary)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 

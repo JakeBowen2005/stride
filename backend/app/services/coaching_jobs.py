@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Durable local jobs. Garmin import commits the job, a separate worker reviews it."""
 from datetime import date, datetime, timedelta, timezone
 import hashlib
@@ -19,7 +20,7 @@ logger = logging.getLogger('stride.coaching_jobs')
 
 def enqueue_synced_run(activity, db):
     """Caller owns the import transaction. Never enqueue paid historical backfill."""
-    if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < date.today()-timedelta(days=2) or activity.date.date() > date.today():
+    if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < athlete_today()-timedelta(days=2) or activity.date.date() > athlete_today():
         return
     if settings.accounts_enabled:
         from app.models.user import User
@@ -52,11 +53,11 @@ def process_one():
         job = db.query(CoachingJob).filter(or_(
             and_(CoachingJob.status=='queued', CoachingJob.available_at<=now),
             and_(CoachingJob.status=='running', CoachingJob.updated_at<now-timedelta(minutes=10)),
-        )).order_by(CoachingJob.id).first()
+        )).order_by(CoachingJob.id).with_for_update(skip_locked=True).first()
         if not job:
             db.commit(); return False
         activity = db.get(Activity, job.activity_id)
-        if not activity or is_walk(activity) or activity.date.date() < date.today()-timedelta(days=7):
+        if not activity or is_walk(activity) or activity.date.date() < athlete_today()-timedelta(days=7):
             job.status, job.last_error = 'failed', 'Activity is not eligible for an automatic running review'
             db.commit(); return True
         if job.attempts >= 3:
@@ -72,7 +73,11 @@ def process_one():
     quota_wait = False
     try:
         with SessionLocal() as db:
-            review = review_training(user_id, db, activity_id=activity_id)
+            from app.models.user import User
+            from app.athlete_clock import athlete_zone
+            athlete=db.get(User,user_id)
+            with athlete_zone(athlete.timezone if athlete else None):
+                review = review_training(user_id, db, activity_id=activity_id)
         state = 'done' if review['status']=='ready' else 'queued'
         error = None if state=='done' else 'Review unavailable; retry scheduled'
         review_id = review['id']

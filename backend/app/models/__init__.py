@@ -10,3 +10,4 @@ from app.models.history import AthleteRevision, DirtyDay, DailyFact, AnalysisSna
 from app.services import history_tracking  # noqa: F401 — transaction-local invalidation hooks
 
 from app.models.account import Account, AccountSession, AuthThrottle  # noqa: F401
+from app.models.operations import ProviderCredential, SyncJob, BlobDeletion  # noqa: F401

@@ -1,6 +1,6 @@
 "use client";
 
-import { useUnits } from "@/components/unit-preferences";
+import { useUnits, useAthleteToday } from "@/components/unit-preferences";
 import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { primaryRunId } from "@/lib/activity-selection";
 import { CoachingReview } from "@/components/coaching-review";
@@ -21,7 +21,7 @@ import { WeekProgress } from "@/components/home/week-progress";
 import { RecentFeedback, runsAwaitingFeedback } from "@/components/home/recent-feedback";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
-import { formatDate, localDateStr } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import type { Activity, WeeklyMileage } from "@/lib/types";
 
 
@@ -41,6 +41,7 @@ interface PlanResponse {
 
 export default function TodayPage() {
   const units = useUnits();
+  const today = useAthleteToday();
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +100,6 @@ export default function TodayPage() {
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
-  const today = localDateStr();
   const planStale = !!plan?.is_stale;
   const thisWeek = planStale ? null : plan?.weeks.find((w) => w.days.some((d) => d.date === today)) ?? null;
   const todayPlan = thisWeek?.days.find((d) => d.date === today) ?? null;

@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Grounded advice with durable deduplication, bounded spend and explicit acceptance."""
 import hashlib
 import json
@@ -219,7 +220,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     sources = research_context(goal)
     selected_plan = db.query(Plan).filter_by(user_id=user_id, id=plan_id).first() if plan_id else db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
     resolved_plan_id = selected_plan.id if selected_plan else plan_id
-    key = hashlib.sha256(json.dumps({'version': VERSION, 'today': date.today().isoformat(),
+    key = hashlib.sha256(json.dumps({'version': VERSION, 'today': athlete_today().isoformat(),
         'activity': activity_id, 'plan': resolved_plan_id, 'concern': normalize_concern(concern),
         'model': settings.openai_coach_model, 'instructions': INSTRUCTIONS, 'research': sources,
         'credential_version': hashlib.sha256(settings.openai_api_key.encode()).hexdigest()}, sort_keys=True).encode()).hexdigest()
@@ -245,14 +246,14 @@ def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         raise HTTPException(404, 'Run not found')
     if activity and is_walk(activity):
         raise HTTPException(409, 'This is a walking activity; select the running session to review it.')
-    if activity and activity.date.date() > date.today():
+    if activity and activity.date.date() > athlete_today():
         raise HTTPException(409, 'Future activities cannot be reviewed as completed runs')
     plan = db.query(Plan).filter_by(user_id=user_id, id=plan_id).first() if plan_id else db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
     if plan_id and (not plan or plan.preview_state in {'discarded', 'superseded'}):
         raise HTTPException(404, 'Plan not available')
     if not activity and not plan:
         raise HTTPException(404, 'No run or plan to review')
-    today = date.today()
+    today = athlete_today()
     # Eight weeks establish quality/recovery context. Exclude future activities.
     runs = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(today-timedelta(days=56), datetime.min.time()),

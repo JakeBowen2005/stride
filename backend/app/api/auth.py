@@ -143,21 +143,33 @@ def authenticated(request,db):
 
 @router.get('/export', dependencies=[Depends(enabled)])
 def export(request:Request,db:Session=Depends(get_db)):
-    import base64
+    import base64,json
     from sqlalchemy import select
     from app.services.account_data import owned_tables
-    uid=authenticated(request,db)
-    data={}
-    for table,condition in owned_tables(uid):
-        if table.name in {'accounts','account_sessions','provider_credentials'}:
-            continue
-        rows=[]
-        for row in db.execute(select(table).where(condition)).mappings():
-            rows.append({k:base64.b64encode(v).decode() if isinstance(v,bytes) else v for k,v in row.items()})
-        data[table.name]=rows
+    from app.services.blob_store import read_fit
+    from app.models.history import SourceRevision
     from fastapi.encoders import jsonable_encoder
-    from starlette.responses import JSONResponse
-    return JSONResponse(jsonable_encoder({'format':'stride-export-v1','binary_encoding':'base64','tables':data}),headers={'Cache-Control':'no-store','Content-Disposition':'attachment; filename="stride-export.json"'})
+    from starlette.responses import StreamingResponse
+    uid=authenticated(request,db)
+    def stream():
+        yield '{"format":"stride-export-v1","binary_encoding":"base64","tables":{'
+        first_table=True
+        for table,condition in owned_tables(uid):
+            if table.name in {'accounts','account_sessions','provider_credentials'}:continue
+            if not first_table:yield ','
+            first_table=False
+            yield json.dumps(table.name)+':['
+            first=True
+            for raw in db.execute(select(table).where(condition).execution_options(yield_per=100)).mappings():
+                row=dict(raw)
+                if table.name=='source_revisions' and row.get('fit_blob_key'):
+                    row['fit_bytes']=read_fit(db.get(SourceRevision,row['id']),uid)
+                if not first:yield ','
+                first=False
+                yield json.dumps(jsonable_encoder({k:base64.b64encode(v).decode() if isinstance(v,bytes) else v for k,v in row.items()}))
+            yield ']'
+        yield '}}'
+    return StreamingResponse(stream(),media_type='application/json',headers={'Cache-Control':'no-store','Content-Disposition':'attachment; filename="stride-export.json"'})
 
 
 class Erasure(BaseModel):
@@ -172,6 +184,12 @@ def erase(data:Erasure,request:Request,response:Response,db:Session=Depends(get_
     account=db.get(Account,uid)
     if data.confirmation != 'DELETE' or not PASSWORDS.verify(data.password,account.password_hash):
         raise HTTPException(403,'Confirm DELETE and your current password.')
+    from app.models.history import ActivitySource,SourceRevision
+    from app.models.operations import BlobDeletion
+    keys=db.query(SourceRevision.fit_blob_key).join(ActivitySource,SourceRevision.source_id==ActivitySource.id).filter(ActivitySource.user_id==uid,SourceRevision.fit_blob_key.is_not(None)).all()
+    for (key,) in keys:
+        if not db.query(BlobDeletion).filter_by(key=key).first():db.add(BlobDeletion(bucket=settings.fit_blob_bucket,key=key))
+    db.flush()
     # Core deletes intentionally avoid ORM invalidation hooks recreating revision
     # rows during account removal. Foreign-key order includes indirect children.
     for table,condition in reversed(owned_tables(uid)):

@@ -10,6 +10,8 @@ import { GarminSync } from "@/components/garmin-sync";
 
 interface Status {
   api_key_present: boolean;
+  business_pending?: boolean;
+  owner_key_storage_ready?: boolean;
   connected: boolean;
   display_name: string | null;
   last_sync_at: string | null;
@@ -21,6 +23,7 @@ interface Status {
 
 export function GarminConnectionCard() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [connectionMessage,setConnectionMessage]=useState("");
   const [offline, setOffline] = useState(false);
 
   async function load() {
@@ -73,7 +76,8 @@ export function GarminConnectionCard() {
 
         {offline && <p className="text-sm text-destructive">Can&apos;t reach the Stride backend.</p>}
 
-        {status && !status.api_key_present && (
+        {status?.business_pending && <p className="text-sm">Separate Garmin connections are awaiting Business API approval. Import your original FIT files below to build your history now.</p>}
+        {status && !status.api_key_present && !status.business_pending && (
           <div className="space-y-2 rounded-md bg-secondary/40 p-3 text-sm">
             <p className="font-medium">Connect Garmin with a Personal API key.</p>
             <p className="text-muted-foreground">
@@ -91,6 +95,9 @@ export function GarminConnectionCard() {
           </div>
         )}
 
+        {status?.owner_key_storage_ready && <form className="space-y-2" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const r=await fetch(apiUrl(`/garmin/connect/${USER_ID}`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:f.get('key')})});const d=await r.json();setConnectionMessage(r.ok?d.message:typeof d.detail==='string'?d.detail:'Could not save key.');if(r.ok){form.reset();load();}}}><label className="block text-sm">Your owner Personal API key<input className="block min-h-11 w-full rounded border p-2" name="key" type="password" required autoComplete="off"/></label><Button type="submit" variant="outline">Save encrypted key</Button></form>}
+        {connectionMessage && <p role="status" className="text-sm">{connectionMessage}</p>}
+        {status?.api_key_present && <Button variant="outline" onClick={async()=>{const r=await fetch(apiUrl(`/garmin/disconnect/${USER_ID}`),{method:'POST'});if(r.ok){setConnectionMessage('Disconnected. Revoke the key in Garmin to finish removal there.');load();}}}>Disconnect Garmin</Button>}
         {status?.api_key_present && (
           <>
             <div className="flex items-start justify-between gap-4 text-sm">

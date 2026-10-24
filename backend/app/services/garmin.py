@@ -1,3 +1,6 @@
+from app.models.operations import ProviderCredential
+from app.config import settings
+from app.athlete_clock import today as athlete_today
 """Garmin Connect integration (official Personal API).
 
 Stride reads the athlete's own Garmin data with a Garmin Connect Personal API key
@@ -47,6 +50,20 @@ ERROR_BACKOFF = timedelta(minutes=10)  # network / 5xx: don't hammer Garmin ever
 AUTH_BACKOFF = timedelta(hours=12)  # rejected key: needs a new key (and restart) anyway
 
 _sync_lock = threading.Lock()
+_athlete_sync_locks = {}
+_athlete_io_locks = {}
+_lock_registry = threading.Lock()
+
+
+def sync_lock_for(user_id):
+    if not settings.accounts_enabled:return _sync_lock
+    with _lock_registry:return _athlete_sync_locks.setdefault(user_id,threading.Lock())
+
+
+def io_lock_for(user_id):
+    if not settings.accounts_enabled:return garmin_io_lock
+    with _lock_registry:return _athlete_io_locks.setdefault(user_id,threading.RLock())
+
 # Serializes every network call through the shared Garmin client (activity + wellness sync)
 garmin_io_lock = threading.RLock()
 
@@ -248,8 +265,13 @@ def _find_legacy_match(user_id: int, parsed: dict, db: Session) -> Activity | No
     Ambiguous doubles remain separate; successful merges keep feedback and plan links."""
     start = parsed["date"]
     day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    imports = db.query(Activity).filter(Activity.user_id==user_id,Activity.source=='manual',
+        Activity.external_id.like('fit-%'),Activity.date>=start-timedelta(seconds=10),Activity.date<=start+timedelta(seconds=10)).all()
+    imports = [a for a in imports if abs(a.distance_meters-parsed['distance_meters'])/max(parsed['distance_meters'],1)<=.005
+               and abs(a.duration_seconds-parsed['duration_seconds'])/max(parsed['duration_seconds'],1)<=.02]
+    if len(imports)==1:return imports[0]
     manual = db.query(Activity).filter(
-        Activity.user_id == user_id, Activity.source == "manual",
+        Activity.user_id == user_id, Activity.source == "manual", Activity.external_id.like("manual-%"),
         Activity.date >= day, Activity.date < day + timedelta(days=1),
     ).first()
     if manual and manual.distance_meters and parsed["distance_meters"]:
@@ -329,7 +351,7 @@ def _watch_rating_due(activity) -> bool:
         return True
     # Watch feedback may arrive after the FIT/summary. Refresh recent evidence,
     # with a bounded window so old history never becomes a detail-request crawl.
-    if activity.date.date() < date.today() - timedelta(days=7):
+    if activity.date.date() < athlete_today() - timedelta(days=7):
         return False
     delay = timedelta(minutes=15) if activity.garmin_feel is None and activity.garmin_rpe is None else timedelta(hours=6)
     return activity.garmin_rating_checked_at < datetime.now() - delay
@@ -360,8 +382,11 @@ def _fetch_watch_rating(client, activity, db=None) -> bool:
 def _enrich(client, activity, source, db, easy_pace):
     """Persist original evidence before parsing; retry failures independently of dates."""
     db.commit()  # summary + pending enrichment are durable; release writer before FIT I/O
+    from app.services.sync_jobs import heartbeat
+    heartbeat(activity.user_id,db)
     if _watch_rating_due(activity):
         _fetch_watch_rating(client, activity, db)
+        db.commit()  # detail evidence is durable; release writer before FIT I/O
     try:
         if hasattr(client, 'get_fit'):
             blob = client.get_fit(source.external_id)
@@ -407,7 +432,8 @@ def _retry_enrichment(client, user_id, db, easy_paces, attempted):
 
 def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
     """Pull running activities from Garmin into the DB. Thread-safe; one sync at a time."""
-    if not _sync_lock.acquire(blocking=False):
+    lock=sync_lock_for(user_id)
+    if not lock.acquire(blocking=False):
         return {"status": "busy", "message": "A Garmin sync is already running."}
     db.info.pop("garmin_day_candidates", None)
     db.info.pop("garmin_ambiguous_days", None)
@@ -418,10 +444,10 @@ def sync_garmin(user_id: int, db: Session, full: bool = False) -> dict:
         if conn.backoff_until and conn.backoff_until > datetime.now():
             return {"status": "backoff", "message": f"Garmin rate-limited us; retrying after {conn.backoff_until:%H:%M}."}
         db.commit()  # connection creation must not hold SQLite's writer across network calls
-        with garmin_io_lock:
+        with io_lock_for(user_id):
             return _sync(user_id, db, full)
     finally:
-        _sync_lock.release()
+        lock.release()
 
 
 def _pages(client, start_date: date | None = None, end_date: date | None = None):
@@ -439,7 +465,11 @@ def _pages(client, start_date: date | None = None, end_date: date | None = None)
 def _sync(user_id: int, db: Session, full: bool) -> dict:
     conn = get_connection(user_id, db)
     try:
-        client = get_client()
+        if settings.accounts_enabled or db.get(ProviderCredential,user_id):
+            from app.services.provider_connections import client_for
+            client=client_for(user_id)
+        else:
+            client = get_client()
     except GarminNotConnected as e:
         conn.connected = False
         conn.last_error = str(e)
@@ -488,7 +518,7 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
         newest = db.query(func.max(Activity.date)).filter(
             Activity.user_id == user_id, Activity.source == "garmin").scalar()
         since = min((newest or datetime.now()).date(), (conn.last_sync_at or datetime.now()).date()) - timedelta(days=OVERLAP_DAYS)
-        pages = _pages(client, since, date.today() + timedelta(days=1))
+        pages = _pages(client, since, athlete_today() + timedelta(days=1))
 
     try:
         for batch in pages:
@@ -562,8 +592,8 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
             raise
     # A checked discovery interval records access, not proof that every day was worn.
     earliest = db.query(func.min(Activity.date)).filter_by(user_id=user_id, source='garmin').scalar()
-    coverage(user_id, 'activities', (earliest.date() if earliest else date.today()) if full else since,
-             date.today(), 'checked', db)
+    coverage(user_id, 'activities', (earliest.date() if earliest else athlete_today()) if full else since,
+             athlete_today(), 'checked', db)
     changed = counts["new"] + counts["merged"] + counts['updated']
     if changed or full:
         reanalyze_laps(user_id, db)

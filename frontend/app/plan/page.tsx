@@ -1,4 +1,5 @@
 "use client";
+import { useAthleteToday } from "@/components/unit-preferences";
 
 import { CoachingReview } from "@/components/coaching-review";
 import { describeSchedule, scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
@@ -19,7 +20,7 @@ import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SYNC_EVENT } from "@/components/garmin-sync";
-import { formatDateShort, localDateStr } from "@/lib/format";
+import { formatDateShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExecutedWorkout, PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
@@ -186,6 +187,7 @@ function subscribeDesktop(onChange: () => void) {
 }
 
 export default function PlanPage() {
+  const today=useAthleteToday();
   const [currentPreferences, setCurrentPreferences] = useState<AthletePreferences | null>(null);
   const [moveRequest, setMoveRequest] = useState<{ date: string; nonce: number } | null>(null);
   const [units, setUnits] = useState<Units>("miles");
@@ -312,7 +314,6 @@ export default function PlanPage() {
 
   const weeks: PlanWeekType[] = plan.weeks.map(mapApiToWeek);
 
-  const today = localDateStr();
 
   if (plan.is_stale) {
     return (

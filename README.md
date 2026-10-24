@@ -258,3 +258,42 @@ already-created offsite backups immediately: the operator must define retention
 and let those encrypted backups expire. Never enable a shared owner Garmin key
 for additional athletes. Garmin multi-user integration still requires Garmin's
 approval and the appropriate historical-data entitlement.
+
+### Worker, migrations, and storage deployment
+
+The container runs `python -m app.schema` once before starting the web process,
+then starts `python -m app.services.worker` separately. Web replicas use
+`SCHEMA_AUTO_UPGRADE=false` and `EMBEDDED_WORKERS=false`. Local development still
+supports embedded work. Sync jobs persist per athlete, use leases/retries, and
+resume after a worker restart; PostgreSQL claims use row locks with `SKIP LOCKED`.
+A schema version marker plus missing columns is treated as drift, not silently
+repaired. Future changes require a new Alembic revision; do not edit the frozen
+baseline manifest after release. Existing source/data migrations remain separate.
+
+For a larger deployment use a managed PostgreSQL URL (`postgresql+psycopg://…`),
+with the provider's encrypted backups and point-in-time recovery enabled. A
+PostgreSQL CI service exercises migrations, snapshot transfer, sequence repair,
+and concurrent job claims. Cutover procedure:
+
+1. Stop writes; create and restore-verify a SQLite snapshot using the backup CLI.
+2. Upgrade a **copy** of that snapshot with the new schema.
+3. Run `python -m app.services.database_transfer --source-snapshot COPY --destination-url EMPTY_POSTGRES_URL` in a private operator shell. It reads the snapshot without modifying it, checks counts, and repairs PostgreSQL sequences. The destination must contain no athlete data.
+4. Verify login, history, plan, source evidence and backups in staging; then change `DATABASE_URL`. Keep the original database and verified backups for rollback. Never run two writable deployments against separate copies during cutover.
+
+`FIT_BLOB_BUCKET` optionally stores new FIT evidence in private S3 objects,
+content-addressed under each athlete. Original inline evidence remains readable.
+Configure the bucket's block-public-access, encryption, least-privilege IAM, and
+version/lifecycle policy. Database backups alone do not back up external objects.
+Exports stream original evidence; account erasure queues idempotent object
+removal. Failed SQL transactions may leave unreferenced objects; retain objects
+until a separately verified reference/lifecycle cleanup rather than deleting
+unreferenced data during ingestion.
+
+`STRIDE_PROVIDER_ENCRYPTION_KEYS` accepts comma-separated Fernet keys (newest first)
+for stored owner credentials. Keep keys in a secret manager, separate from database
+backups. Rotate by adding the new key while retaining previous keys until stored
+credentials are re-encrypted. Generate with `Fernet.generate_key()` from the
+`cryptography` library. No provider secret is returned in APIs or exports. The
+existing environment owner key remains supported in owner mode only. Separate
+athletes cannot reuse it; live Business transport remains disabled pending Garmin
+approval and its integration contract. Original FIT uploads work without Garmin.

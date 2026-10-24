@@ -358,3 +358,25 @@ def reparse_history(user_id: int, force: bool = False, limit: int = Query(defaul
         raise HTTPException(404, 'Athlete not found')
     _begin_schedule_write(db)
     return reparse_fits(user_id, db, limit=limit, force=force)
+
+
+from fastapi import Request
+
+
+@router.post('/{user_id}/import-fit')
+async def upload_fit(user_id:int,request:Request,db:Session=Depends(get_db)):
+    from app.services.fit_import import MAX_BYTES,import_fit
+    if int(request.headers.get('content-length') or 0)>MAX_BYTES:
+        raise HTTPException(413,'FIT file exceeds 10 MiB.')
+    body=bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body)>MAX_BYTES:
+            raise HTTPException(413,'FIT file exceeds 10 MiB.')
+    try:
+        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(import_fit,user_id,bytes(body),db)
+    except ValueError as exc:
+        db.rollback();raise HTTPException(422,str(exc))
+    except Exception:
+        db.rollback();raise HTTPException(422,'Unable to import this FIT file. Check it is an original running activity.')
