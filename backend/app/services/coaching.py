@@ -102,7 +102,9 @@ def _run(a, executed=None, planned=None):
            # Measured from the watch's laps: the authority on what was actually run
            'measured_lap_summary': lap_summary,
            'detected_session': None,
-           'watch_self_evaluation': {'feel_1_to_10': a.watch_feel, 'effort_1_to_10': a.watch_effort,
+           'watch_self_evaluation': {'feel': a.watch_feel_label, 'feel_1_to_10': a.watch_feel,
+                                     'perceived_effort': a.watch_effort_label, 'effort_1_to_10': a.watch_effort,
+                                     'primary_benefit': a.training_effect_label,
                                      'provenance': 'garmin_watch_prompt_after_the_run'}
                                     if a.garmin_feel is not None or a.garmin_rpe else None,
            'athlete_feedback': {'feel_1_to_10': app_feel if app_feel is not None else a.watch_feel,

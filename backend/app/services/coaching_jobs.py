@@ -43,12 +43,20 @@ def enqueue_synced_run(activity, db, ready=False):
     evidence = [getattr(activity, key) for key in ('date', 'distance_meters', 'duration_seconds', 'splits', 'event_type', 'activity_kind_override', 'feel_rating', 'feel_notes', 'effort_rating', 'reported_completion', 'garmin_feel', 'garmin_rpe')]
     evidence = [float(v) if isinstance(v, (int, float)) else v for v in evidence]
     version = 'e2-' + hashlib.sha256(json.dumps(evidence, default=str).encode()).hexdigest()[:26]
-    if not db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version=version).first():
-        db.query(CoachingJob).filter(CoachingJob.user_id == activity.user_id, CoachingJob.activity_id == activity.id,
-            CoachingJob.status.in_(['queued', 'waiting_sync'])).update({'status': 'superseded'}, synchronize_session=False)
-        db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, version=version,
-                           status='queued' if ready else 'waiting_sync',
-                           available_at=datetime.now(timezone.utc)))
+    existing = db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version=version).first()
+    if existing and not (ready and existing.status != 'running'):
+        return
+    db.query(CoachingJob).filter(CoachingJob.user_id == activity.user_id, CoachingJob.activity_id == activity.id,
+        CoachingJob.status.in_(['queued', 'waiting_sync'])).update({'status': 'superseded'}, synchronize_session=False)
+    if existing:
+        # Saving the comment again always asks for a review: one of the same evidence and
+        # unchanged training is served from cache (free); a stale one is redone.
+        existing.status, existing.attempts, existing.last_error = 'queued', 0, None
+        existing.available_at = datetime.now(timezone.utc)
+        return
+    db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, version=version,
+                       status='queued' if ready else 'waiting_sync',
+                       available_at=datetime.now(timezone.utc)))
 
 
 def release_synced_jobs(user_id, db):

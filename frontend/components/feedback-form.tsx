@@ -10,6 +10,9 @@ const COMMENT_MIN = 3;
 
 /** Garmin's five-step "how did you feel" answer, on Stride's 1-10 scale (2/4/6/8/10). */
 const WATCH_FEEL: Record<number, string> = { 2: "Very weak", 4: "Weak", 6: "Normal", 8: "Strong", 10: "Very strong" };
+/** Garmin's perceived-effort words for 1-10, as the Connect app shows them ("Light 2/10"). */
+const WATCH_EFFORT: Record<number, string> = { 1: "Very light", 2: "Light", 3: "Light", 4: "Moderate", 5: "Moderate",
+  6: "Moderate", 7: "Hard", 8: "Hard", 9: "Very hard", 10: "Maximum" };
 
 interface FeedbackFormProps {
   date: string;
@@ -89,7 +92,7 @@ export function FeedbackForm({ date, activityId, onSubmitted, compact = false, h
           {watchFeel || watch?.effort != null
             ? <>From your watch: {watchFeel && <>felt <span className="font-medium text-foreground">{watchFeel}</span></>}
                 {watchFeel && watch?.effort != null && " · "}
-                {watch?.effort != null && <>effort <span className="num font-medium text-foreground">{watch.effort}/10</span></>}</>
+                {watch?.effort != null && <>effort <span className="font-medium text-foreground">{WATCH_EFFORT[watch.effort] ? `${WATCH_EFFORT[watch.effort]} ` : ""}<span className="num">{watch.effort}/10</span></span></>}</>
             : "Your watch didn't record a post-run rating for this run."}
         </p>
       )}

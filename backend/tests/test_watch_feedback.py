@@ -247,3 +247,85 @@ def test_run_review_context_carries_comment_watch_rating_and_garmin_metrics(monk
     assert run["garmin_metrics"]["training_load"] == 120.0 and run["garmin_metrics"]["cadence_spm"] == 172
     assert "respond to it directly" in openai_coach.INSTRUCTIONS
     assert "never ask for one" in openai_coach.INSTRUCTIONS
+
+
+def test_saving_a_comment_reads_the_watch_rating_first(monkeypatch):
+    """A rating Garmin didn't have at sync time is read when the athlete comments, so the review sees it."""
+    from app.config import settings
+    from app.models.coaching import CoachingJob
+    from tests.test_adaptation_edge_cases import _easy_run
+    monkeypatch.setattr(settings, "openai_auto_reviews", True)
+    fake = RatedGarmin([], rating=(50, 20))  # Connect app: Normal feel, Light 2/10
+    monkeypatch.setattr(garmin, "get_client", lambda: fake)
+    _easy_run(0, 6)
+    with SessionLocal() as db:
+        run_id = db.query(Activity).one().id
+    r = client.post(f"/api/analysis/1/activities/{run_id}/feedback", json={"feel_notes": "feeling good and recovered"})
+    assert r.status_code == 200, r.text
+    with SessionLocal() as db:
+        run = db.get(Activity, run_id)
+        assert (run.garmin_feel, run.garmin_rpe) == (50, 20)
+        assert (run.watch_feel_label, run.watch_effort, run.watch_effort_label) == ("Normal", 2, "Light")
+        assert db.query(CoachingJob).one().status == "queued"
+    assert fake.detail_calls == ["e0"]
+
+
+def test_watch_rating_refresh_failure_never_blocks_the_comment(monkeypatch):
+    from tests.test_adaptation_edge_cases import _easy_run
+    def down():
+        raise RuntimeError("garmin down")
+    monkeypatch.setattr(garmin, "get_client", down)
+    _easy_run(0, 4)
+    with SessionLocal() as db:
+        run_id = db.query(Activity).one().id
+    r = client.post(f"/api/analysis/1/activities/{run_id}/feedback", json={"feel_notes": "Easy and relaxed."})
+    assert r.status_code == 200, r.text
+
+
+def test_review_is_queued_only_after_the_days_decisions_are_saved(monkeypatch):
+    """The worker must never review the pre-save plan (that review is instantly 'outdated')."""
+    from app.config import settings
+    from app.models.plan import PlannedWorkout
+    from app.services import coaching_jobs
+    from tests.test_adaptation_edge_cases import _plan, _easy_run
+    monkeypatch.setattr(settings, "openai_auto_reviews", True)
+    _plan([(0, "easy", "Easy Run", 4.0)])
+    _easy_run(0, 4)
+    seen = []
+    real = coaching_jobs.enqueue_synced_run
+    def spy(activity, db, ready=False):
+        with SessionLocal() as other:  # what a worker would see right now
+            seen.append(other.query(PlannedWorkout).one().coach_response)
+        return real(activity, db, ready=ready)
+    monkeypatch.setattr(coaching_jobs, "enqueue_synced_run", spy)
+    r = client.post(f"/api/plans/1/feedback/{date.today().isoformat()}", json={"feel_notes": "Smooth easy run."})
+    assert r.status_code == 200, r.text
+    assert seen and all(seen)  # coach response (the last decision write) was already committed
+
+
+def test_saving_the_same_comment_again_requeues_a_finished_review(monkeypatch):
+    from app.config import settings
+    from app.models.coaching import CoachingJob
+    from tests.test_adaptation_edge_cases import _easy_run
+    monkeypatch.setattr(settings, "openai_auto_reviews", True)
+    _easy_run(0, 4)
+    with SessionLocal() as db:
+        run_id = db.query(Activity).one().id
+    body = {"feel_notes": "Legs a bit tired."}
+    assert client.post(f"/api/analysis/1/activities/{run_id}/feedback", json=body).status_code == 200
+    with SessionLocal() as db:
+        job = db.query(CoachingJob).one()
+        job.status, job.attempts = "done", 1
+        db.commit()
+    assert client.post(f"/api/analysis/1/activities/{run_id}/feedback", json=body).status_code == 200
+    with SessionLocal() as db:
+        job = db.query(CoachingJob).one()
+        assert (job.status, job.attempts) == ("queued", 0)
+
+
+def test_run_review_context_uses_garmins_own_words(monkeypatch):
+    ctx, _ = _review_context(monkeypatch, garmin_feel=50, garmin_rpe=20, training_effect_label="AEROBIC_BASE",
+                             feel_notes="feeling good and recovered")
+    watch = ctx["run"]["watch_self_evaluation"]
+    assert (watch["feel"], watch["perceived_effort"], watch["effort_1_to_10"], watch["primary_benefit"]) == \
+        ("Normal", "Light", 2, "AEROBIC_BASE")

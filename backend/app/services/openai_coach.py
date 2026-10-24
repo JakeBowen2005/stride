@@ -80,7 +80,8 @@ only when missing data would change the advice.
 run.athlete_feedback.notes is the athlete's own comment on this run, and a run review exists
 because they wrote it: respond to it directly in the summary, confirming, explaining or
 gently correcting it with the measured data. Feel and effort come from the Garmin watch's
-post-run prompt (run.watch_self_evaluation; feel_source "watch"); the app never asks for a
+post-run prompt (run.watch_self_evaluation, with Garmin's own words, e.g. feel "Normal",
+perceived effort "Light" 2/10; feel_source "watch"); the app never asks for a
 rating, so never ask for one or report it as missing. If the watch has no rating, rely on the
 comment and the measurements. run.garmin_metrics holds the rest of what the watch recorded.
 Review objective run execution,
