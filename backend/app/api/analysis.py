@@ -296,7 +296,7 @@ def operations(user_id: int, db: Session = Depends(get_db)):
             'backup': {'configured': bool(info.get('last_local_success')), 'offsite_configured':bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET')),
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
                        'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
-                       'last_error_type':info.get('last_error_type')}, 'app': {'policy_version':VERSION}}
+                       'last_error_type':info.get('last_error_type'), 'storage':info.get('storage')}, 'app': {'policy_version':VERSION}}
 
 
 @router.get("/{user_id}/history")

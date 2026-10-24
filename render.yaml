@@ -12,7 +12,7 @@ services:
     disk:
       name: stride-data
       mountPath: /var/data
-      sizeGB: 1
+      sizeGB: 5
     envVars:
       - key: DATABASE_URL
         value: sqlite:////var/data/stride.db
@@ -26,7 +26,9 @@ services:
       - key: STRIDE_BACKUP_INTERVAL_SECONDS
         value: "21600"
       - key: STRIDE_BACKUP_KEEP
-        value: "28"
+        value: "7"
+      - key: STRIDE_BACKUP_MAX_BYTES
+        value: "536870912"
       - key: STRIDE_PASSWORD
         sync: false
       - key: OPENAI_API_KEY
