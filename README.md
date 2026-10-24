@@ -222,3 +222,14 @@ MVP functional, now on Garmin:
 - Lap-based workout detection feeding pace calibration and the progression ladders
 - 2-week plan generation with calibrated paces, feedback loop, Claude Haiku coach
 - Installable on phone (Add to Home Screen) via `./start.sh`
+
+### Storage budget and recovery
+
+The Render blueprint now allocates 5 GB, retains seven local snapshots, and caps
+snapshot retention at 512 MiB (`STRIDE_BACKUP_MAX_BYTES`). Existing Render disks
+must be resized in the dashboard; a blueprint edit does not prove the live disk
+was resized. Backups reserve space for verification and preserve the latest
+snapshot when space is insufficient. Operations reports capacity warnings.
+Configure the existing encrypted S3 export for off-disk recovery, and verify a
+restore with `python -m app.services.backups --restore BACKUP --destination NEW_DB`.
+No setting alone proves an offsite backup or a successful recovery.

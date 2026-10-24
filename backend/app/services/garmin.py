@@ -324,14 +324,28 @@ def watch_rating(detail: dict | None) -> tuple[int | None, int | None]:
             int(rpe) if isinstance(rpe, (int, float)) and rpe > 0 else None)
 
 
-def _fetch_watch_rating(client, activity) -> bool:
+def _watch_rating_due(activity) -> bool:
+    if activity.garmin_rating_checked_at is None:
+        return True
+    # Watch feedback may arrive after the FIT/summary. Refresh recent evidence,
+    # with a bounded window so old history never becomes a detail-request crawl.
+    if activity.date.date() < date.today() - timedelta(days=7):
+        return False
+    delay = timedelta(minutes=15) if activity.garmin_feel is None and activity.garmin_rpe is None else timedelta(hours=6)
+    return activity.garmin_rating_checked_at < datetime.now() - delay
+
+
+def _fetch_watch_rating(client, activity, db=None) -> bool:
     """One detail request per run. Caller has committed, so no SQLite writer is held
     across network I/O. Rate limits and a rejected key propagate; anything else is
     treated as "no rating" (it's optional evidence)."""
     if not hasattr(client, "get_activity"):
         return False
     try:
-        feel, rpe = watch_rating(client.get_activity(activity.external_id))
+        detail = client.get_activity(activity.external_id)
+        feel, rpe = watch_rating(detail)
+        if db is not None:
+            capture(source_for(activity, 'garmin', activity.external_id, db), 'detail', db, payload=detail or {})
     except (GarminAuthError, GarminRateLimited):
         raise
     except Exception as exc:
@@ -346,8 +360,8 @@ def _fetch_watch_rating(client, activity) -> bool:
 def _enrich(client, activity, source, db, easy_pace):
     """Persist original evidence before parsing; retry failures independently of dates."""
     db.commit()  # summary + pending enrichment are durable; release writer before FIT I/O
-    if activity.garmin_rating_checked_at is None:
-        _fetch_watch_rating(client, activity)
+    if _watch_rating_due(activity):
+        _fetch_watch_rating(client, activity, db)
     try:
         if hasattr(client, 'get_fit'):
             blob = client.get_fit(source.external_id)
@@ -498,12 +512,16 @@ def _sync(user_id: int, db: Session, full: bool) -> dict:
                     if not backfill:
                         updated = _refresh_summary(user_id, parsed, db, raw)
                         rated = db.query(Activity).filter_by(user_id=user_id, source='garmin', external_id=parsed['external_id']).one()
-                        if rated.garmin_rating_checked_at is None and not full:
+                        if _watch_rating_due(rated) and not full:
                             # Runs synced before watch ratings were read: check once, inside the
                             # incremental window only (never a full-history crawl).
                             db.commit()
                             counts["requests"] += 1
-                            updated = _fetch_watch_rating(client, rated) or updated
+                            rating_changed = _fetch_watch_rating(client, rated, db)
+                            updated = rating_changed or updated
+                            if rating_changed:
+                                from app.services.coaching_jobs import enqueue_synced_run
+                                enqueue_synced_run(rated, db)
                         source = db.query(ActivitySource).filter_by(user_id=user_id, provider='garmin', external_id=parsed['external_id']).one()
                         repair_due = explicit_full and (source.fit_checked_at is None or source.fit_checked_at < repair_started)
                         if repair_due or (source.enrichment_status in {'pending', 'retry'} and (source.next_retry_at is None or source.next_retry_at <= datetime.now())):

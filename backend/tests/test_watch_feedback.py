@@ -125,3 +125,36 @@ def test_watch_rating_counts_as_fatigue_evidence():
         db.commit()
         assessment = _recent_fatigue_assessment(1, None, db)
     assert assessment and assessment.decision == "recovery"
+
+
+def test_late_watch_rating_refreshes_and_enqueues_new_review(monkeypatch):
+    from app.config import settings
+    from app.models.coaching import CoachingJob
+    class RecentGarmin(RatedGarmin):
+        def _run(self, n, i):
+            raw = super()._run(n, i)
+            raw['startTimeLocal'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            return raw
+        def get_laps(self, aid):
+            return [{'distance_m': 8000, 'duration_s': 2700}]
+    fake = RecentGarmin([1], rating=(None, None))
+    monkeypatch.setattr(garmin, 'get_client', lambda: fake)
+    monkeypatch.setattr(settings, 'openai_auto_reviews', True)
+    monkeypatch.setattr(garmin, 'FULL_SYNC_DELAY', 0)
+    with SessionLocal() as db:
+        db.add(GarminConnection(user_id=1, connected=True, full_sync_done=True, display_name='test', last_reconciled_at=datetime.now()))
+        db.commit()
+        garmin.sync_garmin(1, db)
+        row = db.query(Activity).one()
+        before = db.query(CoachingJob).count()
+        fake.rating = (75, 40)
+        garmin.sync_garmin(1, db)
+        assert row.garmin_feel is None
+        row.garmin_rating_checked_at = datetime.now() - timedelta(minutes=16)
+        db.commit()
+        garmin.sync_garmin(1, db)
+        assert row.garmin_feel == 75
+        assert db.query(CoachingJob).count() == before + 1
+        row.date = datetime.now() - timedelta(days=8)
+        row.garmin_rating_checked_at = datetime.now() - timedelta(days=1)
+        assert not garmin._watch_rating_due(row)
