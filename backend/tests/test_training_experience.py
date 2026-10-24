@@ -30,14 +30,28 @@ def test_time_limits_keep_bookends_and_do_not_invent_progression_credit():
     assert shorter['prescription']['cooldown']['duration_seconds']==600
 
 
+def _long_run_week():
+    return [{'date':'2026-10-20','day':'tuesday','type':'easy','title':'Done','distance_miles':8,'prescribed':False},
+            {'date':'2026-10-22','day':'thursday','type':'easy','title':'Easy','distance_miles':6},
+            {'date':'2026-10-24','day':'saturday','type':'long_run','title':'Long','distance_miles':9}]
+
+
 def test_time_fit_preserves_completed_days_and_makes_long_run_longest():
-    days=[{'date':'2026-10-20','day':'tuesday','type':'easy','title':'Done','distance_miles':8,'prescribed':False},
-          {'date':'2026-10-22','day':'thursday','type':'easy','title':'Easy','distance_miles':6},
-          {'date':'2026-10-24','day':'saturday','type':'long_run','title':'Long','distance_miles':9}]
-    fit_availability([{'days':days}],{'saturday':50,'tuesday':15},600,developing=True)
+    # No roomier day: the long run is cut to fit and stays the week's longest run.
+    days=_long_run_week()
+    fit_availability([{'days':days}],{'saturday':50,'tuesday':15,'thursday':50},600,developing=True)
     assert days[0]['distance_miles']==8
-    assert days[2]['distance_miles']==5
+    assert days[2]['type']=='long_run' and days[2]['distance_miles']==5
     assert days[1]['distance_miles']<=5/1.2
+
+
+def test_time_fit_moves_the_long_run_to_a_roomier_day_instead_of_cutting_it():
+    days=_long_run_week()
+    notes=fit_availability([{'days':days}],{'saturday':50,'tuesday':15},600,developing=True)
+    assert days[0]['distance_miles']==8  # completed day untouched
+    assert days[1]['type']=='long_run' and days[1]['distance_miles']==9  # full long run on Thursday
+    assert days[2]['type']=='easy' and days[2]['distance_miles']<=5  # Saturday's easy run fits 50 minutes
+    assert any('Moved the long run' in n for n in notes)
 
 
 def test_saved_daily_time_changes_plan_and_blocks_overlong_manual_changes():

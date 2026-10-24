@@ -330,7 +330,7 @@ def read_only_trial(plan, db):
 
 def _dry_run(plan, row, ctx, candidates, db):
     """Keep the first valid candidate per family, up to MAX_OPTIONS."""
-    from app.api.plans import _fits_week_budget, _validate_schedule
+    from app.api.plans import _fits_week_budget, _session_minutes, _validate_schedule
     before = {r.id: snapshot(r) for r in ctx['rows']}
     options, families, seen = [], set(), set()
     for family, patch in candidates:
@@ -345,9 +345,10 @@ def _dry_run(plan, row, ctx, candidates, db):
             try:
                 if not _fits_week_budget(trial_plan, trial_row, patch['distance_miles'], trial):
                     continue
+                grown = {r.id: _session_minutes(trial_plan, r) for r in trial_rows}
                 for key, value in patch.items():
                     setattr(trial_row, key, value)
-                _validate_schedule(trial_plan, trial)
+                _validate_schedule(trial_plan, trial, changed=grown)
                 changes = [{'session_id': r.id, 'date': r.date, 'before': before[r.id], 'replacement': snapshot(r)}
                            for r in trial_rows if snapshot(r) != before[r.id]]
                 if not changes:
@@ -395,13 +396,15 @@ def build_session_options(plan, row, category, db, context=None):
 
 
 def apply_option(plan, row, category, option_id, reason, db):
-    from app.api.plans import _mark_changed, _validate_schedule
+    from app.api.plans import _mark_changed, _session_minutes, _validate_schedule
     menu = build_session_options(plan, row, category, db)
     choice = next((o for o in menu['options'] if o['id'] == option_id), None)
     if not choice:
         raise HTTPException(409, 'This option is no longer available. Reload the options using your latest training.')
+    grown = {}
     for change in choice['changes']:
         target = db.get(PlannedWorkout, change['session_id'])
+        grown[target.id] = _session_minutes(plan, target)
         if target.id == row.id:
             _mark_changed(target, f'{reason}: chose {choice["title"]}.')
         else:
@@ -411,6 +414,6 @@ def apply_option(plan, row, category, option_id, reason, db):
         if target.id == row.id:
             target.session_status = 'replaced'
     db.flush()
-    _validate_schedule(plan, db)
+    _validate_schedule(plan, db, changed=grown)
     return choice
 

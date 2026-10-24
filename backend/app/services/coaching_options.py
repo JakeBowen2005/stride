@@ -78,7 +78,7 @@ def build_options(plan, db):
     Isolated identity maps validate proposed rows without writing to SQLite.
     GET requests must never acquire a writer lock while listing alternatives.
     """
-    from app.api.plans import _get_activities_for_date, _validate_schedule
+    from app.api.plans import _get_activities_for_date, _session_minutes, _validate_schedule
     from app.services.session_options import read_only_trial
     candidates = []
     paces = json.loads(plan.training_paces or '{}')
@@ -105,9 +105,10 @@ def build_options(plan, db):
             with read_only_trial(plan, db) as (trial_plan, trial_rows, trial):
                 trial_row = next(r for r in trial_rows if r.id == row.id)
                 try:
+                    grown = {r.id: _session_minutes(trial_plan, r) for r in trial_rows}
                     for key, value in replacement.items():
                         setattr(trial_row, key, value)
-                    _validate_schedule(trial_plan, trial)
+                    _validate_schedule(trial_plan, trial, changed=grown)
                     candidates.append({'id': f'option-{len(candidates)+1}', 'date': row.date,
                                        'session_id': row.id, 'before': before,
                                        'replacement': replacement})

@@ -787,7 +787,15 @@ class SessionAction(BaseModel):
     reason: str = Field(default="Changed by athlete", max_length=500)
 
 
-def _validate_schedule(plan: Plan, db: Session):
+def _session_minutes(plan: Plan, row: PlannedWorkout) -> float:
+    from app.core.time_budget import estimated_minutes
+    if row.type in {"rest", "race"}:
+        return 0.0
+    easy = json.loads(plan.athlete_snapshot or '{}').get('easy_pace_seconds') or 600
+    return estimated_minutes({'prescription': row.prescription, 'distance_miles': row.distance_miles}, easy)
+
+
+def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None = None):
     """Validate mutations against real runs, rest preferences and stored budgets."""
     from app.core.plan_validator import validate_plan
 
@@ -819,8 +827,14 @@ def _validate_schedule(plan: Plan, db: Session):
     easy=json.loads(plan.athlete_snapshot or '{}').get('easy_pace_seconds') or 600
     for row in rows:
         limit=limits.get(names[date.fromisoformat(row.date).weekday()])
-        if limit is not None and row.date>=athlete_today().isoformat() and not acts.get(row.date) and row.type not in {'race','rest'}:
-            if estimated_minutes({'prescription':row.prescription,'distance_miles':row.distance_miles},easy)>limit+.1:
+        # `changed` maps the rows an edit touched to their minutes before it. Only an edit
+        # that ADDS time past a day's limit is refused: skipping or shortening is always
+        # allowed (fail safe), and days the athlete didn't touch keep their approved
+        # schedule until a revised block is previewed.
+        checked = changed is None or row.id in changed
+        if checked and limit is not None and row.date>=athlete_today().isoformat() and not acts.get(row.date) and row.type not in {'race','rest'}:
+            minutes=estimated_minutes({'prescription':row.prescription,'distance_miles':row.distance_miles},easy)
+            if minutes>limit+.1 and (changed is None or minutes>changed[row.id]+.1):
                 raise HTTPException(409,f"{row.date} exceeds the available {limit} minutes. Preview a revised block or increase availability.")
         w = weeks.setdefault(row.week_number, {"week_number": row.week_number, "days": []})
         if row.week_number <= len(budgets) and "budget_miles" not in w:
@@ -873,6 +887,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
         raise HTTPException(409, "This session has already been skipped or moved")
     if req.action != "skip" and source.date < athlete_today().isoformat():
         raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
+    before = {source.id: _session_minutes(plan, source)}  # time limits judge what this edit adds
     try:
         if req.action == 'replace' and req.replacement in {'threshold','intervals','long_run'}:
             from app.services.session_options import apply_option, build_session_options
@@ -892,6 +907,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
                 raise HTTPException(409, "Choose an unrun easy or rest day")
             if target.session_status in {"skipped", "moved", "replaced"}:
                 raise HTTPException(409, "The destination has already been changed")
+            before[target.id] = _session_minutes(plan, target)
             _mark_changed(target, f"Moved from {source.date}: {req.reason}")
             for key in ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown", "prescription", "b2b"):
                 setattr(target, key, getattr(source, key))
@@ -921,7 +937,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             source.prescription = json.dumps(day_prescription({"type": "rest", "distance_miles": 0, "description": source.description}))
             source.b2b = False
         db.flush()
-        _validate_schedule(plan, db)
+        _validate_schedule(plan, db, changed=before)
         db.commit()
     except Exception:
         db.rollback()

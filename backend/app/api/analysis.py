@@ -398,8 +398,13 @@ async def upload_fit(user_id:int,request:Request,db:Session=Depends(get_db)):
 @router.get('/{user_id}/trends')
 def training_trends(user_id:int,db:Session=Depends(get_db)):
     from app.api.plans import _begin_schedule_write
-    from app.services.longitudinal import analyze
+    from app.athlete_clock import today
+    from app.services.history_cache import fresh
+    from app.services.longitudinal import VERSION, analyze
     if not db.get(User,user_id):raise HTTPException(404,'Athlete not found')
+    hit=fresh(user_id,VERSION,today().isoformat(),db)
+    if hit is not None:
+        return hit  # a page view shouldn't take the database writer lock
     _begin_schedule_write(db)
     result=analyze(user_id,db)
     db.commit()
