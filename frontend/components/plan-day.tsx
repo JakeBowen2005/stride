@@ -304,14 +304,14 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <div className="border-t pt-3 space-y-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Feedback</span>
               <div className="flex flex-wrap gap-2 text-xs">
-                {localFeedback.feel_rating && (
+                {(localFeedback.feel_rating ?? workout.actual?.watch_feel) != null && (
                   <span className="rounded bg-secondary px-2 py-0.5 font-mono">
-                    Feel: {localFeedback.feel_rating}/10
+                    Feel: {localFeedback.feel_rating ?? workout.actual?.watch_feel}/10{localFeedback.feel_rating == null ? " (watch)" : ""}
                   </span>
                 )}
-                {localFeedback.effort_rating && (
+                {(localFeedback.effort_rating ?? workout.actual?.watch_effort) != null && (
                   <span className="rounded bg-secondary px-2 py-0.5 font-mono">
-                    Effort: {localFeedback.effort_rating}/10
+                    Effort: {localFeedback.effort_rating ?? workout.actual?.watch_effort}/10{localFeedback.effort_rating == null ? " (watch)" : ""}
                   </span>
                 )}
                 {localFeedback.pace_assessment && (
@@ -333,7 +333,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
               {!readOnly && !editing && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }}
                   className="text-xs text-muted-foreground underline underline-offset-2">
-                  {localFeedback.feel_notes ? "Edit comment or rating" : "Add a comment"}
+                  {localFeedback.feel_notes ? "Edit your comment" : "Add a comment"}
                 </button>
               )}
               {localFeedback.swap_reason && (
@@ -367,14 +367,9 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <div className="border-t pt-3">
               <FeedbackForm
                 date={workout.date}
-                initial={editing && localFeedback
-                  ? { feel: localFeedback.feel_rating, effort: localFeedback.effort_rating, notes: localFeedback.feel_notes,
-                      completion: localFeedback.reported_completion?.status }
-                  : { feel: workout.actual?.watch_feel, effort: workout.actual?.watch_effort }}
-                fromWatch={!editing && (workout.actual?.watch_feel != null || workout.actual?.watch_effort != null)}
+                initial={editing && localFeedback ? { notes: localFeedback.feel_notes } : undefined}
+                watch={{ feel: workout.actual?.watch_feel, effort: workout.actual?.watch_effort }}
                 hasRecording={hasActual}
-                isWorkout={workout.type === "workout"}
-                hasPaceTarget={!!workout.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
                 onSubmitted={(fb) => {
                   setLocalFeedback(fb);
                   setEditing(false);

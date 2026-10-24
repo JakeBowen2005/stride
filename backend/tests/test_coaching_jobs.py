@@ -12,7 +12,7 @@ def seed(monkeypatch,age=0):
     monkeypatch.setattr(settings,'openai_auto_reviews',True)
     monkeypatch.setattr(settings,'openai_api_key','test-provider-key')
     with SessionLocal() as db:
-        a=Activity(user_id=1,source='garmin',external_id='new-run',date=datetime.now()-timedelta(days=age),distance_meters=8000,duration_seconds=2700)
+        a=Activity(user_id=1,source='garmin',external_id='new-run',date=datetime.now()-timedelta(days=age),distance_meters=8000,duration_seconds=2700,feel_notes='Felt smooth.')
         db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db);db.commit();return a.id
 
 
@@ -21,10 +21,10 @@ def test_enqueue_is_transactional_recent_only_and_idempotent(monkeypatch):
     with SessionLocal() as db:
         coaching_jobs.enqueue_synced_run(db.get(Activity,act),db);db.commit()
         assert db.query(CoachingJob).count()==1 and db.query(CoachingJob).one().status=='waiting_sync'
-        old=Activity(user_id=1,source='garmin',date=datetime.now()-timedelta(days=100),distance_meters=8000,duration_seconds=2700)
+        old=Activity(user_id=1,source='garmin',date=datetime.now()-timedelta(days=100),distance_meters=8000,duration_seconds=2700,feel_notes='Old run.')
         db.add(old);db.flush();coaching_jobs.enqueue_synced_run(old,db);db.commit()
         assert db.query(CoachingJob).count()==1
-        new=Activity(user_id=1,source='garmin',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        new=Activity(user_id=1,source='garmin',date=datetime.now(),distance_meters=8000,duration_seconds=2700,feel_notes='New run.')
         db.add(new);db.flush();coaching_jobs.enqueue_synced_run(new,db);db.rollback()
         assert db.query(CoachingJob).count()==1
 
@@ -76,7 +76,20 @@ def test_concurrent_workers_claim_one_job(monkeypatch):
     assert calls==[act]
 
 
-def test_garmin_store_enqueues_new_and_merged_recent_runs(monkeypatch):
+def test_synced_runs_wait_for_the_athletes_comment(monkeypatch):
+    """No paid review of a run nobody has described: the comment starts it, immediately."""
+    monkeypatch.setattr(settings,'openai_auto_reviews',True)
+    with SessionLocal() as db:
+        a=Activity(user_id=1,source='garmin',external_id='silent',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db);db.commit()
+        assert db.query(CoachingJob).count()==0
+        a.feel_notes='Legs heavy early, smooth after mile two.'
+        coaching_jobs.enqueue_synced_run(a,db,ready=True);db.commit()
+        job=db.query(CoachingJob).one()
+        assert job.status=='queued'  # no wait for another sync
+
+
+def test_garmin_store_enqueues_new_and_merged_recent_runs_once_commented(monkeypatch):
     from app.services.garmin import _store_activity
     from types import SimpleNamespace
     monkeypatch.setattr(settings,'openai_auto_reviews',True)
@@ -84,10 +97,13 @@ def test_garmin_store_enqueues_new_and_merged_recent_runs(monkeypatch):
     with SessionLocal() as db:
         parsed={'source':'garmin','external_id':'fresh-1','date':datetime.now(),'distance_meters':8000,'duration_seconds':2700,'name':'New run'}
         assert _store_activity(fake,1,{},parsed,db,570)=='new'
+        db.commit();assert db.query(CoachingJob).count()==0  # synced, not yet commented
+        db.query(Activity).filter_by(external_id='fresh-1').one().feel_notes='Easy and relaxed.'
+        assert _store_activity(fake,1,{},parsed,db,570)=='updated'
         db.commit();assert db.query(CoachingJob).count()==1
         assert _store_activity(fake,1,{},parsed,db,570)=='updated'
         db.commit();assert db.query(CoachingJob).count()==1
-        legacy=Activity(user_id=1,source='strava',external_id='old',date=datetime.now()-timedelta(hours=2),distance_meters=7000,duration_seconds=2400)
+        legacy=Activity(user_id=1,source='strava',external_id='old',date=datetime.now()-timedelta(hours=2),distance_meters=7000,duration_seconds=2400,feel_notes='Logged by hand.')
         db.add(legacy);db.commit()
         merged={**parsed,'external_id':'fresh-2','date':legacy.date,'distance_meters':7000,'duration_seconds':2400}
         assert _store_activity(fake,1,{},merged,db,570)=='merged'

@@ -138,14 +138,14 @@ def test_effort_rule_is_the_same_with_and_without_laps():
 
 def test_feedback_stores_effort_completion_and_manual_run():
     _plan([(0, "easy", "Easy Run", 3.0)])
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 7, "effort_rating": 4, "completion": "full",
         "manual_distance_miles": 3.1, "manual_duration_minutes": 33})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["effort_rating"] == 4 and body["reported_completion"]["source"] == "self_reported"
     # Resubmitting edits the same manual run instead of adding a second one
-    client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 7, "manual_distance_miles": 3.2, "manual_duration_minutes": 34})
     with SessionLocal() as db:
         runs = db.query(Activity).filter_by(source="manual").all()
@@ -156,7 +156,7 @@ def test_manual_run_is_refused_next_to_a_recorded_run():
     from tests.test_adaptation_edge_cases import _easy_run
     _plan([(0, "easy", "Easy Run", 3.0)])
     _easy_run(0, 3)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 7, "manual_distance_miles": 3, "manual_duration_minutes": 30})
     assert r.status_code == 409
 

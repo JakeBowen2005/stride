@@ -146,6 +146,8 @@ def test_late_watch_rating_refreshes_and_enqueues_new_review(monkeypatch):
         db.commit()
         garmin.sync_garmin(1, db)
         row = db.query(Activity).one()
+        row.feel_notes = 'Comment written before the watch rating arrived.'
+        db.commit()
         before = db.query(CoachingJob).count()
         fake.rating = (75, 40)
         garmin.sync_garmin(1, db)
@@ -172,7 +174,7 @@ def test_activity_feedback_without_plan_and_on_double_is_independent():
     for ext, feel in [('first',8), ('second',4)]:
         r = client.post(f'/api/analysis/1/activities/{runs[ext]}/feedback', json={'feel_rating':feel, 'effort_rating':6, 'feel_notes':ext})
         assert r.status_code == 200, r.text
-    assert client.post(f'/api/analysis/1/activities/{runs["private"]}/feedback',json={'feel_rating':1}).status_code == 404
+    assert client.post(f'/api/analysis/1/activities/{runs["private"]}/feedback',json={'feel_notes': 'Test run notes.', 'feel_rating':1}).status_code == 404
     with SessionLocal() as db:
         assert db.get(Activity,runs['first']).feel_rating == 8
         assert db.get(Activity,runs['second']).feel_rating == 4
@@ -197,3 +199,51 @@ def test_goal_decision_is_persisted_and_does_not_change_approved_block():
         assert db.query(Plan).count() == 0
     assert client.post('/api/users/1/goal/decision',json={'goal_id':goal_id+100,'choice':'completion'}).status_code == 409
     assert client.post('/api/users/1/goal/decision',json={'goal_id':goal_id,'choice':'later_race','race_date':date.today().isoformat()}).status_code == 422
+
+
+def test_feedback_requires_a_comment_on_both_endpoints():
+    from tests.test_adaptation_edge_cases import _plan, _easy_run
+    _plan([(0, "easy", "Easy Run", 4.0)])
+    _easy_run(0, 4)
+    today = date.today().isoformat()
+    assert client.post(f"/api/plans/1/feedback/{today}", json={}).status_code == 422
+    assert client.post(f"/api/plans/1/feedback/{today}", json={"feel_notes": "  "}).status_code == 422
+    with SessionLocal() as db:
+        run_id = db.query(Activity).one().id
+    r = client.post(f"/api/analysis/1/activities/{run_id}/feedback", json={"feel_rating": 8})
+    assert r.status_code == 422 and "comment" in r.json()["detail"]
+
+
+def test_comment_only_feedback_uses_the_watch_rating_and_queues_the_review(monkeypatch):
+    from app.config import settings
+    from app.models.coaching import CoachingJob
+    from app.models.plan import PlannedWorkout
+    from tests.test_adaptation_edge_cases import _plan, _easy_run
+    monkeypatch.setattr(settings, "openai_auto_reviews", True)
+    _plan([(0, "easy", "Easy Run", 4.0), (2, "workout", "Threshold", 6.0)])
+    _easy_run(0, 4)
+    with SessionLocal() as db:
+        run = db.query(Activity).one()
+        run.garmin_feel, run.garmin_rpe, run.feel_rating = 25, 80, None  # watch: weak, effort 8
+        db.commit()
+    today = date.today().isoformat()
+    r = client.post(f"/api/plans/1/feedback/{today}", json={"feel_notes": "Felt flat, legs heavy all run."})
+    assert r.status_code == 200, r.text
+    with SessionLocal() as db:
+        run = db.query(Activity).one()
+        assert run.feel_notes == "Felt flat, legs heavy all run." and run.feel_rating is None  # no invented app rating
+        job = db.query(CoachingJob).one()
+        assert job.status == "queued" and job.activity_id == run.id  # review starts now, not after a sync
+        nxt = db.query(PlannedWorkout).filter_by(date=(date.today() + timedelta(days=2)).isoformat()).one()
+        assert nxt.type == "easy"  # the watch's "weak" rating (4/10) still triggers the recovery rule
+
+
+def test_run_review_context_carries_comment_watch_rating_and_garmin_metrics(monkeypatch):
+    ctx, _ = _review_context(monkeypatch, garmin_feel=75, garmin_rpe=40, feel_notes="Reps felt smooth, recoveries short.",
+                             training_load=120.0, training_effect_label="LACTATE_THRESHOLD", average_cadence=86)
+    run = ctx["run"]
+    assert run["athlete_feedback"]["notes"] == "Reps felt smooth, recoveries short."
+    assert run["athlete_feedback"]["feel_1_to_10"] == 8 and run["athlete_feedback"]["effort_1_to_10"] == 4
+    assert run["garmin_metrics"]["training_load"] == 120.0 and run["garmin_metrics"]["cadence_spm"] == 172
+    assert "respond to it directly" in openai_coach.INSTRUCTIONS
+    assert "never ask for one" in openai_coach.INSTRUCTIONS

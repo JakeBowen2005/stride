@@ -229,9 +229,8 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
           <div className="min-w-0 space-y-4 border-t pt-4 empty:hidden lg:col-start-2 lg:border-t-0 lg:pt-0 lg:row-span-2 lg:row-start-1 [&>*+*]:border-t [&>*+*]:pt-4">
             <section aria-label="Your run feedback">
               <h4 className="text-sm font-medium">Your run feedback</h4>
-              <FeedbackForm key={`${activity.id}-${activity.feel_rating}`} activityId={activity.id} date={activity.date.slice(0,10)}
-                isWorkout={!["easy", "recovery", "long_run"].includes(activity.type)}
-                initial={{feel: activity.feel_rating ?? activity.watch_feel, effort: activity.effort_rating ?? activity.watch_effort, notes: activity.notes}}
+              <FeedbackForm key={`${activity.id}-${activity.notes ?? ""}`} activityId={activity.id} date={activity.date.slice(0,10)}
+                watch={{ feel: activity.watch_feel, effort: activity.watch_effort }} initial={{ notes: activity.notes }}
                 onSubmitted={() => onClassificationChanged?.()} />
             </section>
             {/* Notes / Garmin lap summary */}

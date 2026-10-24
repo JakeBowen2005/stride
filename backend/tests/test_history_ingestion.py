@@ -132,7 +132,8 @@ def test_recovered_laps_enqueue_one_new_revision_not_a_history_storm(monkeypatch
     from app.services.coaching_jobs import enqueue_synced_run
     monkeypatch.setattr(settings, 'openai_auto_reviews', True)
     with SessionLocal() as db:
-        a = Activity(user_id=1, source='garmin', external_id='recent', date=datetime.now(), distance_meters=8000, duration_seconds=2700)
+        a = Activity(user_id=1, source='garmin', external_id='recent', date=datetime.now(), distance_meters=8000, duration_seconds=2700,
+                     feel_notes='Commented run.')
         db.add(a); db.flush()
         enqueue_synced_run(a, db); db.commit()
         a.splits = '[{"distance_m":8000,"duration_s":2700}]'

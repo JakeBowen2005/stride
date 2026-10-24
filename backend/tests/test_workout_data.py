@@ -146,7 +146,7 @@ def test_numeric_feedback_persists_and_recalibrates_only_five_seconds():
         db.add(WorkoutProgression(user_id=1, category='threshold', program_key=program_key('5k'), current_level=1))
         db.commit()
     client = TestClient(app)
-    r = client.post(f'/api/plans/1/feedback/{today}', json={'feel_rating': 8})
+    r = client.post(f'/api/plans/1/feedback/{today}', json={'feel_notes': 'Test run notes.', 'feel_rating': 8})
     assert r.status_code == 200, r.text
     assert r.json()['evaluation']['decision'] == 'recalibrate'
     with SessionLocal() as db:
@@ -154,7 +154,7 @@ def test_numeric_feedback_persists_and_recalibrates_only_five_seconds():
         assert json.loads(row.execution)['evidence_source'] == 'garmin_labeled_laps'
         state = db.query(WorkoutProgression).one()
         assert state.current_level == 1 and state.current_pace_sec == 410  # tempo base 415 -> 410; broken 405 -> 400
-    r = client.post(f'/api/plans/1/feedback/{today}', json={'feel_rating': 8})
+    r = client.post(f'/api/plans/1/feedback/{today}', json={'feel_notes': 'Test run notes.', 'feel_rating': 8})
     assert r.json()['side_effects_applied'] is False
     day = client.get('/api/plans/1/current').json()['weeks'][0]['days'][0]
     assert day['prescription'] == p and day['description'] == render(p)
@@ -211,7 +211,7 @@ def test_phase_and_budget_reduced_sessions_do_not_advance_full_program_level():
                         splits=run_work(p).splits))
         db.add(WorkoutProgression(user_id=1, category='threshold', program_key=program_key('5k'), current_level=3))
         db.commit()
-    r = TestClient(app).post(f'/api/plans/1/feedback/{today}', json={'feel_rating': 8})
+    r = TestClient(app).post(f'/api/plans/1/feedback/{today}', json={'feel_notes': 'Test run notes.', 'feel_rating': 8})
     assert r.status_code == 200, r.text
     assert r.json()['evaluation']['decision'] == 'hold'
     assert 'adapted session' in r.json()['evaluation']['reason']

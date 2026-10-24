@@ -157,7 +157,7 @@ export default function TodayPage() {
                 meta={todayPlan?.actual ? "done" : todayPlan && todayPlan.type !== "rest" ? `${formatDistance(todayPlan.distance_miles)} ${unit} planned` : undefined}>
                 <TodayCard
                   // Remount when the day or its saved feedback changes, so local state follows the data
-                  key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_rating ?? "x"}`}
+                  key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_notes ?? "x"}`}
                   onFeedbackSaved={load}
                   onOpenActivity={openTodayActivity}
                   today={todayPlan}
@@ -165,7 +165,7 @@ export default function TodayPage() {
                   recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
                   coach={todayRunId ? (
                     <CoachingReview
-                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_rating}`}
+                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_notes ?? ""}`}
                       activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />

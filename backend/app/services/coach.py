@@ -61,6 +61,9 @@ def _template_feedback(feedback, pw: PlannedWorkout, activities: list[Activity])
     """Template-based fallback when LLM is unavailable."""
     feel = feedback.feel_rating
     swapped = feedback.swapped
+    if feel is None and not swapped:
+        return ("Thanks for the notes. Your coach review reads them alongside your watch data "
+                "and laps, and it will appear shortly.")
 
     if swapped:
         return (

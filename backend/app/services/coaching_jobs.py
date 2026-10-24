@@ -18,9 +18,22 @@ from app.models.coaching import CoachingJob
 logger = logging.getLogger('stride.coaching_jobs')
 
 
-def enqueue_synced_run(activity, db):
-    """Caller owns the import transaction. Never enqueue paid historical backfill."""
-    if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() < athlete_today()-timedelta(days=2) or activity.date.date() > athlete_today():
+REVIEW_WINDOW_DAYS = 7  # matches the Today list of recent runs awaiting a comment
+
+
+def enqueue_synced_run(activity, db, ready=False):
+    """Queue the automatic run review. Caller owns the transaction.
+
+    The review starts from the athlete's comment: without one, a synced run waits
+    (no paid review of a run nobody has described yet). `ready` is the comment being
+    saved right now, so the job is queued immediately; a later Garmin change to a
+    commented run (laps, watch rating) re-queues it after that sync completes.
+    Never enqueues paid historical backfill."""
+    if is_walk(activity) or not settings.openai_auto_reviews or activity.date.date() > athlete_today():
+        return
+    if activity.date.date() < athlete_today()-timedelta(days=REVIEW_WINDOW_DAYS):
+        return
+    if len((activity.feel_notes or '').strip()) < 3:
         return
     if settings.accounts_enabled:
         from app.models.user import User
@@ -33,7 +46,9 @@ def enqueue_synced_run(activity, db):
     if not db.query(CoachingJob).filter_by(user_id=activity.user_id, activity_id=activity.id, version=version).first():
         db.query(CoachingJob).filter(CoachingJob.user_id == activity.user_id, CoachingJob.activity_id == activity.id,
             CoachingJob.status.in_(['queued', 'waiting_sync'])).update({'status': 'superseded'}, synchronize_session=False)
-        db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, version=version, status='waiting_sync'))
+        db.add(CoachingJob(user_id=activity.user_id, activity_id=activity.id, version=version,
+                           status='queued' if ready else 'waiting_sync',
+                           available_at=datetime.now(timezone.utc)))
 
 
 def release_synced_jobs(user_id, db):

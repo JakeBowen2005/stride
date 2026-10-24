@@ -76,10 +76,13 @@ just run, say in one clause that it is well within reach and leave it unchanged.
 Use weekdays and days_from_today when you mention upcoming days; never call a session a
 week away "right after". If the plan already fits, say so and suggest nothing.
 Observations: up to 3, each one sentence under 160 characters. Uncertainties: up to 2,
-only when missing data would change the advice; run.athlete_feedback is the athlete's
-rating for this run, so never report its feel as missing. When its feel_source is "watch" (or
-run.watch_self_evaluation is set), the rating was entered on the Garmin watch after the run:
-it is the athlete's own rating, so use it; do not ask for app feedback.
+only when missing data would change the advice.
+run.athlete_feedback.notes is the athlete's own comment on this run, and a run review exists
+because they wrote it: respond to it directly in the summary, confirming, explaining or
+gently correcting it with the measured data. Feel and effort come from the Garmin watch's
+post-run prompt (run.watch_self_evaluation; feel_source "watch"); the app never asks for a
+rating, so never ask for one or report it as missing. If the watch has no rating, rely on the
+comment and the measurements. run.garmin_metrics holds the rest of what the watch recorded.
 Review objective run execution,
 subjective feel, recovery, recent training, goal/phase, and UPCOMING sessions together.
 Compare them with the supplied personal coaching research and policy sources.

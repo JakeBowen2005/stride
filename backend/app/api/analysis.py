@@ -172,6 +172,8 @@ def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db:
     from app.api.plans import _begin_schedule_write, _get_activities_for_date, _work_evidence_activity, submit_feedback
     from app.models.plan import Plan, PlannedWorkout
     from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
+    from app.api.plans import require_comment
+    require_comment(data)
     _begin_schedule_write(db)
     activity = db.query(Activity).filter_by(user_id=user_id, id=activity_id).first()
     if activity is None:
@@ -183,9 +185,15 @@ def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db:
     result = {}
     if pw and pw.type != 'rest' and primary and primary.id == activity.id:
         result = submit_feedback(user_id, day, data, db)
-    activity.feel_rating, activity.feel_notes = data.feel_rating, data.feel_notes
-    activity.effort_rating, activity.reported_completion = data.effort_rating, data.completion
-    enqueue_synced_run(activity, db)
+    activity.feel_notes = data.feel_notes
+    # Comment-only answers keep any earlier app rating; feel/effort otherwise come from the watch
+    if data.feel_rating is not None:
+        activity.feel_rating = data.feel_rating
+    if data.effort_rating is not None:
+        activity.effort_rating = data.effort_rating
+    if data.completion is not None:
+        activity.reported_completion = data.completion
+    enqueue_synced_run(activity, db, ready=True)
     db.commit()
     release_synced_jobs(user_id, db)
     return {**result, 'activity_id': activity.id, 'feel_rating': activity.feel_rating,

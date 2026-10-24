@@ -127,10 +127,17 @@ Distances supported (Phase 2+): 800m, Mile
 ## Post-Run Analysis
 
 After each run syncs:
-1. **Prompt user**: "How did that feel?" — 1-10 scale + optional free text
-2. **LLM analyzes**: Did they hit target pace? HR drift? How does subjective feel compare to objective data?
-3. **Feedback**: Coach-like response grounded in data ("Your tempo splits were consistent and right on target. HR stayed in zone — solid workout.")
-4. **Plan adjustment**: If workout was too hard/easy, or user feels fatigued, adjust upcoming days. Can add rest day, reduce intensity, or modify next workout.
+1. **Feel and effort come from the watch**: Garmin's post-run prompt (`directWorkoutFeel`,
+   `directWorkoutRpe`) is the true rating. The app never asks for a 1-10 rating.
+2. **The athlete adds a comment** (required) describing how it went. Runs from the last 7 days
+   without a comment are listed on Today.
+3. **Saving the comment starts the AI review** of that run (`coaching_jobs`, `ready=True`). No paid
+   review runs on a synced run nobody has described yet; a later Garmin change to a commented run
+   (laps, watch rating) re-queues it after that sync.
+4. **The review sees everything**: the comment, the watch rating, measured laps/reps/recovery,
+   Garmin metrics (training effect/load, cadence, form), the plan and recent training.
+5. **Plan adjustment**: deterministic rules use the watch rating (e.g. a low feel downgrades the
+   next hard day); the AI explains the decision, it doesn't make it.
 
 ## Weekly Summary
 

@@ -77,7 +77,7 @@ def _workout_day_with_run() -> str:
 
 def test_feedback_resubmit_does_not_repeat_side_effects():
     today = _workout_day_with_run()
-    body = {"feel_rating": 3, "pace_assessment": "on_target"}
+    body = {"feel_rating": 3, "pace_assessment": "on_target", "feel_notes": "Test run notes."}
 
     first = client.post(f"/api/plans/1/feedback/{today}", json=body)
     assert first.status_code == 200, first.text
