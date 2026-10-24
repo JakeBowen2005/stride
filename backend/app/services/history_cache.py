@@ -11,6 +11,12 @@ def revision(user_id, db, *, flush=True):
     return db.query(AthleteRevision.revision).filter_by(user_id=user_id).scalar() or 0
 
 
+def fresh(user_id, kind, cache_key, db):
+    """A cached payload that is still current, read without writing anything (or None)."""
+    row = db.query(AnalysisSnapshot).filter_by(user_id=user_id, kind=kind, cache_key=cache_key).first()
+    return json.loads(row.payload) if row and row.revision == revision(user_id, db, flush=False) else None
+
+
 def cached(user_id, kind, cache_key, db, build, *, persist=True):
     current = revision(user_id, db, flush=persist)
     if persist:

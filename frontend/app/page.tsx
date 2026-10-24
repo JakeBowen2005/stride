@@ -169,7 +169,6 @@ export default function TodayPage() {
                       activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />
-                {(!plan || planStale) && <a className="inline-block min-h-11 pt-3 underline" href="/plan">Review or create your training block</a>}
                 {activityError && <p role="alert" className="mt-2 text-xs text-destructive">{activityError}</p>}
                 {awaitingFeedback.length > 0 && (
                   <div className="mt-3"><RecentFeedback days={awaitingFeedback} onSaved={load} /></div>

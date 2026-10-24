@@ -46,28 +46,43 @@ def fit_availability(weeks,limits,easy,*,developing=False,prior_hard_dates=None)
     all_days=[d for w in weeks for d in w['days']]
     fields=('type','title','description','purpose','distance_miles','warmup','cooldown','prescription','b2b')
     for week in weeks:
-        # Preserve the full main dose by placing it on a roomier easy day first.
-        # Completed days, long runs and adjacent hard sessions are never displaced.
+        # Preserve the full main dose (a quality session, or the long run) by placing it on
+        # a roomier easy day first. Completed days and adjacent hard sessions are never
+        # displaced. A long run goes to the NEAREST roomy day (Saturday -> Sunday); cutting
+        # it to fit would quietly remove the week's long run.
         for source in list(week['days']):
             limit=limits.get(source.get('day','').lower())
-            spec=loads(source.get('prescription'))
-            if source['type']!='workout' or source.get('prescribed') is False or source.get('editable') is False or limit is None or not spec or contract_size(spec,easy)[0]<=limit*60:
+            if source['type'] not in {'workout','long_run'} or source.get('prescribed') is False or source.get('editable') is False or limit is None:
                 continue
+            spec=loads(source.get('prescription'))
+            if source['type']=='workout':
+                if not spec:continue
+                needed=contract_size(spec,easy)[0]
+            else:
+                needed=estimated_minutes(source,easy)*60
+            if needed<=limit*60:
+                continue
+            origin=date.fromisoformat(source['date'])
             candidates=[]
             for target in week['days']:
                 if target['type'] not in {'easy','recovery'} or target.get('prescribed') is False or target.get('editable') is False:continue
                 available=limits.get(target.get('day','').lower(),float('inf'))
-                if available*60<contract_size(spec,easy)[0]:continue
+                if available*60<needed:continue
                 stamp=date.fromisoformat(target['date'])
                 neighbours=[d for d in all_days if d is not source and d is not target and d['type'] in {'workout','long_run','race'} and abs((date.fromisoformat(d['date'])-stamp).days)<=1]
                 if neighbours or any(abs((date.fromisoformat(d)-stamp).days)<=1 for d in prior_hard_dates or []):continue
                 candidates.append(target)
             if candidates:
-                target=min(candidates,key=lambda d:d['date'])
+                if source['type']=='long_run':
+                    target=min(candidates,key=lambda d:(abs((date.fromisoformat(d['date'])-origin).days),d['date']))
+                else:
+                    target=min(candidates,key=lambda d:d['date'])
                 old_source={k:deepcopy(source.get(k)) for k in fields}
                 old_target={k:deepcopy(target.get(k)) for k in fields}
                 source.update(old_target);target.update(old_source)
-                notes.append(f"Moved the full quality dose from {source['date']} to {target['date']} to fit available time and retain progression.")
+                what='long run' if target['type']=='long_run' else 'full quality dose'
+                notes.append(f"Moved the {what} from {source['date']} to {target['date']} to fit available time"
+                             + (" and keep the week's long run." if what=='long run' else " and retain progression."))
         for day in week['days']:
             limit=limits.get(day.get('day',day.get('day_name','')).lower())
             if limit is None or day.get('prescribed') is False or day.get('editable') is False:continue
