@@ -91,6 +91,13 @@ def _run(a, executed=None, planned=None):
            'classification': activity_classification(a),
            'aerobic_training_effect': a.aerobic_training_effect,
            'anaerobic_training_effect': a.anaerobic_training_effect,
+           # Everything else the watch measured for this run (null = not recorded)
+           'garmin_metrics': {'moving_time_s': a.duration_seconds, 'elapsed_time_s': a.elapsed_seconds,
+                              'training_effect_label': a.training_effect_label, 'training_load': a.training_load,
+                              'cadence_spm': round(a.average_cadence * 2) if a.average_cadence else None,
+                              'ground_contact_ms': a.avg_ground_contact_time,
+                              'vertical_oscillation_cm': a.avg_vertical_oscillation, 'calories': a.calories,
+                              'run_type': a.activity_subtype, 'event_type': a.event_type},
            'laps': laps,
            # Measured from the watch's laps: the authority on what was actually run
            'measured_lap_summary': lap_summary,

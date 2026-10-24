@@ -229,35 +229,29 @@ export function TodayCard({
           </button>
         )}
 
-        {done && today && today.type !== "rest" && !feedback?.feel_rating && (
+        {done && today && today.type !== "rest" && !feedback?.feel_notes && (
           <div className="rounded-lg border p-3">
             <p className="mb-2 text-sm font-medium">How did it go?</p>
-            <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"}
-              hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
-              initial={{ feel: today.actual?.watch_feel, effort: today.actual?.watch_effort }}
-              fromWatch={today.actual?.watch_feel != null || today.actual?.watch_effort != null}
+            <FeedbackForm compact date={today.date}
+              watch={{ feel: today.actual?.watch_feel, effort: today.actual?.watch_effort }}
               onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
           </div>
         )}
-        {done && today && today.type !== "rest" && !!feedback?.feel_rating && (
+        {done && today && today.type !== "rest" && !!feedback?.feel_notes && (
           <details className="rounded-lg border p-3">
-            <summary className="cursor-pointer text-sm text-muted-foreground">
-              {feedback.feel_notes ? "Edit your comment or rating" : "Add a comment"}
-            </summary>
+            <summary className="cursor-pointer text-sm text-muted-foreground">Edit your comment</summary>
             <div className="mt-3">
-              <FeedbackForm compact date={today.date} isWorkout={today.type === "workout"}
-                hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
-                initial={{ feel: feedback.feel_rating, effort: feedback.effort_rating, notes: feedback.feel_notes,
-                           completion: feedback.reported_completion?.status }}
+              <FeedbackForm compact date={today.date} initial={{ notes: feedback.feel_notes }}
+                watch={{ feel: today.actual?.watch_feel, effort: today.actual?.watch_effort }}
                 onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
             </div>
           </details>
         )}
-        {!done && today && today.type !== "rest" && !feedback?.feel_rating && (
+        {!done && today && today.type !== "rest" && !feedback?.feel_notes && (
           <details className="rounded-lg border p-3">
             <summary className="cursor-pointer text-sm text-muted-foreground">Ran without your watch? Log it</summary>
             <div className="mt-3">
-              <FeedbackForm compact hasRecording={false} date={today.date} isWorkout={today.type === "workout"} hasPaceTarget={!!today.prescription?.segments?.some((seg) => seg.pace_range_sec_per_mile)}
+              <FeedbackForm compact hasRecording={false} date={today.date}
                 onSubmitted={(fb) => { setFeedback(fb); onFeedbackSaved?.(); }} />
             </div>
           </details>

@@ -38,9 +38,15 @@ class PlanRequest(BaseModel):
     mode: Literal["full", "schedule"] = "full"
 
 
+COMMENT_MIN_CHARS = 3
+
+
 class FeedbackRequest(BaseModel):
-    feel_rating: int = Field(ge=1, le=10)  # 1 = awful, 10 = felt amazing
-    feel_notes: str | None = None
+    # Feel/effort come from the watch's post-run prompt (Garmin). The app no longer asks;
+    # these stay optional for older clients and runs without a watch rating.
+    feel_rating: int | None = Field(default=None, ge=1, le=10)  # 1 = awful, 10 = felt amazing
+    feel_notes: str | None = Field(default=None, max_length=2000)  # the athlete's comment: required
+
     pace_assessment: str | None = None  # above, on_target, below, skipped
     swapped: bool = False
     swap_reason: str | None = None
@@ -616,7 +622,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
                 "actual_workout_type": pw.actual_workout_type,
                 "coach_response": pw.coach_response,
                 "evaluation": _displayed_evaluation(pw, actual),
-            } if pw.feel_rating or pw.swapped else None,
+            } if pw.feel_rating or pw.feel_notes or pw.swapped else None,
         }
         weeks_map[pw.week_number]["days"].append(day_data)
 
@@ -962,6 +968,7 @@ def submit_feedback(
     if not pw:
         raise HTTPException(status_code=404, detail="No planned workout for this date")
 
+    require_comment(req)
     activities = _get_activities_for_date(feedback_date, user_id, db)
     if req.manual_distance_miles and req.manual_duration_minutes:
         _log_manual_run(user_id, feedback_date, req, activities, db)
@@ -990,12 +997,20 @@ def submit_feedback(
         "source": "self_reported"}) if req.completion else None
 
     evidence_act = _work_evidence_activity(activities)
+    # Decisions use the watch rating when the app sends none (the normal case now).
+    effective = effective_feedback(req, evidence_act)
     if evidence_act:
         pw.feedback_activity_id = evidence_act.id
-        evidence_act.feel_rating = req.feel_rating
         evidence_act.feel_notes = req.feel_notes
-        evidence_act.effort_rating = req.effort_rating
-        evidence_act.reported_completion = req.completion
+        # A comment-only submission never erases an earlier app rating
+        if req.feel_rating is not None:
+            evidence_act.feel_rating = req.feel_rating
+        if req.effort_rating is not None:
+            evidence_act.effort_rating = req.effort_rating
+        if req.completion is not None:
+            evidence_act.reported_completion = req.completion
+        from app.services.coaching_jobs import enqueue_synced_run
+        enqueue_synced_run(evidence_act, db, ready=True)  # the comment is in: review the run now
 
     # Persist the athlete's input (and the claim) before anything that can fail
     db.commit()
@@ -1005,7 +1020,7 @@ def submit_feedback(
     changes: list[dict] = []
     if claimed:
         try:
-            evaluation, changes = _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req, db)
+            evaluation, changes = _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, effective, db)
             db.commit()
         except Exception:
             db.rollback()
@@ -1018,7 +1033,7 @@ def submit_feedback(
     # Coach explains the final, persisted decision (never raises; template fallback)
     from app.services.coach import get_coach_feedback
     decision_summary = _decision_summary(evaluation, changes)
-    coach_response = get_coach_feedback(user_id, pw, activities, req, db, decision_summary=decision_summary)
+    coach_response = get_coach_feedback(user_id, pw, activities, effective, db, decision_summary=decision_summary)
     pw.coach_response = coach_response
     db.commit()
 
@@ -1037,6 +1052,23 @@ def submit_feedback(
         "evaluation": evaluation,
         "side_effects_applied": claimed,
     }
+
+
+def require_comment(req: FeedbackRequest):
+    """The athlete's own account is the one thing the app asks for, and it starts the review."""
+    if len((req.feel_notes or "").strip()) < COMMENT_MIN_CHARS:
+        raise HTTPException(422, "Add a short comment about how the run went.")
+
+
+def effective_feedback(req: FeedbackRequest, activity: Activity | None) -> FeedbackRequest:
+    """The request as decisions see it: app answers if given, else the watch's rating."""
+    if activity is None:
+        return req
+    return req.model_copy(update={
+        "feel_rating": req.feel_rating if req.feel_rating is not None else activity.effective_feel,
+        "effort_rating": req.effort_rating if req.effort_rating is not None
+        else (activity.effort_rating if activity.effort_rating is not None else activity.watch_effort),
+    })
 
 
 def _previous_development_effort(pw: PlannedWorkout, db: Session) -> int:
@@ -1195,7 +1227,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
                 changes.append({"date": None, "change": "not_rescheduled", "reason": why_not})
 
     # 3. Feel ≤ 4: the next unrun hard workout becomes easy
-    if req.feel_rating <= 4 and not req.swapped:
+    if req.feel_rating is not None and req.feel_rating <= 4 and not req.swapped:
         today = athlete_today().isoformat()
         next_hard = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == db_plan.id,
@@ -1205,7 +1237,7 @@ def _apply_feedback_effects(user_id, db_plan, pw, activities, evidence_act, req,
             PlannedWorkout.activity_id == None,  # noqa: E711
         ).order_by(PlannedWorkout.date).first()
         if next_hard:
-            reason = f"Adjusted to easy: you rated {feedback_date} {req.feel_rating}/10, so the next workout became recovery."
+            reason = f"Adjusted to easy: {feedback_date} was rated {req.feel_rating}/10, so the next workout became recovery."
             _mark_changed(next_hard, reason)
             next_hard.type = "easy"
             next_hard.title = "Easy Run (adjusted — recovery)"

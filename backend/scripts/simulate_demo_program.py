@@ -224,7 +224,7 @@ def simulate(args):
                                              readiness_score=80, acwr=1.0))
                     db.commit()
                 if day and not missed and day["type"] in ("workout", "long_run", "race") and day["distance_miles"]:
-                    body = {"feel_rating": 3 if week_number == args.poor_week else FEEL}
+                    body = {"feel_rating": 3 if week_number == args.poor_week else FEEL, "feel_notes": "Simulated run: completed as described."}
                     if day["type"] == "workout":
                         hard = args.hard_from_week and week_number >= args.hard_from_week
                         body["effort_rating"] = 8 if hard else 6

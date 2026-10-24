@@ -129,6 +129,7 @@ def _progression(category: str) -> WorkoutProgression:
 
 
 def _feedback(off: int = 0, **body):
+    body.setdefault("feel_notes", "Test run notes.")
     r = client.post(f"/api/plans/1/feedback/{TODAY + timedelta(days=off)}", json=body)
     assert r.status_code == 200, r.text
     return r.json()
