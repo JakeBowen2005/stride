@@ -25,3 +25,12 @@ export async function getJson<T>(path: string, options: { allowNotFound?: boolea
   }
   return await res.json() as T;
 }
+
+/** The legacy baseline endpoint distinguishes a new athlete from an API failure. */
+export function baselineOrEmpty<T>(data: T | {error:string}): T | null {
+  if (data && typeof data === 'object' && 'error' in data) {
+    if (data.error === 'No activities found') return null;
+    throw new Error(typeof data.error === 'string' ? data.error : 'Baseline analysis failed.');
+  }
+  return data as T;
+}

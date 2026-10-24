@@ -5,7 +5,7 @@ import { AccountSettings } from "@/components/account-settings";
 
 import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
 import Link from "next/link";
-import { apiUrl, USER_ID } from "@/lib/api";
+import { apiUrl, USER_ID, baselineOrEmpty } from "@/lib/api";
 import { useState, useEffect } from "react";
 import { ProfilePreferences } from "@/components/profile-preferences";
 import { GoalEditor } from "@/components/goal-editor";
@@ -109,7 +109,7 @@ export default function SettingsPage() {
         if (operationsRes?.ok) setOperations(await operationsRes.json());
         if (prRes.ok) setPrs(await prRes.json());
         if (userRes.ok) setUser(await userRes.json());
-        if (analysisRes.ok) setAnalysis(await analysisRes.json());
+        if (analysisRes.ok) setAnalysis(baselineOrEmpty<AnalysisData>(await analysisRes.json()));
         if (goalRes.ok) {
           const data = await goalRes.json();
           if (data) setGoal(data);
@@ -154,6 +154,7 @@ export default function SettingsPage() {
       <Card>
         <CardContent className="space-y-4 pt-4">
           <h2 className="text-sm font-medium">Training</h2>
+          {!analysis && <p className="text-sm text-muted-foreground">No running history yet. Import original FIT files below or complete onboarding to establish your starting point.</p>}
           <div className="space-y-2 text-sm">
             <Row
               label="Latest baseline (four completed calendar weeks)"

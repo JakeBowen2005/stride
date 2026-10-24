@@ -43,3 +43,25 @@ def test_postgres_upgrade_transfer_and_concurrent_claims(monkeypatch,tmp_path):
     with sessions() as db:
         assert {j.status for j in db.query(SyncJob)}=={'done'}
         new=User(name='Three');db.add(new);db.commit();assert new.id==3
+
+    # Athlete schedule locks are separate, but the global AI reservation is atomic.
+    from fastapi import HTTPException
+    from app.config import settings
+    from app.services.coaching import _check_ai_budget
+    from app.models.coaching import CoachingReview
+    monkeypatch.setattr(settings,'openai_coach_global_daily_limit',1)
+    start=Barrier(2)
+    def reserve(uid):
+        with sessions() as db:
+            start.wait(timeout=10)
+            try:
+                _check_ai_budget(uid,db,True)
+                db.add(CoachingReview(user_id=uid,context_hash=f'quota-{uid}',status='pending',model='offline-test'))
+                db.commit()
+                return 200
+            except HTTPException as exc:
+                db.rollback()
+                return exc.status_code
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results=list(executor.map(reserve,(1,2)))
+    assert sorted(results)==[200,429]

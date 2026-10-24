@@ -439,6 +439,24 @@ def serialize_review(row, *, stale=False):
             'suggestions': [{**c, 'reason': chosen[c['id']]} for c in candidates if c['id'] in chosen]}
 
 
+def _check_ai_budget(user_id,db,configured):
+    if not configured:return
+    if db.bind.dialect.name=='postgresql':
+        from sqlalchemy import text
+        # Reservations across athletes share only this short quota lock.
+        # Commit releases it before any provider network call.
+        db.execute(text('SELECT pg_advisory_xact_lock(68743103)'))
+    utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
+        CoachingReview.created_at >= utc_day, CoachingReview.model.is_not(None)).scalar()
+    global_used=db.query(func.coalesce(func.sum(CoachingReview.attempts),0)).filter(
+        CoachingReview.created_at>=utc_day,CoachingReview.model.is_not(None)).scalar()
+    if global_used>=settings.openai_coach_global_daily_limit:
+        raise HTTPException(429,'The app AI budget is reached for today. Training rules and saved reviews still work.')
+    if used >= settings.openai_coach_daily_limit:
+        raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
+
+
 def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     if settings.accounts_enabled:
         from app.models.user import User
@@ -461,15 +479,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
         db.commit()
         return serialize_review(cached)
     configured = bool(settings.openai_api_key)
-    utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
-        CoachingReview.created_at >= utc_day, CoachingReview.model.is_not(None)).scalar()
-    global_used=db.query(func.coalesce(func.sum(CoachingReview.attempts),0)).filter(
-        CoachingReview.created_at>=utc_day,CoachingReview.model.is_not(None)).scalar()
-    if configured and global_used>=settings.openai_coach_global_daily_limit:
-        raise HTTPException(429,'The app AI budget is reached for today. Training rules and saved reviews still work.')
-    if configured and used >= settings.openai_coach_daily_limit:
-        raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
+    _check_ai_budget(user_id,db,configured)
     row = cached or CoachingReview(user_id=user_id, activity_id=activity_id, plan_id=plan.id if plan else None,
         context_hash=fingerprint, status='pending', model=settings.openai_coach_model if configured else None,
         candidates=json.dumps(context['candidates']), athlete_concern=concern, policy_version=VERSION)

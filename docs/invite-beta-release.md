@@ -55,7 +55,8 @@ pagination and removes owner-specific mileage defaults from onboarding.
   `--skip-every`, and a mid-program goal change. The descriptive review is in
   [realistic histories](demo-programs/realistic-histories.md).
 - Synthetic mobile browser review covers the plan, history trends, prior-block feedback
-  and account settings. The mobile sign-out control now explicitly submits its form. API tests cover two-athlete isolation, FIT import/reimport,
+  and account settings. Fresh accounts show an explicit empty baseline instead of
+  crashing Settings. The mobile sign-out control explicitly submits its form. API tests cover two-athlete isolation, FIT import/reimport,
   export/erasure, session/recovery replay, consent and schedule validation.
 
 ## Deployment work that remains external
