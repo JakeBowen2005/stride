@@ -87,6 +87,8 @@ def test_evaluation_requires_real_coach_labels_and_rejects_unknown_evidence():
     from app.services.coaching_eval import evaluate,CRITERIA
     case={'case_id':'missing-laps','context':{'candidates':[],'historical_profile':{'insights':[]}},'review':{'suggestions':[],'history_insight_ids':[]}}
     assert evaluate(case)['status']=='needs_coach_review'
+    case['coach_labels']={key:'true' for key in CRITERIA}
+    assert evaluate(case)['status']=='needs_coach_review'
     case['coach_labels']={key:True for key in CRITERIA}
     assert evaluate(case)['status']=='pass'
     case['review']['history_insight_ids']=['invented']

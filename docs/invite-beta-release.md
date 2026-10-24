@@ -24,7 +24,7 @@ Garmin Business application and its integration contract.
    dates, original FIT import/deduplication/reparse, optional private S3 evidence storage
    and durable blob erasure. A read-only SQLite-to-empty-PostgreSQL transfer tool has
    row-count and sequence checks. Real PostgreSQL CI tests concurrency and migration.
-5. **Coaching and training experience — final PR.** Daily minute limits fit sessions
+5. **Coaching and training experience — PR #39.** Daily minute limits fit sessions
    without inventing faster paces or cramming displaced miles elsewhere. Full quality
    moves to a suitable roomier day first; a reduced main dose cannot earn progression.
    Introductory run/walk prescriptions retain their numeric running and walking parts.
@@ -55,7 +55,7 @@ pagination and removes owner-specific mileage defaults from onboarding.
   `--skip-every`, and a mid-program goal change. The descriptive review is in
   [realistic histories](demo-programs/realistic-histories.md).
 - Synthetic mobile browser review covers the plan, history trends, prior-block feedback
-  and account settings. API tests cover two-athlete isolation, FIT import/reimport,
+  and account settings. The mobile sign-out control now explicitly submits its form. API tests cover two-athlete isolation, FIT import/reimport,
   export/erasure, session/recovery replay, consent and schedule validation.
 
 ## Deployment work that remains external

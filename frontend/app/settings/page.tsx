@@ -140,7 +140,7 @@ export default function SettingsPage() {
   const workload = analysis?.workload ?? analysis?.injury_risk;
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button variant="outline" size="sm">Sign out</Button></form></div>
+      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
       {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="rounded-md border p-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
 
       {/* Profile */}

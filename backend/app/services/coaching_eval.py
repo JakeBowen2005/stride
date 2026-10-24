@@ -13,7 +13,7 @@ def evaluate(case):
     for insight in review.get('history_insight_ids',[]):
         if insight not in insights:errors.append('unknown_historical_evidence')
     labels=case.get('coach_labels',{})
-    missing=[key for key in CRITERIA if key not in labels]
+    missing=[key for key in CRITERIA if not isinstance(labels.get(key),bool)]
     failed=[key for key in CRITERIA if labels.get(key) is False]
     return {'case_id':case['case_id'],'status':'fail' if errors or failed else 'needs_coach_review' if missing else 'pass',
             'structural_errors':errors,'failed_criteria':failed,'ungraded_criteria':missing}
