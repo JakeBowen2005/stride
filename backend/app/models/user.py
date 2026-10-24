@@ -22,6 +22,9 @@ class User(Base):
     units: Mapped[str] = mapped_column(String(10), default="miles")  # "miles" or "km"
     workout_format: Mapped[str] = mapped_column(String(10), default="distance")  # "distance" or "time"
 
+    timezone: Mapped[str | None] = mapped_column(String(80))
+    ai_consent: Mapped[bool | None] = mapped_column(Boolean, default=False)
+
     # Running background
     years_running: Mapped[float | None] = mapped_column(Float)
     current_weekly_mileage: Mapped[float | None] = mapped_column(Float)

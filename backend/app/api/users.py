@@ -64,6 +64,8 @@ class ProfileUpdate(BaseModel):
     """Onboarding / settings update for an existing athlete. Every field optional:
     only provided fields change, so re-running setup is safe and repeatable."""
     name: str | None = None
+    timezone: str | None = None
+    ai_consent: bool | None = None
     age: int | None = Field(default=None, ge=10, le=100)
     units: Literal["miles", "km"] | None = None
     workout_format: Literal["distance", "time"] | None = None
@@ -91,6 +93,12 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     fields = data.model_dump(exclude_unset=True)
+    if 'timezone' in fields:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(fields['timezone'])
+        except (TypeError, ValueError, ZoneInfoNotFoundError):
+            raise HTTPException(422, 'Choose a valid IANA timezone.')
     # Validate the merged schedule: PATCH-like requests must not bypass constraints.
     required = {'units', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
     if any(key in required and value is None for key, value in fields.items()):
@@ -253,6 +261,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     return {
         "id": user.id,
         "name": user.name,
+        "timezone": user.timezone, "ai_consent": bool(user.ai_consent),
         "age": user.age,
         "units": user.units,
         "years_running": user.years_running,

@@ -145,3 +145,49 @@ def ready():
     except Exception:
         raise HTTPException(503, "Database unavailable") from None
     return {"status": "ready"}
+
+
+from app.api.auth import router as auth_router
+app.include_router(auth_router)
+
+
+@app.middleware('http')
+async def athlete_identity(request, call_next):
+    """Backend enforcement, including numeric legacy paths and every API router.
+
+    `me` is resolved here for existing route signatures. No identity headers from
+    the browser are trusted. New account-mode API namespaces fail closed.
+    """
+    from starlette.responses import JSONResponse
+    from app.database import SessionLocal
+    from app.services.accounts import session_user
+    path = request.url.path
+    if not path.startswith('/api/'):
+        return await call_next(request)
+    if settings.accounts_enabled and request.method not in {'GET','HEAD','OPTIONS'}:
+        origin=request.headers.get('origin')
+        allowed={x.strip().rstrip('/') for x in settings.allowed_origins.split(',')}
+        allowed.add(str(request.base_url).rstrip('/'))
+        if settings.public_app_url:
+            allowed.add(settings.public_app_url.rstrip('/'))
+        if origin and origin.rstrip('/') not in allowed:
+            return JSONResponse({'detail':'Cross-origin writes are not allowed.'},status_code=403)
+    if path.startswith('/api/auth/'):
+        return await call_next(request)
+    parts=path.split('/')
+    position=4 if len(parts)>4 and parts[2]=='garmin' else 3
+    # Creation of athletes is only through invited registration in account mode.
+    if settings.accounts_enabled:
+        with SessionLocal() as db:
+            uid=session_user(request,db)
+        if uid is None:
+            return JSONResponse({'detail':'Sign in to continue.'},status_code=401)
+        if len(parts)<=position or parts[position] not in {'me',str(uid)}:
+            return JSONResponse({'detail':'This athlete is not available.'},status_code=403)
+    else:
+        uid=settings.default_user_id
+    if len(parts)>position and parts[position]=='me':
+        parts[position]=str(uid)
+        request.scope['path']='/'.join(parts)
+        request.scope['raw_path']=request.scope['path'].encode()
+    return await call_next(request)

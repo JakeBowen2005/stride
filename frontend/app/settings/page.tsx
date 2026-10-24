@@ -1,4 +1,5 @@
 "use client";
+import { AccountSettings } from "@/components/account-settings";
 
 import { scheduleChanged, type SchedulePreferences } from "@/lib/plan-preferences";
 import Link from "next/link";
@@ -304,6 +305,7 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground">Configuration alone does not prove recovery. Keep a verified offsite backup. Coaching policy {operations.app.policy_version}.</p>
         </>}
       </CardContent></Card>
+      <AccountSettings />
       {/* Connections */}
       <GarminConnectionCard />
 

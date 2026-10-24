@@ -233,3 +233,28 @@ snapshot when space is insufficient. Operations reports capacity warnings.
 Configure the existing encrypted S3 export for off-disk recovery, and verify a
 restore with `python -m app.services.backups --restore BACKUP --destination NEW_DB`.
 No setting alone proves an offsite backup or a successful recovery.
+
+### Invite-only athlete accounts
+
+Account mode is opt-in: set `STRIDE_ACCOUNTS_ENABLED=true` for both frontend and
+backend, `STRIDE_SIGNUP_INVITE_CODE` on the backend, and `STRIDE_PUBLIC_URL` to the
+public HTTPS origin. Cookies are Secure by default. Only isolated localhost
+previews should set `STRIDE_COOKIE_SECURE=false`. Do not expose the backend on a
+public interface. `/auth/register` creates a separate athlete; it never claims
+an existing athlete's history. API ownership is checked on the backend even when
+someone requests a numeric athlete URL.
+
+Before switching an existing owner to account mode, attach an account locally:
+`cd backend && venv/bin/python -m app.services.accounts bootstrap --user-id 1 --email YOUR_EMAIL`.
+The command prompts for a password; do not put it in shell arguments. Operator
+recovery uses `python -m app.services.accounts recovery --user-id ID`; give the
+single-use 30-minute token privately to the athlete, who uses `/auth/reset`.
+Email delivery/verification is intentionally not provisioned; registration is
+invite-only. Public registration remains a separate deployment decision.
+
+Athletes can change AI consent and timezone, export their own history, or erase
+their live account in Settings. Consent is off by default. Erasure does not erase
+already-created offsite backups immediately: the operator must define retention
+and let those encrypted backups expire. Never enable a shared owner Garmin key
+for additional athletes. Garmin multi-user integration still requires Garmin's
+approval and the appropriate historical-data entitlement.

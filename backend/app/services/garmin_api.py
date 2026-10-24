@@ -47,7 +47,7 @@ class GarminRateLimited(Exception):
 
 
 def has_api_key() -> bool:
-    return bool(settings.garmin_api_key.strip())
+    return not settings.accounts_enabled and bool(settings.garmin_api_key.strip())
 
 
 def _jwt_expiry(token: str) -> float:
@@ -199,6 +199,8 @@ _client_lock = threading.Lock()
 
 def get_client() -> PersonalApiClient:
     global _client
+    if settings.accounts_enabled:
+        raise GarminNotConnected("Connect a provider for this athlete; the owner key is not shared.")
     with _client_lock:
         if _client is None:
             _client = PersonalApiClient(settings.garmin_api_key.strip())
