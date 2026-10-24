@@ -152,6 +152,41 @@ def submit_review(user_id: int, activity_id: int, data: ReviewData, db: Session 
     return {"message": "Review saved", "activity_id": activity_id}
 
 
+from app.api.plans import FeedbackRequest
+
+
+@router.post("/{user_id}/activities/{activity_id}/feedback")
+def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db: Session = Depends(get_db)):
+    """An answer belongs to one recording, including doubles and previous blocks.
+
+    Only the primary recording of an active prescribed session may apply the
+    existing exactly-once day adjustments. Historical/off-plan answers remain
+    evidence for the next assessment, never retroactive progression credit.
+    """
+    from app.api.plans import _begin_schedule_write, _get_activities_for_date, _work_evidence_activity, submit_feedback
+    from app.models.plan import Plan, PlannedWorkout
+    from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
+    _begin_schedule_write(db)
+    activity = db.query(Activity).filter_by(user_id=user_id, id=activity_id).first()
+    if activity is None:
+        raise HTTPException(404, "Activity not found")
+    day = activity.date.date().isoformat()
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    pw = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=day).first() if plan else None
+    primary = _work_evidence_activity(_get_activities_for_date(day, user_id, db))
+    result = {}
+    if pw and pw.type != 'rest' and primary and primary.id == activity.id:
+        result = submit_feedback(user_id, day, data, db)
+    activity.feel_rating, activity.feel_notes = data.feel_rating, data.feel_notes
+    activity.effort_rating, activity.reported_completion = data.effort_rating, data.completion
+    enqueue_synced_run(activity, db)
+    db.commit()
+    release_synced_jobs(user_id, db)
+    return {**result, 'activity_id': activity.id, 'feel_rating': activity.feel_rating,
+            'effort_rating': activity.effort_rating, 'reported_completion': activity.reported_completion,
+            'coach_response': result.get('coach_response', 'Feedback saved for your next training assessment.')}
+
+
 QUALITY_TYPES = {"workout", "intervals", "threshold", "tempo", "fartlek"}
 
 
@@ -196,6 +231,8 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "splits": splits,
         "session": _session(a, splits, easy_pace),
         "feel_rating": a.feel_rating,
+        "effort_rating": a.effort_rating, "reported_completion": a.reported_completion,
+        "watch_feel": a.watch_feel, "watch_effort": a.watch_effort,
         "notes": a.feel_notes,
         "coach_analysis": None,  # Stored reviews use /api/coaching so freshness is explicit
         "suffer_score": a.suffer_score,

@@ -158,3 +158,42 @@ def test_late_watch_rating_refreshes_and_enqueues_new_review(monkeypatch):
         row.date = datetime.now() - timedelta(days=8)
         row.garmin_rating_checked_at = datetime.now() - timedelta(days=1)
         assert not garmin._watch_rating_due(row)
+
+
+def test_activity_feedback_without_plan_and_on_double_is_independent():
+    from app.models.user import User
+    from app.models.progression import WorkoutProgression
+    with SessionLocal() as db:
+        db.add(User(id=2, name='Other'))
+        for uid, ext in [(1,'first'), (1,'second'), (2,'private')]:
+            db.add(Activity(user_id=uid, source='manual', external_id=ext, name='Run', date=datetime.now(), distance_meters=3000, duration_seconds=1200))
+        db.commit()
+        runs = {a.external_id:a.id for a in db.query(Activity)}
+    for ext, feel in [('first',8), ('second',4)]:
+        r = client.post(f'/api/analysis/1/activities/{runs[ext]}/feedback', json={'feel_rating':feel, 'effort_rating':6, 'feel_notes':ext})
+        assert r.status_code == 200, r.text
+    assert client.post(f'/api/analysis/1/activities/{runs["private"]}/feedback',json={'feel_rating':1}).status_code == 404
+    with SessionLocal() as db:
+        assert db.get(Activity,runs['first']).feel_rating == 8
+        assert db.get(Activity,runs['second']).feel_rating == 4
+        assert db.query(WorkoutProgression).count() == 0
+
+
+def test_goal_decision_is_persisted_and_does_not_change_approved_block():
+    from app.models.user import Goal
+    from app.models.plan import Plan
+    with SessionLocal() as db:
+        goal = db.query(Goal).one()
+        goal.race_date = (date.today()+timedelta(weeks=8)).isoformat()
+        goal_id = goal.id
+        db.commit()
+    r = client.post('/api/users/1/goal/decision',json={'goal_id':goal_id,'choice':'completion'})
+    assert r.status_code == 200, r.text
+    assert r.json()['outlook']['decision'] is None
+    with SessionLocal() as db:
+        goal = db.get(Goal,goal_id)
+        assert goal.intent == 'completion' and goal.target_time_seconds is None
+        assert json.loads(goal.decision)['before']['target_time'] == 1020
+        assert db.query(Plan).count() == 0
+    assert client.post('/api/users/1/goal/decision',json={'goal_id':goal_id+100,'choice':'completion'}).status_code == 409
+    assert client.post('/api/users/1/goal/decision',json={'goal_id':goal_id,'choice':'later_race','race_date':date.today().isoformat()}).status_code == 422

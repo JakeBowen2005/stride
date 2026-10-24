@@ -66,6 +66,9 @@ class Goal(Base):
     terrain: Mapped[str | None] = mapped_column(String(20))  # road, trail, mountain (ultras)
     elevation_gain_ft: Mapped[float | None] = mapped_column(Float)  # total course climbing
 
+    intent: Mapped[str | None] = mapped_column(String(20))  # performance or completion
+    decision: Mapped[str | None] = mapped_column(Text)
+
     # Mileage goal fields
     target_weekly_mileage: Mapped[float | None] = mapped_column(Float)
 

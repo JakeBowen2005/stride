@@ -1,3 +1,6 @@
+"use client";
+import { useState } from "react";
+import { apiUrl, USER_ID } from "@/lib/api";
 import { Panel } from "@/components/cockpit/panel";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +23,9 @@ export interface OutlookDecision {
 }
 
 export interface Outlook {
+  goal_id?: number;
+  intent?: string;
+  accepted_decision?: { choice: string } | null;
   milestones: Milestone[];
   gaps: { milestone: string; message: string }[];
   decision?: OutlookDecision | null;
@@ -43,6 +49,23 @@ function weeks(n: number) {
 
 /** Where the rolling blocks are heading: milestones, not a fixed 16-week plan. */
 export function GoalRoute({ outlook }: { outlook: Outlook }) {
+  const [choice, setChoice] = useState("completion");
+  const [raceDate, setRaceDate] = useState("");
+  const [distance, setDistance] = useState("5k");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function saveDecision() {
+    setSaving(true); setMessage("");
+    try {
+      const res = await fetch(apiUrl(`/users/${USER_ID}/goal/decision`), { method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({goal_id: outlook.goal_id, choice, race_date: choice === "later_race" ? raceDate : null, race_distance: choice === "shorter" ? distance : null}) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Check your choice.");
+      setMessage(data.message);
+      window.dispatchEvent(new Event("stride:synced"));
+    } catch(e) { setMessage(e instanceof Error ? e.message : "Could not save decision."); }
+    finally { setSaving(false); }
+  }
   if (!outlook.milestones.length) return null;
   return (
     <Panel label="Route to your goal" meta={outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-3 py-2">
@@ -56,9 +79,19 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-muted-foreground">Change the race or goal in Settings, or keep it as a completion goal.</p>
+          <label className="block mt-2">Your decision
+            <select className="block w-full min-h-11 rounded border bg-background p-2" value={choice} onChange={e=>setChoice(e.target.value)}>
+              {outlook.decision.options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}
+            </select>
+          </label>
+          {choice === "later_race" && <label className="block">New race date<input type="date" className="block min-h-11 rounded border p-2" value={raceDate} onChange={e=>setRaceDate(e.target.value)}/></label>}
+          {choice === "shorter" && <label className="block">New distance<select className="block min-h-11 rounded border p-2" value={distance} onChange={e=>setDistance(e.target.value)}>{["5k","10k","half","marathon","50k","50mi","100k"].map(d=><option key={d}>{d}</option>)}</select></label>}
+          <p className="my-2">Your current block stays approved until you preview and approve a revision.</p>
+          <button className="min-h-11 rounded border px-3" disabled={saving} onClick={saveDecision}>{saving ? "Saving…" : "Save goal decision"}</button>
         </div>
       )}
+      {message && <p role="status" className="mb-2 text-sm">{message}</p>}
+      {outlook.accepted_decision && <p className="text-xs mb-2">Saved decision: {outlook.accepted_decision.choice.replaceAll("_", " ")}</p>}
       {outlook.gaps.map((g) => (
         <p key={g.milestone} role="alert" className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs leading-relaxed">
           {g.message}

@@ -710,7 +710,7 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
     if weeks_away is not None and weeks_away < 0:
         weeks_away = None  # race is past: no preparation gap to report
     rate = min(ramp_rate(max(baseline, 1), user.peak_weekly_mileage or baseline, experience, goal.goal_type), .10)
-    return goal_outlook(
+    result = goal_outlook(
         goal_type=goal.goal_type, distance=goal.race_distance, race_weeks_away=weeks_away,
         destination=goal.target_weekly_mileage, baseline=baseline, recent_long_run=recent_long,
         experience=experience, run_days_recent=run_days, days_per_week=user.days_per_week or 6,
@@ -718,6 +718,12 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
         run_walk_stage=developmental.run_walk_stage(user.continuous_run_minutes, _run_days_since(user, db)) if developing else None,
         weekly_rate=rate or .08,
     )
+    result['goal_id'] = goal.id
+    result['intent'] = goal.intent or 'performance'
+    result['accepted_decision'] = json.loads(goal.decision) if goal.decision else None
+    if goal.intent == 'completion':
+        result['decision'] = None
+    return result
 
 
 @router.get("/{user_id}/outlook")
@@ -939,6 +945,8 @@ def submit_feedback(
         pw.feedback_activity_id = evidence_act.id
         evidence_act.feel_rating = req.feel_rating
         evidence_act.feel_notes = req.feel_notes
+        evidence_act.effort_rating = req.effort_rating
+        evidence_act.reported_completion = req.completion
 
     # Persist the athlete's input (and the claim) before anything that can fail
     db.commit()

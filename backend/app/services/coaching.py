@@ -80,7 +80,7 @@ def _run(a, executed=None, planned=None):
     miles = a.distance_meters / 1609.34
     feedback_matches = bool(planned and planned.feedback_activity_id == a.id)
     app_feel = planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating
-    app_effort = planned.effort_rating if feedback_matches else None
+    app_effort = planned.effort_rating if feedback_matches else a.effort_rating
     lap_summary = next((line.strip() for line in (a.description or '').splitlines() if line.strip().startswith('Garmin laps:')), None)
     run = {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(miles, 2),
            'duration': f"{int(a.duration_seconds // 60)}:{int(a.duration_seconds % 60):02d}" if a.duration_seconds else None,
