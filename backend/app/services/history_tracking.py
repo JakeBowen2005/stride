@@ -86,9 +86,21 @@ def track_bulk_change(state):
     table = getattr(state.statement, 'table', None)
     if table is None or table.name not in {model.__tablename__ for model in TRACKED}:
         return
-    # Bulk paths bypass ORM histories. Conservatively invalidate all affected caches;
-    # normal source ingestion uses targeted daily invalidation above.
-    connection = state.session.connection()
-    connection.execute(update(AthleteRevision).values(revision=AthleteRevision.revision + 1))
-    if table.name == Activity.__tablename__:
-        connection.execute(delete(DailyFact))
+    # Resolve the affected owners before the mutation. A bulk edit for one
+    # athlete must not invalidate every other athlete's materialized history.
+    connection=state.session.connection()
+    if 'user_id' in table.c:
+        owners=select(table.c.user_id)
+    elif table.name==User.__tablename__:
+        owners=select(table.c.id)
+    elif table.name==PlannedWorkout.__tablename__:
+        owners=select(Plan.user_id).join(table,table.c.plan_id==Plan.id)
+    else:
+        return
+    if state.statement.whereclause is not None:
+        owners=owners.where(state.statement.whereclause)
+    parameters=state.parameters if isinstance(state.parameters,dict) else {}
+    ids=set(connection.execute(owners,parameters).scalars())
+    for user_id in ids:_bump(connection,user_id)
+    if table.name==Activity.__tablename__ and ids:
+        connection.execute(delete(DailyFact).where(DailyFact.user_id.in_(ids)))

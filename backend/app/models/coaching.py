@@ -55,6 +55,7 @@ class CoachingAttempt(Base):
     review_id: Mapped[int] = mapped_column(ForeignKey('coaching_reviews.id', ondelete='CASCADE'), index=True)
     number: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
     input_snapshot: Mapped[str] = mapped_column(Text)
     input_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)

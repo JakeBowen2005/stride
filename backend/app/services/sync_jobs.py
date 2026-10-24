@@ -57,7 +57,7 @@ def process_one():
     try:
         from app.api.garmin import _sync_in_new_session
         from app.athlete_clock import athlete_zone
-        with athlete_zone(zone):
+        with athlete_zone(zone,uid):
             result=_sync_in_new_session(uid,full)
     except Exception as exc:
         error=type(exc).__name__

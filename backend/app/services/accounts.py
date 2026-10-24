@@ -6,7 +6,25 @@ from pwdlib import PasswordHash
 from app.models.account import AccountSession
 
 COOKIE = 'stride_account'
-PASSWORDS = PasswordHash.recommended()
+_PASSWORDS = PasswordHash.recommended()
+
+
+class LimitedPasswords:
+    # Bound Argon2 memory use even if several web requests arrive together.
+    def __init__(self):
+        import threading
+        self.slots=threading.BoundedSemaphore(2)
+    def _run(self,method,*args):
+        from fastapi import HTTPException
+        if not self.slots.acquire(timeout=1):
+            raise HTTPException(429,'Sign-in is busy. Try again shortly.')
+        try:return getattr(_PASSWORDS,method)(*args)
+        finally:self.slots.release()
+    def hash(self,value):return self._run('hash',value)
+    def verify(self,value,encoded):return self._run('verify',value,encoded)
+
+
+PASSWORDS=LimitedPasswords()
 DUMMY_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
 
 

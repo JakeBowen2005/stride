@@ -113,6 +113,7 @@ def generate_plan(
     continuous_run_minutes: int | None = None,
     run_walk_weeks: list[int] | None = None,  # run days per completed week since the starting point was set
     previous_block: dict | None = None,
+    day_time_budgets: dict[str,int] | None = None,
     race_weeks: list[bool] | None = None,  # aligned with completed_weeks: weeks that held a race
 ) -> dict:
     """Generate a block.
@@ -248,7 +249,7 @@ def generate_plan(
     if goal_type == 'mileage' or adding_hard_session:
         allow_preview = False
 
-    rest_indices = [DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]
+    rest_indices = sorted(set([DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]+[DAY_NAMES.index(d) for d,v in (day_time_budgets or {}).items() if d in DAY_NAMES and v==0]))
     long_run_idx = DAY_NAMES.index(long_run_day)
 
     # Same rounded range everywhere (easy days, long runs, pacing guide)
@@ -403,6 +404,12 @@ def generate_plan(
             "days": week_days,
         })
 
+    from app.core.time_budget import fit_availability
+    availability_notes=fit_availability(weeks,day_time_budgets,easy_pace_seconds,developing=developing,prior_hard_dates=prior_hard_dates)
+    if availability_notes:
+        load.weekly_budgets=[w['target_mileage'] for w in weeks]
+        if load.training_level is not None:load.training_level=min(load.training_level,max(load.weekly_budgets))
+
     # Whole-plan safety pass: hard-day separation across week boundaries and against
     # real hard runs just before the plan, then report anything still violated.
     enforce_no_back_to_back_hard([d for w in weeks for d in w["days"]], easy_desc_all, prior_hard_dates)
@@ -419,7 +426,7 @@ def generate_plan(
         "weeks": weeks,
         "pacing_guide": _pacing_guide(easy_range, effective_paces(current_paces, progression_state)),
         "training_paces": effective_paces(current_paces, progression_state),
-        "notes": list(load.reasons) + [quality.reason],
+        "notes": list(load.reasons) + [quality.reason] + availability_notes,
         "quality_policy": quality.to_dict(),
         "phases": [w["phase"] for w in weeks],
         "load": load.to_dict() | {"deload_week": deload_week},

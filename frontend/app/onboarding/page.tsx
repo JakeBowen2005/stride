@@ -42,16 +42,16 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
 
   // Step 1: About you
-  const [age, setAge] = useState("21");
+  const [age, setAge] = useState("");
   const [units, setUnits] = useState<"miles" | "kilometers">("miles");
   const [workoutFormat, setWorkoutFormat] = useState<"distance" | "time">("distance");
 
   // Step 2: Running background
-  const [yearsRunning, setYearsRunning] = useState("2");
-  const [currentMileage, setCurrentMileage] = useState([42]);
+  const [yearsRunning, setYearsRunning] = useState("0");
+  const [currentMileage, setCurrentMileage] = useState([0]);
   // Longest non-stop run right now: the starting point when there's no Garmin history
   const [continuousMinutes, setContinuousMinutes] = useState<number | null>(null);
-  const [peakMileage, setPeakMileage] = useState([65]);
+  const [peakMileage, setPeakMileage] = useState([0]);
 
   // Step 3: Race history
   const [prs, setPrs] = useState<PREntry[]>([

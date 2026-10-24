@@ -297,3 +297,27 @@ credentials are re-encrypted. Generate with `Fernet.generate_key()` from the
 existing environment owner key remains supported in owner mode only. Separate
 athletes cannot reuse it; live Business transport remains disabled pending Garmin
 approval and its integration contract. Original FIT uploads work without Garmin.
+
+### Daily availability and coaching expectations
+
+Settings accepts a maximum duration for each weekday, including bookends and
+recoveries. Blank means no daily limit; use rest-day settings for unavailable
+days. Preview a revised block to apply changes. A full quality dose moves to a
+roomier safe easy day before its work is shortened. Paces are never increased to
+force a fit; shortened main work cannot earn full-dose progression. Run/walk
+sessions retain their walk recoveries. Race-day time is a separate event exception.
+
+The plan states the remaining run frequency, priority sessions, estimated time,
+and what earns progression versus holding/reducing. The outlook exposes conflicts
+between finite availability and the goal. History shows cached 4/8/12-week trends,
+quality evidence, approximate matched easy-run comparisons, and long-run follow-up,
+with missing data and uncertainty kept explicit. Older runs use cursor pagination.
+
+AI remains optional and cannot directly approve plan changes. Set
+`OPENAI_COACH_GLOBAL_DAILY_LIMIT` (default 100 reviews across the app) alongside
+the existing per-athlete limit. Operations reports token use and attempt latency;
+provider billing remains the authoritative monetary cost. The offline review
+rubric and grader are in `docs/evaluation/`; ungraded prose is never reported as
+coach-approved. No hosted eval service or additional agent system is required.
+
+See [the invite beta release record](docs/invite-beta-release.md) for the five PRs, validation and deployment prerequisites.

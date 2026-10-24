@@ -5,6 +5,9 @@ import os
 import tempfile
 
 _tmp = tempfile.mkdtemp(prefix="stride-test-")
+os.environ["FIT_BLOB_BUCKET"] = ""
+os.environ["SCHEMA_AUTO_UPGRADE"] = "true"
+os.environ["EMBEDDED_WORKERS"] = "false"
 os.environ["STRIDE_ACCOUNTS_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["GARMIN_POLL_MINUTES"] = "0"

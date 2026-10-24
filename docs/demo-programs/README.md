@@ -116,3 +116,18 @@ Verification covers full programs, interrupted and poor-recovery programs, repla
 menu application, duration-based progression, conservative starts, budget/frequency/hard-day
 spacing across schedules, and that the three advanced documents match the engine byte-for-byte. The demo/invariant checks are
 also exercised with the clock set to every weekday.
+
+## Daily-time comparison (invite beta)
+
+[Time-limited beginner](time-limited-beginner.md) uses the same starting history
+and 25 mi/week goal, with Tuesday 30, Thursday 45, Saturday 90 and Sunday 30
+minutes available. The engine moves a full quality dose to a roomier easy day
+before shortening it, preserves recovery separation, and never makes up unused
+miles elsewhere. Full main doses can still earn progression; shortened main doses
+cannot. The outlook asks for an availability/goal decision when the finite time
+budget cannot support the goal volume. Standard demos without time limits remain
+byte-for-byte unchanged after this release, including advanced race programs.
+
+```sh
+venv/bin/python scripts/simulate_demo_program.py beginner-mileage --weeks 24 --start-date 2026-10-21 --day-minutes '{"monday":0,"tuesday":30,"wednesday":0,"thursday":45,"friday":0,"saturday":90,"sunday":30}' --out ../docs/demo-programs/time-limited-beginner.md
+```

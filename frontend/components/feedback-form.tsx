@@ -147,7 +147,7 @@ export function FeedbackForm({ date, activityId, onSubmitted, compact = false, h
       <p className="text-xs text-muted-foreground">
         {fromWatch
           ? "Prefilled from the rating you gave on your watch. Confirm or change it, and add a comment."
-          : "Your answers adjust the next few days of your plan."}
+          : activityId ? "Feedback on a current planned run can adjust upcoming training; other feedback informs your next assessment." : "Your answers adjust the next few days of your plan."}
       </p>
 
       {!hasRecording && (
@@ -206,9 +206,9 @@ export function FeedbackForm({ date, activityId, onSubmitted, compact = false, h
       )}
 
       {/* Effort — how HARD the session was. Separate from how you felt afterward. */}
-      {isWorkout && completion !== "not_done" && (
+      {(isWorkout || activityId != null) && completion !== "not_done" && (
         <div>
-          <p className="mb-1.5 text-sm text-muted-foreground">How hard was the workout?</p>
+          <p className="mb-1.5 text-sm text-muted-foreground">{activityId ? "How hard was this run?" : "How hard was the workout?"}</p>
           <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How hard was the workout, 1 to 10">
             {FEEL_OPTIONS.map((opt) => (
               <button
@@ -293,14 +293,14 @@ export function FeedbackForm({ date, activityId, onSubmitted, compact = false, h
         />
       </div>
 
-      <button
+      {!activityId && <button
         type="button"
         aria-expanded={moreOpen}
         onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen); setSwapped(!moreOpen); }}
         className="text-xs text-muted-foreground underline underline-offset-2"
       >
         {moreOpen ? "Never mind, I didn't swap it" : "I swapped this workout…"}
-      </button>
+      </button>}
 
       {moreOpen && (<>
       {swapped && (

@@ -96,6 +96,7 @@ def main():
     parser.add_argument("--weeks", type=int, default=16, help="length for goals without a race date")
     parser.add_argument("--keep-db", type=Path, help="copy the simulated database here for inspection")
     parser.add_argument('--start-date', type=date.fromisoformat, default=date.today(), help='freeze seeding and the whole program to this date')
+    parser.add_argument('--day-minutes', type=json.loads, help='JSON weekday-to-minute availability, e.g. {"tuesday":30,"saturday":90}')
     parser.add_argument('--experience', choices=['beginner', 'intermediate'], help='inspect the same starting history with another developmental tier')
     parser.add_argument('--miss-week', type=int, help='stress test: miss every run in this 1-based calendar week')
     parser.add_argument('--poor-week', type=int, help='stress test: rate hard days 3/10 in this calendar week')
@@ -130,9 +131,12 @@ def simulate(args):
         profile = {**profile, 'experience': args.experience,
                    'name': profile['name'] + f' ({args.experience})',
                    'description': f"{args.experience.title()} progression comparison using the {args.scenario} starting history."}
+    if args.day_minutes:
+        profile={**profile,'description':profile['description']+' Daily available minutes: '+', '.join(f'{d} {m}' for d,m in args.day_minutes.items() if m>0)+'.'}
     workdir = Path(tempfile.mkdtemp(prefix="stride-sim-"))
     os.environ.update(DATABASE_URL=f"sqlite:///{workdir / 'sim.db'}", GARMIN_POLL_MINUTES="0",
                       GARMIN_API_KEY="", OPENAI_API_KEY="", OPENAI_AUTO_REVIEWS="false",
+                      STRIDE_ACCOUNTS_ENABLED="false", FIT_BLOB_BUCKET="", SCHEMA_AUTO_UPGRADE="true", EMBEDDED_WORKERS="false",
                       STRIDE_BACKUP_DIR=str(workdir / "backups"))
     sys.path.insert(0, str(ROOT / "backend"))
     import time_machine
@@ -149,6 +153,10 @@ def simulate(args):
     start = date.today()
     with SessionLocal() as db:
         seeded = seed_demo(db, profile)
+        if args.day_minutes:
+            from app.models.user import User
+            db.get(User,1).day_time_budgets=json.dumps(args.day_minutes)
+            db.commit()
     race_day = date.fromisoformat(seeded["race_date"]) if seeded.get("race_date") else None
     monday = start - timedelta(days=start.weekday())
     end = race_day or monday + timedelta(weeks=args.weeks, days=-1)

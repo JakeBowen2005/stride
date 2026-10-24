@@ -24,7 +24,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v9-measured-scopes'
+VERSION = 'openai-coach-v10-training-expectations'
 
 
 def research_context(goal):
@@ -104,7 +104,7 @@ def _run(a, executed=None, planned=None):
                                 'pace_vs_target': planned.pace_assessment if feedback_matches else None,
                                 'said_swapped': bool(planned.swapped) if feedback_matches else False,
                                 'effort_1_to_10': app_effort if app_effort is not None else a.watch_effort,
-                                'reported_completion': loads_json(planned.reported_completion) if feedback_matches else None,
+                                'reported_completion': loads_json(planned.reported_completion) if feedback_matches else ({'completion':a.reported_completion,'evidence_source':'self_reported'} if a.reported_completion else None),
                                 'provenance': 'athlete_report',
                                 'evidence_note': 'Reported completion/effort is subjective; it is not measured lap verification.'}}
     if executed:
@@ -464,6 +464,10 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
         CoachingReview.created_at >= utc_day, CoachingReview.model.is_not(None)).scalar()
+    global_used=db.query(func.coalesce(func.sum(CoachingReview.attempts),0)).filter(
+        CoachingReview.created_at>=utc_day,CoachingReview.model.is_not(None)).scalar()
+    if configured and global_used>=settings.openai_coach_global_daily_limit:
+        raise HTTPException(429,'The app AI budget is reached for today. Training rules and saved reviews still work.')
     if configured and used >= settings.openai_coach_daily_limit:
         raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
     row = cached or CoachingReview(user_id=user_id, activity_id=activity_id, plan_id=plan.id if plan else None,
@@ -484,6 +488,8 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     db.commit()  # No write lock held across network I/O.
     review_id, attempt_id = row.id, attempt.id
     db.rollback()  # release the read transaction opened by expire-on-commit access
+    import time
+    started=time.monotonic()
     try:
         if not configured:
             raise RuntimeError('not_configured')
@@ -521,6 +527,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     row.result, row.status = json.dumps(result), status
     row.input_tokens, row.output_tokens = usage.get('input_tokens', 0), usage.get('output_tokens', 0)
     attempt = db.get(CoachingAttempt, attempt_id)
+    attempt.latency_ms=round((time.monotonic()-started)*1000)
     attempt.status, attempt.result = status, row.result
     attempt.input_tokens, attempt.output_tokens = row.input_tokens, row.output_tokens
     db.commit()

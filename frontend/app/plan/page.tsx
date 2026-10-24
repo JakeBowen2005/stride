@@ -1,4 +1,5 @@
 "use client";
+import { TrainingExpectations, type WeekExpectation } from "@/components/training-expectations";
 import { useAthleteToday } from "@/components/unit-preferences";
 
 import { CoachingReview } from "@/components/coaching-review";
@@ -81,6 +82,7 @@ interface ApiWeek {
 }
 
 interface ApiPlan {
+  expectations?: WeekExpectation[];
   id: number;
   preview?: boolean;
   /** "schedule": only run days changed, so only the touched days moved. */
@@ -471,6 +473,7 @@ export default function PlanPage() {
           <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
         </div>
       </div>
+      <TrainingExpectations weeks={plan.expectations || []} />
       {(plan.review || plan.outlook) && (
         <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
           {plan.review && <BlockReviewPanel review={plan.review} />}

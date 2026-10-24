@@ -106,3 +106,18 @@ def test_baseline_api_reuses_snapshot_and_edit_invalidates_it(monkeypatch):
         db.query(Activity).one().distance_meters *= 2; db.commit()
     assert client.get('/api/analysis/1/baseline').status_code == 200
     assert len(calls) == 2
+
+
+def test_bulk_correction_does_not_evict_another_athletes_facts():
+    from app.models.user import User
+    from app.models.history import AthleteRevision
+    with SessionLocal() as db:
+        db.add(User(id=2,name='Independent athlete'));db.commit()
+        run(db,date.today()-timedelta(days=1))
+        db.add(Activity(user_id=2,source='manual',date=datetime.now()-timedelta(days=1),distance_meters=5*MI,duration_seconds=2400))
+        db.commit()
+        historical_profile(1,db);historical_profile(2,db);db.commit()
+        before=db.get(AthleteRevision,2).revision
+        db.query(Activity).filter_by(user_id=1).update({'distance_meters':10*MI});db.commit()
+        assert db.get(AthleteRevision,2).revision==before
+        assert db.query(DailyFact).filter_by(user_id=2).count()==1

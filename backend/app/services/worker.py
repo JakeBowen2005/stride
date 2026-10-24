@@ -13,10 +13,21 @@ def schedule_due():
     from app.services.garmin import poll_due
     if settings.garmin_poll_minutes<=0:
         return
+    from datetime import datetime,timedelta
+    from sqlalchemy import or_
+    from app.models.operations import ProviderCredential,SyncJob
+    from app.models.garmin import GarminConnection
     with SessionLocal() as db:
-        rows=[(u.id,u.timezone) for u in db.query(User)]
+        connected=db.query(ProviderCredential.user_id).filter(ProviderCredential.revoked_at.is_(None),ProviderCredential.ciphertext!='',or_(ProviderCredential.expires_at.is_(None),ProviderCredential.expires_at>datetime.utcnow()))
+        identities=User.id.in_(connected)
+        if settings.garmin_api_key:identities=or_(identities,User.id==settings.default_user_id)
+        busy=db.query(SyncJob.user_id).filter(SyncJob.status.in_(['queued','running','retry']))
+        due=datetime.now()-timedelta(minutes=settings.garmin_poll_minutes)
+        rows=db.query(User.id,User.timezone).outerjoin(GarminConnection,GarminConnection.user_id==User.id).filter(
+            identities,~User.id.in_(busy),or_(GarminConnection.last_sync_at.is_(None),GarminConnection.last_sync_at<due)).order_by(User.id).limit(100).all()
+
     for uid,zone in rows:
-        with athlete_zone(zone), SessionLocal() as db:
+        with athlete_zone(zone,uid), SessionLocal() as db:
             if configured(uid,db) and poll_due(uid):
                 db.commit()
                 sync_jobs.enqueue(uid,db)

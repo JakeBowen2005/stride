@@ -274,4 +274,9 @@ def run_walk_day(day, stage, easy_pace, long=False):
         distance_miles=max(miles, .5), warmup=None, cooldown=None, prescription=None,
         type='long_run' if long else 'easy',
     )
+    spec=prescription('run_walk','run_walk',[segment(reps,seconds=run*60,recovery_seconds=walk*60,recovery_meters=round(walk*60/WALK_PACE*MI,2))],
+                      note='Easy run portions, brisk walk recoveries. Build continuity before adding intensity.')
+    spec.update(warmup=segment(seconds=warm*60,meters=round(warm*60/WALK_PACE*MI,2)),
+                cooldown=segment(seconds=walk*60,meters=round(walk*60/WALK_PACE*MI,2)),progression_eligible=False)
+    day['prescription']=spec
     return day

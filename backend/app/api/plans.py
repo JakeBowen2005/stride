@@ -12,7 +12,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, render
-from app.core.plan_engine import calculate_plan_params, generate_plan
+from app.core.plan_engine import DAY_NAMES, calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
     evaluate_workout, gate_progression,
 )
@@ -23,6 +23,7 @@ from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
 from app.services.analyzer import analyze_athlete
 from app.services.pace_calibrator import calibrate_paces
+from app.services.training_contract import expectations
 
 router = APIRouter(prefix="/api/plans", tags=["plans"])
 logger = logging.getLogger("stride.plans")
@@ -197,6 +198,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     plan_data = generate_plan(
         goal_type=goal.goal_type,
         goal_distance=goal.race_distance,
+        day_time_budgets=json.loads(user.day_time_budgets or "{}"),
         target_time_seconds=goal.target_time_seconds,
         current_weekly_mileage=baseline,
         peak_weekly_mileage=current_fitness["peak_weekly_mileage"],
@@ -250,6 +252,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     }
     athlete_snapshot = {
         "name": user.name,
+        "easy_pace_seconds": easy_pace_seconds,
         "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
         "baseline_as_of": athlete_today().isoformat(), "baseline_definition": "four completed calendar weeks",
@@ -257,7 +260,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
         "schedule_preferences": {'rest_days': rest_days, 'days_per_week': user.days_per_week or 6,
-                                 'long_run_day': user.long_run_day or 'saturday', 'workout_format': user.workout_format or 'distance'},
+                                 'long_run_day': user.long_run_day or 'saturday', 'workout_format': user.workout_format or 'distance',
+                                 'day_time_budgets':json.loads(user.day_time_budgets or '{}')},
     }
 
     # Persist atomically: the previous plan is only deactivated in the same commit
@@ -304,6 +308,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
             )
             db.add(pw)
 
+    plan_data["expectations"]=expectations(plan_data["weeks"],easy_pace_seconds)
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     plan_data["assessment"] = assessment.to_dict() if assessment else None
@@ -328,6 +333,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Return the full plan response
     plan_data["id"] = db_plan.id
     plan_data["assessment"] = assessment.to_dict() if assessment else None
+    plan_data["expectations"]=expectations(plan_data["weeks"],easy_pace_seconds)
     plan_data["goal"] = goal_snapshot
     plan_data["athlete"] = athlete_snapshot
     return plan_data
@@ -357,9 +363,10 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
     old = SchedulePrefs.from_dict(snapshot.get("schedule_preferences"))
     rest_days = ["sunday"] if user.rest_days is None else [d.strip().lower() for d in user.rest_days.split(",") if d.strip()]
     preferences = {"rest_days": rest_days, "days_per_week": user.days_per_week or 6,
-                   "long_run_day": (user.long_run_day or "saturday").lower(), "workout_format": user.workout_format or "distance"}
+                   "long_run_day": (user.long_run_day or "saturday").lower(), "workout_format": user.workout_format or "distance",
+                   "day_time_budgets":json.loads(user.day_time_budgets or "{}")}
     new = SchedulePrefs.from_dict(preferences)
-    if (old.days_per_week, old.rest_days, old.long_run_day) == (new.days_per_week, new.rest_days, new.long_run_day):
+    if (old.days_per_week, old.rest_days, old.long_run_day) == (new.days_per_week, new.rest_days, new.long_run_day) and snapshot.get('schedule_preferences',{}).get('day_time_budgets',{})==json.loads(user.day_time_budgets or '{}'):
         raise HTTPException(409, "This block already uses your run days, rest days and long-run day.")
 
     today = athlete_today()
@@ -374,6 +381,14 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
                      "Conversational effort: you should be able to talk in full sentences.")
     revision = revise_for_schedule(before, old, new, experience=snapshot.get("experience_level"),
                                    easy_desc=easy_desc, prior_hard=prior_hard)
+    from app.core.time_budget import fit_availability
+    prior={d['date']:dict(d) for w in revision.weeks for d in w['days']}
+    revision.notes+=fit_availability(revision.weeks,json.loads(user.day_time_budgets or '{}'),snapshot.get('easy_pace_seconds') or 600,
+                                    developing=snapshot.get('experience_level') in {'beginner','intermediate'})
+    for w in revision.weeks:
+        for d in w['days']:
+            if prior[d['date']]['distance_miles']!=d['distance_miles'] or prior[d['date']]['title']!=d['title']:
+                revision.changes.append({'date':d['date'],'before':prior[d['date']]['title'],'after':d['title'],'reason':'Fit the saved daily availability.'})
     if not revision.changes:
         raise HTTPException(409, " ".join(revision.notes) or "No remaining day in this block can change; the next block uses your new schedule.")
     problems = review_change(before, revision.weeks, new, kind="schedule", prior_hard=prior_hard)
@@ -640,6 +655,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         "athlete": json.loads(db_plan.athlete_snapshot) if db_plan.athlete_snapshot else {},
         "outlook": _outlook(user_id, db_plan, db),
         "review": _review(db_plan),
+        "expectations": expectations(weeks,json.loads(db_plan.athlete_snapshot or "{}").get("easy_pace_seconds",600)),
     }
 
 
@@ -719,6 +735,16 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
         run_walk_stage=developmental.run_walk_stage(user.continuous_run_minutes, _run_days_since(user, db)) if developing else None,
         weekly_rate=rate or .08,
     )
+    limits=json.loads(user.day_time_budgets or '{}')
+    available=[d for d in DAY_NAMES if d not in (user.rest_days or '').split(',')]
+    if limits and all(d in limits for d in available):
+        easy=json.loads(db_plan.athlete_snapshot or '{}').get('easy_pace_seconds',600) if db_plan else 600
+        capacity=sum(sorted([limits[d] for d in available],reverse=True)[:user.days_per_week])*60/easy
+        from app.core.outlook import VOLUME_TARGETS
+        target=goal.target_weekly_mileage or VOLUME_TARGETS.get(goal.race_distance,0)
+        if target and capacity<target:
+            result['schedule_gap']={'capacity_mpw':round(capacity,1),'target_mpw':target,
+                'message':'Your available training time does not currently fit the goal volume. Increase availability or revise the goal; missing miles will not be crammed into other days.'}
     result['goal_id'] = goal.id
     result['intent'] = goal.intent or 'performance'
     result['accepted_decision'] = json.loads(goal.decision) if goal.decision else None
@@ -789,7 +815,14 @@ def _validate_schedule(plan: Plan, db: Session):
             while len(budgets) < row.week_number:
                 budgets.append(0)
             budgets[row.week_number - 1] += original.get("distance_miles", row.distance_miles)
+    from app.core.time_budget import estimated_minutes
+    limits=json.loads(user.day_time_budgets or '{}')
+    easy=json.loads(plan.athlete_snapshot or '{}').get('easy_pace_seconds') or 600
     for row in rows:
+        limit=limits.get(names[date.fromisoformat(row.date).weekday()])
+        if limit is not None and row.date>=athlete_today().isoformat() and not acts.get(row.date) and row.type not in {'race','rest'}:
+            if estimated_minutes({'prescription':row.prescription,'distance_miles':row.distance_miles},easy)>limit+.1:
+                raise HTTPException(409,f"{row.date} exceeds the available {limit} minutes. Preview a revised block or increase availability.")
         w = weeks.setdefault(row.week_number, {"week_number": row.week_number, "days": []})
         if row.week_number <= len(budgets) and "budget_miles" not in w:
             w["budget_miles"] = budgets[row.week_number - 1]
@@ -1699,7 +1732,8 @@ def _begin_schedule_write(db: Session):
     elif db.bind.dialect.name == 'postgresql':
         # Short transaction-scoped lock protects schedule and quota read/validate/write.
         # Network calls happen after commit. Worker row claims use SKIP LOCKED.
-        db.execute(text("SELECT pg_advisory_xact_lock(68743102)"))
+        from app.athlete_clock import athlete_id
+        db.execute(text("SELECT pg_advisory_xact_lock(68743102,:uid)"),{"uid":athlete_id() or 0})
 
 
 def _recent_fatigue_assessment(user_id: int, active: Plan | None, db: Session):
