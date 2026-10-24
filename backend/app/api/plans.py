@@ -952,9 +952,14 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
 
 
 @router.post("/{user_id}/feedback/{feedback_date}")
-def submit_feedback(
-    user_id: int, feedback_date: str, req: FeedbackRequest, db: Session = Depends(get_db)
-):
+def post_feedback(user_id: int, feedback_date: str, req: FeedbackRequest, db: Session = Depends(get_db)):
+    require_comment(req)
+    from app.services.garmin import refresh_watch_rating
+    refresh_watch_rating(user_id, _work_evidence_activity(_get_activities_for_date(feedback_date, user_id, db)), db)
+    return submit_feedback(user_id, feedback_date, req, db)
+
+
+def submit_feedback(user_id: int, feedback_date: str, req: FeedbackRequest, db: Session):
     """Submit post-run feedback for a specific day and get coach response."""
     # Find the active plan and the planned workout for this date
     db_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
@@ -1009,8 +1014,6 @@ def submit_feedback(
             evidence_act.effort_rating = req.effort_rating
         if req.completion is not None:
             evidence_act.reported_completion = req.completion
-        from app.services.coaching_jobs import enqueue_synced_run
-        enqueue_synced_run(evidence_act, db, ready=True)  # the comment is in: review the run now
 
     # Persist the athlete's input (and the claim) before anything that can fail
     db.commit()
@@ -1036,6 +1039,12 @@ def submit_feedback(
     coach_response = get_coach_feedback(user_id, pw, activities, effective, db, decision_summary=decision_summary)
     pw.coach_response = coach_response
     db.commit()
+    if evidence_act:
+        # The comment is in: review the run now. Queued only after the day's decisions are
+        # committed, so the review never sees (and is never made stale by) the pre-save plan.
+        from app.services.coaching_jobs import enqueue_synced_run
+        enqueue_synced_run(evidence_act, db, ready=True)
+        db.commit()
 
     return {
         "date": feedback_date,
@@ -1529,6 +1538,8 @@ def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] |
         # The watch's post-run rating, on Stride's 1-10 scales: prefills app feedback
         "watch_feel": primary.watch_feel,
         "watch_effort": primary.watch_effort,
+        "watch_feel_label": primary.watch_feel_label,
+        "watch_effort_label": primary.watch_effort_label,
         "name": primary.name,
         "activity_count": len(activities),
         "total_distance_miles": round(sum(a.distance_meters for a in activities) / 1609.34, 2),

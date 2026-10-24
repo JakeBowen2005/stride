@@ -462,14 +462,41 @@ def _pages(client, start_date: date | None = None, end_date: date | None = None)
         start += PAGE_SIZE
 
 
+def _client(user_id: int, db: Session):
+    if settings.accounts_enabled or db.get(ProviderCredential, user_id):
+        from app.services.provider_connections import client_for
+        return client_for(user_id)
+    return get_client()
+
+
+def refresh_watch_rating(user_id: int, activity: Activity | None, db: Session) -> bool:
+    """The athlete is commenting on this run now: read the watch's post-run rating first
+    so the review sees it. Garmin may not have had it when the run first synced, and the
+    next sync may be minutes away. Call before taking the schedule write lock (network
+    I/O). Optional evidence: never raises, and skips when a sync already holds Garmin I/O."""
+    if activity is None or activity.source != "garmin" or not activity.external_id:
+        return False
+    if activity.date.date() < athlete_today() - timedelta(days=7):
+        return False
+    lock = io_lock_for(user_id)
+    if not lock.acquire(timeout=5):
+        return False  # a running sync reads the rating itself
+    try:
+        changed = _fetch_watch_rating(_client(user_id, db), activity, db)
+        db.commit()
+        return changed
+    except Exception as exc:
+        db.rollback()
+        logger.info("Watch rating refresh skipped for %s: %s", activity.external_id, type(exc).__name__)
+        return False
+    finally:
+        lock.release()
+
+
 def _sync(user_id: int, db: Session, full: bool) -> dict:
     conn = get_connection(user_id, db)
     try:
-        if settings.accounts_enabled or db.get(ProviderCredential,user_id):
-            from app.services.provider_connections import client_for
-            client=client_for(user_id)
-        else:
-            client = get_client()
+        client = _client(user_id, db)
     except GarminNotConnected as e:
         conn.connected = False
         conn.last_error = str(e)

@@ -131,7 +131,9 @@ After each run syncs:
    `directWorkoutRpe`) is the true rating. The app never asks for a 1-10 rating.
 2. **The athlete adds a comment** (required) describing how it went. Runs from the last 7 days
    without a comment are listed on Today.
-3. **Saving the comment starts the AI review** of that run (`coaching_jobs`, `ready=True`). No paid
+3. **Saving the comment starts the AI review** of that run (`coaching_jobs`, `ready=True`). Saving first
+   re-reads the watch rating from Garmin (`garmin.refresh_watch_rating`), and the job is queued only after
+   the day's feedback decisions are committed, so the review is never born stale. No paid
    review runs on a synced run nobody has described yet; a later Garmin change to a commented run
    (laps, watch rating) re-queues it after that sync.
 4. **The review sees everything**: the comment, the watch rating, measured laps/reps/recovery,

@@ -10,6 +10,12 @@ if TYPE_CHECKING:  # string relationship targets, for type checkers only
     from app.models.user import User
 
 
+# Garmin Connect's labels for the watch's post-run self-evaluation
+GARMIN_FEEL_LABELS = {0: "Very weak", 25: "Weak", 50: "Normal", 75: "Strong", 100: "Very strong"}
+GARMIN_EFFORT_LABELS = {1: "Very light", 2: "Light", 3: "Light", 4: "Moderate", 5: "Moderate", 6: "Moderate",
+                        7: "Hard", 8: "Hard", 9: "Very hard", 10: "Maximum"}
+
+
 class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
@@ -85,6 +91,18 @@ class Activity(Base):
     def watch_effort(self) -> int | None:
         """Garmin perceived effort (10-100) on Stride's 1-10 effort scale."""
         return None if not self.garmin_rpe else max(1, min(10, round(self.garmin_rpe / 10)))
+
+    @property
+    def watch_feel_label(self) -> str | None:
+        """Garmin's own word for the feel answer, as the Connect app shows it."""
+        if self.garmin_feel is None:
+            return None
+        return GARMIN_FEEL_LABELS[min(GARMIN_FEEL_LABELS, key=lambda k: abs(k - self.garmin_feel))]
+
+    @property
+    def watch_effort_label(self) -> str | None:
+        """Garmin's own word for perceived effort ("Light" for 2/10)."""
+        return None if self.watch_effort is None else GARMIN_EFFORT_LABELS[self.watch_effort]
 
     @property
     def effective_feel(self) -> int | None:

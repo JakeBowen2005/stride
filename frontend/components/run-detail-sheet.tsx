@@ -108,6 +108,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
   const units = useUnits();
   const unit = unitLabel(units);
   const [savingKind, setSavingKind] = useState(false);
+  const [commentSaves, setCommentSaves] = useState(0);
   const [kindError, setKindError] = useState<string | null>(null);
   async function correctKind(kind: "run" | "walk" | "auto") {
     if (!activity) return;
@@ -231,7 +232,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               <h4 className="text-sm font-medium">Your run feedback</h4>
               <FeedbackForm key={`${activity.id}-${activity.notes ?? ""}`} activityId={activity.id} date={activity.date.slice(0,10)}
                 watch={{ feel: activity.watch_feel, effort: activity.watch_effort }} initial={{ notes: activity.notes }}
-                onSubmitted={() => onClassificationChanged?.()} />
+                onSubmitted={() => { setCommentSaves((n) => n + 1); onClassificationChanged?.(); }} />
             </section>
             {/* Notes / Garmin lap summary */}
             {activity.description && (
@@ -290,7 +291,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               </div>
             )}
 
-            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />}
+            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}`} activityId={activity.id} />}
           </div>
 
           {activity.splits.length > 0 && (

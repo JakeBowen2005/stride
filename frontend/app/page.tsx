@@ -54,6 +54,8 @@ export default function TodayPage() {
   const [prs, setPrs] = useState<Record<string, number>>({});
   const [selectedRun, setSelectedRun] = useState<Activity | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
+  // Each saved comment queues a run review: remount the coach panel so it sees the job and polls
+  const [commentSaves, setCommentSaves] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -158,20 +160,20 @@ export default function TodayPage() {
                 <TodayCard
                   // Remount when the day or its saved feedback changes, so local state follows the data
                   key={`${todayPlan?.date ?? "none"}-${todayPlan?.feedback?.feel_notes ?? "x"}`}
-                  onFeedbackSaved={load}
+                  onFeedbackSaved={() => { setCommentSaves((n) => n + 1); load(); }}
                   onOpenActivity={openTodayActivity}
                   today={todayPlan}
                   planStale={planStale || !plan}
                   recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
                   coach={todayRunId ? (
                     <CoachingReview
-                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_notes ?? ""}`}
+                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_notes ?? ""}-${commentSaves}`}
                       activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />
                 {activityError && <p role="alert" className="mt-2 text-xs text-destructive">{activityError}</p>}
                 {awaitingFeedback.length > 0 && (
-                  <div className="mt-3"><RecentFeedback days={awaitingFeedback} onSaved={load} /></div>
+                  <div className="mt-3"><RecentFeedback days={awaitingFeedback} onSaved={() => { setCommentSaves((n) => n + 1); load(); }} /></div>
                 )}
               </Section>
               {thisWeek && (

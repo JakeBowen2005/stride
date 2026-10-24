@@ -174,6 +174,8 @@ def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db:
     from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
     from app.api.plans import require_comment
     require_comment(data)
+    from app.services.garmin import refresh_watch_rating
+    refresh_watch_rating(user_id, db.query(Activity).filter_by(user_id=user_id, id=activity_id).first(), db)
     _begin_schedule_write(db)
     activity = db.query(Activity).filter_by(user_id=user_id, id=activity_id).first()
     if activity is None:
@@ -247,6 +249,7 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "feel_rating": a.feel_rating,
         "effort_rating": a.effort_rating, "reported_completion": a.reported_completion,
         "watch_feel": a.watch_feel, "watch_effort": a.watch_effort,
+        "watch_feel_label": a.watch_feel_label, "watch_effort_label": a.watch_effort_label,
         "notes": a.feel_notes,
         "coach_analysis": None,  # Stored reviews use /api/coaching so freshness is explicit
         "suffer_score": a.suffer_score,
