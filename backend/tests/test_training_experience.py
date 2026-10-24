@@ -52,6 +52,14 @@ def test_saved_daily_time_changes_plan_and_blocks_overlong_manual_changes():
         for d in w['days']:
             if d.get('prescribed',True) and d['type'] not in {'rest','race'}:
                 assert estimated_minutes(d,r.json()['athlete']['easy_pace_seconds'])<=45.1
+    from app.athlete_clock import today
+    target=next(d for w in r.json()['weeks'] for d in w['days'] if d['type']=='easy' and d['date']>today().isoformat())
+    rejected=client.post(f"/api/plans/1/sessions/{target['date']}",json={'action':'replace','replacement':'easy','distance_miles':10})
+    assert rejected.status_code==409,rejected.text
+    assert 'available 45 minutes' in rejected.json()['detail']
+    current=client.get('/api/plans/1/current').json()
+    unchanged=next(d for w in current['weeks'] for d in w['days'] if d['date']==target['date'])
+    assert unchanged['distance_miles']==target['distance_miles']
     assert client.put('/api/users/1/profile',json={'day_time_budgets':{'tuesday':3}}).status_code==422
 
 

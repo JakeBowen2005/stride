@@ -740,8 +740,7 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
     if limits and all(d in limits for d in available):
         easy=json.loads(db_plan.athlete_snapshot or '{}').get('easy_pace_seconds',600) if db_plan else 600
         capacity=sum(sorted([limits[d] for d in available],reverse=True)[:user.days_per_week])*60/easy
-        from app.core.outlook import VOLUME_TARGETS
-        target=goal.target_weekly_mileage or VOLUME_TARGETS.get(goal.race_distance,0)
+        target=next((m['target'] for m in result['milestones'] if m['key']=='volume'),None)
         if target and capacity<target:
             result['schedule_gap']={'capacity_mpw':round(capacity,1),'target_mpw':target,
                 'message':'Your available training time does not currently fit the goal volume. Increase availability or revise the goal; missing miles will not be crammed into other days.'}
