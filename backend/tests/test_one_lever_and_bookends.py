@@ -38,10 +38,15 @@ def test_race_pace_step_means_new_or_materially_longer():
 def test_new_marathon_pace_long_run_holds_that_weeks_volume(monkeypatch):
     plan, completed, _ = _seed_sub3(monkeypatch)
     mp = _race_pace_weeks(plan)
-    assert mp[0] == 0 and mp[1] >= 9, mp  # week 2 introduces the 10 + 10 style MP long run
-    one, two = plan["weeks"]
-    assert two["budget_miles"] <= one["budget_miles"] + MILES_TOLERANCE
-    assert two["target_mileage"] <= one["budget_miles"] + MILES_TOLERANCE
+    # The block runs two or three weeks depending on the weekday; the first MP long run
+    # (10 + 10 style) follows an easy long-run week.
+    first = next(i for i, miles in enumerate(mp) if miles)
+    assert first >= 1 and mp[first] >= 9, mp
+    before, held = plan["weeks"][first - 1], plan["weeks"][first]
+    assert held["budget_miles"] <= before["budget_miles"] + MILES_TOLERANCE
+    assert held["target_mileage"] <= before["budget_miles"] + MILES_TOLERANCE
+    if first + 1 < len(mp) and not race_pace_step(mp[first + 1], mp[first]):
+        assert plan["weeks"][first + 1]["budget_miles"] > held["budget_miles"]  # volume grows the week after
     assert any("race pace in the long run: holding" in r for r in plan["load"]["reasons"])
     assert plan_invariant_violations(plan, completed_weeks=completed) == []
 
