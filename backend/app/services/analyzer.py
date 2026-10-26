@@ -3,6 +3,7 @@ import math
 from datetime import datetime, timedelta
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity, PersonalRecord, is_walk, runs_only
@@ -470,6 +471,96 @@ def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[d
         {"week_start": k, "actual": round(v, 1)}
         for k, v in sorted(weekly.items())
     ]
+
+
+MILEAGE_BUCKETS = {"week": 16, "month": 12, "year": 10}
+
+
+def _bucket_start(day, bucket: str):
+    if bucket == "week":
+        return day - timedelta(days=day.weekday())
+    if bucket == "month":
+        return day.replace(day=1)
+    return day.replace(month=1, day=1)
+
+
+def _next_bucket(start, bucket: str):
+    if bucket == "week":
+        return start + timedelta(weeks=1)
+    if bucket == "month":
+        return start.replace(year=start.year + start.month // 12, month=start.month % 12 + 1)
+    return start.replace(year=start.year + 1)
+
+
+def compute_mileage(user_id: int, db: Session, bucket: str = "week", count: int | None = None) -> list[dict]:
+    """Recorded and planned miles per week, month or year, oldest first.
+
+    Every bucket in the span is returned, so a break shows as 0 instead of vanishing.
+    Planned miles come from approved blocks only; None means no block covered that period.
+    """
+    from app.athlete_clock import today
+    from app.models.plan import Plan, PlannedWorkout
+
+    count = count or MILEAGE_BUCKETS[bucket]
+    current = _bucket_start(today(), bucket)
+    if bucket == "year":
+        first = db.query(func.min(Activity.date)).filter(Activity.user_id == user_id, runs_only()).scalar()
+        start = _bucket_start(first.date(), bucket) if first else current
+        start = max(start, current.replace(year=current.year - count + 1))
+    else:
+        start = current
+        for _ in range(count - 1):
+            start = _bucket_start(start - timedelta(days=1), bucket)
+
+    rows = []
+    cursor = start
+    while cursor <= current:
+        rows.append({"period_start": cursor.isoformat(), "actual": 0.0, "runs": 0, "planned": None,
+                     "partial": cursor == current})
+        cursor = _next_bucket(cursor, bucket)
+    by_start = {r["period_start"]: r for r in rows}
+
+    activities = (
+        db.query(Activity.date, Activity.distance_meters)
+        .filter(Activity.user_id == user_id, Activity.date >= datetime.combine(start, datetime.min.time()), runs_only())
+        .all()
+    )
+    for when, meters in activities:
+        row = by_start.get(_bucket_start(when.date(), bucket).isoformat())
+        if row:
+            row["actual"] += (meters or 0) / 1609.34
+            row["runs"] += 1
+
+    # A later approved block replaces an earlier one's days; drafts never count.
+    plan_for_day: dict[str, int] = {}
+    plans = (db.query(Plan.id, Plan.start_date, Plan.end_date)
+             .filter(Plan.user_id == user_id, Plan.preview_state.is_(None), Plan.end_date >= start.isoformat())
+             .order_by(Plan.id).all())
+    for plan_id, first_day, last_day in plans:
+        day = max(datetime.fromisoformat(first_day).date(), start)
+        while day.isoformat() <= last_day:
+            plan_for_day[day.isoformat()] = plan_id
+            day += timedelta(days=1)
+    if plan_for_day:
+        workouts = (db.query(PlannedWorkout.plan_id, PlannedWorkout.date, PlannedWorkout.distance_miles)
+                    .filter(PlannedWorkout.plan_id.in_(set(plan_for_day.values())), PlannedWorkout.moved_to.is_(None))
+                    .all())
+        for day in plan_for_day:
+            row = by_start.get(_bucket_start(datetime.fromisoformat(day).date(), bucket).isoformat())
+            if row and row["planned"] is None:
+                row["planned"] = 0.0
+        for plan_id, day, miles in workouts:
+            if plan_for_day.get(day) != plan_id:
+                continue
+            row = by_start.get(_bucket_start(datetime.fromisoformat(day).date(), bucket).isoformat())
+            if row:
+                row["planned"] += miles or 0
+
+    for row in rows:
+        row["actual"] = round(row["actual"], 1)
+        if row["planned"] is not None:
+            row["planned"] = round(row["planned"], 1)
+    return rows
 
 
 def starter_analysis(user) -> dict | None:
