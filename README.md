@@ -191,6 +191,15 @@ the entrypoint is `deploy/start.sh`.
    first-boot DB as `stride.db.before-import-<time>`. Don't overwrite `stride.db` directly while the
    service is running. Delete `/tmp/stride-upload.db` afterwards: it is your personal health data.
 3. **Garmin.** Nothing to bootstrap: the key is an env var, and tokens are exchanged in memory.
+   On the Render service's **Environment** page, set `GARMIN_API_KEY` to your
+   Garmin Personal API key and **save and redeploy**. `backend/.env` stays on your
+   Mac; Git pushes and database uploads do not transfer its secrets. Older
+   `GARMIN_TOKENS_JSON` and `GARMIN_TOKENSTORE` settings do not configure the
+   current Personal API client. After deploying, Settings must report a key
+   present, and a manual sync must finish with a new successful check time.
+   If you previously disconnected in Stride, use **Reconnect Garmin using server
+   key** in Settings to explicitly re-enable it. Reconnecting clears the old
+   authentication retry delay and queues a new sync; it does not expose the key.
 4. **Check it.** Open the `.onrender.com` URL and sign in. Settings should show Garmin connected,
    and a run should appear when you open the app (or within ~15 minutes) after a watch upload. Run `date` in the Render shell; it
    should print Pacific time (`TZ=America/Los_Angeles`; plan logic uses `date.today()`).

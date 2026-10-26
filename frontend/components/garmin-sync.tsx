@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 interface GarminStatus {
   api_key_present: boolean;
   connected: boolean;
+  connection_issue?: string | null;
   display_name: string | null;
   last_sync_at: string | null;
   last_error: string | null;
@@ -141,16 +142,20 @@ export function GarminSync({
     );
   }
 
-  // Watchless athletes (no key ever set up) get a quiet link, not a disabled sync button
-  if (notConnected && !status?.last_sync_at) {
+  if (notConnected) {
     return (
-      <Link href="/settings" className="text-xs text-muted-foreground underline underline-offset-2">Connect Garmin</Link>
+      <div className="flex max-w-sm flex-col items-end gap-1">
+        <Link href="/settings#garmin" className="inline-flex min-h-10 items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-inner)] px-3.5 text-xs font-semibold">
+          {status?.last_sync_at ? "Reconnect Garmin" : "Connect Garmin"}
+        </Link>
+        <span className="text-right text-xs text-muted-foreground">{status?.connection_issue || "Garmin needs to be connected in Settings."}</span>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => sync()} disabled={syncing || !!notConnected}>
+      <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => sync()} disabled={syncing}>
         {syncing ? "Syncing…" : label}
       </Button>
       {notConnected || (status?.last_error && !message) ? (

@@ -21,7 +21,7 @@ _background_tasks: set[asyncio.Task] = set()
 
 @router.get("/status/{user_id}")
 def garmin_status(user_id: int, db: Session = Depends(get_db)):
-    from app.services.provider_connections import configured
+    from app.services.provider_connections import configured, connection_issue
     from app.models.operations import SyncJob
     from app.services.sync_jobs import describe
     present=configured(user_id,db)
@@ -32,6 +32,8 @@ def garmin_status(user_id: int, db: Session = Depends(get_db)):
     )
     return {
         "api_key_present": present,
+        "connection_issue": connection_issue(user_id, db),
+        "can_reconnect": user_id == settings.default_user_id and bool(settings.garmin_api_key.strip()),
         "business_pending": user_id != settings.default_user_id,
         "owner_key_storage_ready": user_id == settings.default_user_id and bool(settings.provider_encryption_keys),
         "connected": conn.connected and present,
@@ -50,12 +52,16 @@ async def garmin_sync(user_id: int, db: Session = Depends(get_db)):
     """Pull new runs from Garmin (incremental; first ever sync pulls full history)."""
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
-    from app.config import settings
+    from app.services.provider_connections import connection_issue
+    issue = connection_issue(user_id, db)
+    if issue:
+        raise HTTPException(409, issue)
+    from datetime import datetime
+    conn = db.query(GarminConnection).filter_by(user_id=user_id).first()
+    if conn and conn.backoff_until and conn.backoff_until > datetime.now():
+        return {"status": "backoff", "message": conn.last_error or "Garmin sync is paused. Try again shortly."}
     if settings.accounts_enabled or not settings.embedded_workers:
         from app.services.sync_jobs import enqueue
-        from app.services.provider_connections import configured
-        if not configured(user_id,db):
-            raise HTTPException(409,'Garmin Business connection is not available yet. Import FIT files instead.')
         db.commit()
         return enqueue(user_id,db)
     try:
@@ -120,6 +126,7 @@ def connect_personal(user_id:int,data:PersonalConnection,db:Session=Depends(get_
     except GarminNotConnected:
         raise HTTPException(503,'Private provider credential storage is not configured.')
     row.revoked_at=None
+    row.kind='garmin_personal'
     row.expires_at=None
     conn=db.query(GarminConnection).filter_by(user_id=user_id).first()
     if conn:
@@ -133,6 +140,37 @@ def connect_personal(user_id:int,data:PersonalConnection,db:Session=Depends(get_
         job.status,job.lease_token='cancelled',None
     db.commit()
     return {'saved':True,'verified':False,'message':'Key saved privately. Sync to verify it.'}
+
+
+@router.post('/reconnect/{user_id}')
+def reconnect_server_key(user_id: int, db: Session = Depends(get_db)):
+    """Explicitly re-enable the owner's existing server key after disconnect/rotation."""
+    from app.api.plans import _begin_schedule_write
+    from app.models.operations import ProviderCredential, SyncJob
+    from app.services.sync_jobs import enqueue
+    if user_id != settings.default_user_id:
+        raise HTTPException(409, 'The server Garmin key is available only to its owner.')
+    if not settings.garmin_api_key.strip():
+        raise HTTPException(409, 'Add GARMIN_API_KEY in Render Environment, save and redeploy, then reconnect.')
+    _begin_schedule_write(db)
+    if not db.get(User, user_id):
+        raise HTTPException(404, 'User not found')
+    job = db.get(SyncJob, user_id)
+    from app.services.accounts import utcnow
+    if job and job.status == 'running' and job.lease_until and job.lease_until > utcnow():
+        raise HTTPException(409, 'A sync is still running. Wait for it to finish before reconnecting.')
+    row = db.get(ProviderCredential, user_id)
+    if row is None:
+        row = ProviderCredential(user_id=user_id)
+        db.add(row)
+    row.kind, row.ciphertext, row.revoked_at, row.expires_at = 'garmin_environment', '', None, None
+    conn = db.query(GarminConnection).filter_by(user_id=user_id).first()
+    if conn:
+        conn.connected, conn.last_error, conn.backoff_until = False, None, None
+    if job:
+        job.status, job.lease_token = 'cancelled', None
+    db.commit()
+    return enqueue(user_id, db)
 
 
 @router.post('/disconnect/{user_id}')
