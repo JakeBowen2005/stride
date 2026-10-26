@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, render
+from app.core.workout_data import day_prescription, demanding_long_run, execution_from_activities, loads, race_pace_miles, render
 from app.core.plan_engine import DAY_NAMES, calculate_plan_params, generate_plan
 from app.core.workout_evaluator import (
     evaluate_workout, gate_progression,
@@ -200,6 +200,15 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     from app.services.quality_history import quality_history
     quality_evidence = quality_history(user_id, db)
     prior_quality = (json.loads(active.athlete_snapshot or '{}').get('quality_policy') or {}).get('stage') if active else None
+    # Race-pace long-run work already run in the last four weeks: a new or much longer
+    # race-pace segment is a week's progression on its own (one lever at a time).
+    lookback = (fpd - timedelta(days=28)).isoformat()
+    ran = _activities_by_date(user_id, lookback, (fpd - timedelta(days=1)).isoformat(), db)
+    recent_race_pace = max((race_pace_miles({'type': w.type, 'prescription': w.prescription}) for w in
+                            db.query(PlannedWorkout).join(Plan, Plan.id == PlannedWorkout.plan_id).filter(
+                                Plan.user_id == user_id, Plan.preview_state.is_(None), PlannedWorkout.type == 'long_run',
+                                PlannedWorkout.date >= lookback, PlannedWorkout.date < fpd.isoformat())
+                            if w.date in ran), default=0)
     effective_assessment = "recovery" if req.lighter else assessment.decision if assessment else None
     plan_data = generate_plan(
         goal_type=goal.goal_type,
@@ -240,6 +249,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
                                   if athlete_today() - timedelta(days=28) <= a.date.date() <= athlete_today()), default=0),
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
+        recent_race_pace_miles=recent_race_pace,
     )
     _save_run_walk_progress(user, analysis["overview"]["experience_level"], goal, db)
     plan_data["notes"].insert(0, "Reduced recovery load already provides a lighter block; no additional deload added."

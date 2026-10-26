@@ -13,7 +13,7 @@ Key principles:
 from datetime import date, timedelta
 
 from app.core.pacing import format_pace, goal_paces, pace_range
-from app.core.workout_data import long_run_prescription
+from app.core.workout_data import long_run_prescription, race_pace_miles
 from app.core.workouts import get_workout_library
 from app.core.goal_pace import with_specific_pace
 from app.core.session_catalog import ultra_vert_session
@@ -21,7 +21,7 @@ from app.core.workout_ladders import get_workout_at_level, get_deload_workout, g
 from app.core.experience import experienced
 from app.core import developmental
 from app.core.quality_policy import select_quality_policy, light_speed_support, format_bookends
-from app.core.load_policy import plan_load
+from app.core.load_policy import plan_load, race_pace_step
 from app.core.periodization import NO_DELOAD_BEFORE_TAPER_WEEKS, WeekPhase, is_ultra, plan_phases, protects_peak, weeks_before_taper
 from app.core.plan_validator import enforce_no_back_to_back_hard, fit_week_to_budget, validate_plan
 from app.core.special_weeks import (
@@ -115,6 +115,7 @@ def generate_plan(
     previous_block: dict | None = None,
     day_time_budgets: dict[str,int] | None = None,
     race_weeks: list[bool] | None = None,  # aligned with completed_weeks: weeks that held a race
+    recent_race_pace_miles: float = 0,  # most race-pace miles in a recently completed long run
 ) -> dict:
     """Generate a block.
 
@@ -268,9 +269,69 @@ def generate_plan(
         f"if you can't, slow down. ({easy_range}/mi or slower)"
     )
 
+    def compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning):
+        """Build one week at a weekly target: sessions, already-run days, then fit to the budget."""
+        wk_num, wk_start, wk_phase = wk + 1, start_date + timedelta(days=wk * 7), phases[wk]
+        notes = []
+        week_days = _build_week(
+            week_num=wk_num, start_date=wk_start, block_start=start_date,
+            target_mileage=wk_target, days_per_week=days_per_week,
+            rest_indices=rest_indices, long_run_idx=long_run_idx,
+            easy_pace=easy_pace_seconds, current_paces=current_paces,
+            workout_lib=workout_lib, include_workouts=include_workouts and wk_workouts > 0,
+            num_workouts=wk_workouts,
+            goal_distance=goal_distance,
+            current_mileage=current_weekly_mileage, is_deload=wk_is_deload,
+            progression_state=progression_state,
+            phase=wk_phase, terrain=terrain, target_time_seconds=target_time_seconds,
+            max_workout_miles=max(5.0, wk_target * 0.30),
+            allow_preview=allow_preview, program_distance=goal_distance or goal_type,
+            light_second=quality.light_second and wk_workouts > 1,
+            workout_format=workout_format,
+            quality_stage='single' if returning and quality.stage == 'dual' else quality.stage,
+            experience=experience_level,
+            developing=developing,
+            first_prescribe_date=fpd,
+            long_cap=long_cap,
+        )
+
+        week_days = [d for d in week_days if d['date'] <= end_date.isoformat()]
+        # Days before the plan starts prescribing already happened: they carry the
+        # real miles run (0 if none), never a hypothetical prescription.
+        for d in week_days:
+            if first_prescribe_date and date.fromisoformat(d["date"]) < first_prescribe_date:
+                actual = round(completed_by_date.get(d["date"], 0.0), 2)
+                d.update({
+                    "prescribed": False,
+                    "type": "easy" if actual > 0 else "rest",
+                    # Never present a hypothetical prescription for a day that already happened
+                    "title": "Run (before this plan)" if actual > 0 else "No run logged",
+                    "description": None, "purpose": None,
+                    "distance_miles": actual,
+                    "warmup": None, "cooldown": None,
+                })
+                d.pop("b2b", None)
+            else:
+                d["prescribed"] = True
+
+        locked_miles = sum(d['distance_miles'] for d in week_days if not d.get('prescribed', True))
+        if not any(d.get('prescribed', True) for d in week_days):
+            wk_target = locked_miles
+        elif locked_miles > wk_target:
+            notes.append("This week's completed mileage already exceeds the new target; remaining training is recovery/rest, not mileage to repay.")
+            wk_target = locked_miles
+        load.weekly_budgets[wk] = wk_target
+        if not any(d["type"] == "race" for d in week_days):
+            if developing:
+                notes.extend(developmental.fit_week(week_days, wk_target, easy_desc_all, restructure_long, long_cap))
+            else:
+                notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
+        return week_days, wk_target, notes
+
     # Build all weeks
     weeks = []
     longest_long = recent_long_run_miles  # the long-run step grows from the longest recent run
+    recent_race_pace = recent_race_pace_miles  # race-pace long-run work already absorbed
     fit_notes: list[str] = []
     for wk in range(num_weeks):
         wk_num = wk + 1
@@ -327,59 +388,23 @@ def generate_plan(
                 and weeks_before_taper(wk_phase, goal_distance) == 1):
             # The longest run comes three weeks out; the last pre-taper week repeats, never extends, it.
             long_cap = min(long_cap or longest_long, longest_long)
-        week_days = _build_week(
-            week_num=wk_num, start_date=wk_start, block_start=start_date,
-            target_mileage=wk_target, days_per_week=days_per_week,
-            rest_indices=rest_indices, long_run_idx=long_run_idx,
-            easy_pace=easy_pace_seconds, current_paces=current_paces,
-            workout_lib=workout_lib, include_workouts=include_workouts and wk_workouts > 0,
-            num_workouts=wk_workouts,
-            goal_distance=goal_distance,
-            current_mileage=current_weekly_mileage, is_deload=wk_is_deload,
-            progression_state=progression_state,
-            phase=wk_phase, terrain=terrain, target_time_seconds=target_time_seconds,
-            max_workout_miles=max(5.0, wk_target * 0.30),
-            allow_preview=allow_preview, program_distance=goal_distance or goal_type,
-            light_second=quality.light_second and wk_workouts > 1,
-            workout_format=workout_format,
-            quality_stage='single' if returning and quality.stage == 'dual' else quality.stage,
-            experience=experience_level,
-            developing=developing,
-            first_prescribe_date=fpd,
-            long_cap=long_cap,
-        )
-
-        week_days = [d for d in week_days if d['date'] <= end_date.isoformat()]
-        # Days before the plan starts prescribing already happened: they carry the
-        # real miles run (0 if none), never a hypothetical prescription.
-        for d in week_days:
-            if first_prescribe_date and date.fromisoformat(d["date"]) < first_prescribe_date:
-                actual = round(completed_by_date.get(d["date"], 0.0), 2)
-                d.update({
-                    "prescribed": False,
-                    "type": "easy" if actual > 0 else "rest",
-                    # Never present a hypothetical prescription for a day that already happened
-                    "title": "Run (before this plan)" if actual > 0 else "No run logged",
-                    "description": None, "purpose": None,
-                    "distance_miles": actual,
-                    "warmup": None, "cooldown": None,
-                })
-                d.pop("b2b", None)
-            else:
-                d["prescribed"] = True
-
-        locked_miles = sum(d['distance_miles'] for d in week_days if not d.get('prescribed', True))
-        if not any(d.get('prescribed', True) for d in week_days):
-            wk_target = locked_miles
-        elif locked_miles > wk_target:
-            fit_notes.append("This week's completed mileage already exceeds the new target; remaining training is recovery/rest, not mileage to repay.")
-            wk_target = locked_miles
-        load.weekly_budgets[wk] = wk_target
-        if not any(d["type"] == "race" for d in week_days):
-            if developing:
-                fit_notes.extend(developmental.fit_week(week_days, wk_target, easy_desc_all, restructure_long, long_cap))
-            else:
-                fit_notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
+        week_days, wk_target, notes = compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning)
+        race_pace = max([race_pace_miles(d) for d in week_days if d['type'] == 'long_run'], default=0)
+        # "Flat" is the week before: the previous plan week, or the last completed week.
+        previous = weeks[-1]['budget_miles'] if weeks else (completed_weeks or [0])[-1]
+        hold_at = max(previous, load.training_level or current_weekly_mileage)
+        if (not developing and not is_ultra(goal_distance) and wk_phase.phase in ('build', 'peak')
+                and race_pace_step(race_pace, recent_race_pace)
+                and any(d.get('prescribed', True) for d in week_days) and wk_target > hold_at + 0.5):
+            # One lever at a time: the new race-pace long run is this week's progression,
+            # so volume repeats the week before it and grows again the week after.
+            held = round(hold_at, 1)
+            week_days, wk_target, notes = compose_week(wk, held, long_cap, wk_workouts, wk_is_deload, returning)
+            race_pace = max([race_pace_miles(d) for d in week_days if d['type'] == 'long_run'], default=0)
+            load.reasons.append(f'Week {wk_num} adds {race_pace:g} mi at race pace in the long run: holding '
+                                f'{held:g} mi/week that week, then building again.')
+        fit_notes.extend(notes)
+        recent_race_pace = max(recent_race_pace, race_pace)
         longest_long = max([longest_long] + [d['distance_miles'] for d in week_days if d['type'] == 'long_run'])
 
         if run_walk[0] is not None:
@@ -403,7 +428,6 @@ def generate_plan(
             "quality_sessions": sum(d['type']=='workout' and d.get('prescribed',True) for d in week_days),
             "days": week_days,
         })
-
     from app.core.time_budget import fit_availability
     availability_notes=fit_availability(weeks,day_time_budgets,easy_pace_seconds,developing=developing,prior_hard_dates=prior_hard_dates)
     if availability_notes:
