@@ -32,7 +32,9 @@ export function SplitsTable({ splits: all }: { splits: Split[] }) {
               )}
             </span>
             <div className="flex items-center gap-4">
-              <span className="font-mono">{paceInUnits(split.pace.replace(/\/mi$/, ""), units)}/{unit}</span>
+              <span className="font-mono">
+                {split.pace && split.pace !== "—" ? `${paceInUnits(split.pace.replace(/\/mi$/, ""), units)}/${unit}` : "—"}
+              </span>
               {split.heart_rate && (
                 <span className="font-mono text-xs text-muted-foreground">
                   {Math.round(split.heart_rate)} bpm
