@@ -122,3 +122,44 @@ def test_wellness_history_backfill_is_bounded_resumable_and_offline(monkeypatch)
         wellness._sync_wellness(1, db, True)
         assert len(calls) == 6
         assert min(r.start_date for r in db.query(HistoryCoverage).filter_by(stream='wellness', status='checked')) < first
+
+
+def test_wellness_catches_up_days_missed_while_server_was_stopped(monkeypatch):
+    from datetime import timedelta
+    from app.athlete_clock import today
+    from app.database import SessionLocal
+    from app.models.wellness import DailyWellness
+    from app.services import wellness
+    calls = []
+    class Client:
+        def daily_summaries(self, start, end):
+            calls.append((start, end))
+            return [{'calendarDate': (start + timedelta(days=i)).isoformat(),
+                     'heartRate': {'restingValue': 48}} for i in range((end-start).days+1)]
+        def sleep_range(self, start, end): return []
+        def hrv_range(self, start, end): return []
+    monkeypatch.setattr(wellness, 'get_client', Client)
+    with SessionLocal() as db:
+        for i in range(3, 11):
+            db.add(DailyWellness(user_id=1, date=(today()-timedelta(days=i)).isoformat(), resting_hr=50))
+        db.commit()
+        result = wellness._sync_wellness(1, db, True)
+        assert result['status'] == 'ok'
+        assert calls[0] == (today()-timedelta(days=3), today())
+        for i in range(3):
+            assert db.query(DailyWellness).filter_by(user_id=1, date=(today()-timedelta(days=i)).isoformat()).one().resting_hr == 48
+
+
+def test_failed_wellness_stream_is_partial_and_not_throttled_as_fresh(monkeypatch):
+    from app.database import SessionLocal
+    from app.services import wellness
+    class Client:
+        def daily_summaries(self, start, end): raise RuntimeError('provider unavailable')
+        def sleep_range(self, start, end): return []
+        def hrv_range(self, start, end): return []
+    monkeypatch.setattr(wellness, 'get_client', Client)
+    monkeypatch.setattr(wellness, '_last_today_refresh', {})
+    with SessionLocal() as db:
+        assert wellness._sync_wellness(1, db, False)['status'] == 'partial'
+        assert 1 not in wellness._last_today_refresh
+        assert wellness._sync_wellness(1, db, False)['status'] == 'partial'

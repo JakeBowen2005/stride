@@ -36,7 +36,7 @@ def _safe(fn, *args):
     except (GarminAuthError, GarminRateLimited):
         raise
     except Exception as e:
-        logger.debug("Garmin wellness call %s failed: %s", getattr(fn, "__name__", fn), e)
+        logger.warning("Garmin wellness call %s failed (%s)", getattr(fn, "__name__", fn), type(e).__name__)
         return None
 
 
@@ -166,6 +166,7 @@ def fetch_range(client, start: date, end: date, *, user_id=None, db=None) -> dic
                 by_day.setdefault(day, {})[key] = flatten_summary(row) if key == 'summary' else row
     if db is not None:
         coverage(user_id, 'wellness', start, end, 'checked' if complete else 'failed', db)
+        db.info['wellness_range_complete'] = complete
     return {day: parse_day(parts.get('summary'), parts.get('sleep'), parts.get('hrv'), None, None, None)
             for day, parts in by_day.items()}
 
@@ -216,9 +217,13 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
         client=get_client()
     today = athlete_today()
     have = db.query(DailyWellness).filter(DailyWellness.user_id == user_id).count()
-    # Yesterday is finalized overnight, so the routine refresh covers it too
-    start = today - timedelta(days=(BACKFILL_DAYS if have < 7 else 2) - 1)
+    # Repair the gap after downtime as well as yesterday's overnight corrections.
+    latest = db.query(DailyWellness.date).filter_by(user_id=user_id).order_by(DailyWellness.date.desc()).first()
+    gap = (today - date.fromisoformat(latest[0])).days + 1 if latest else BACKFILL_DAYS
+    window = BACKFILL_DAYS if have < 7 else min(BACKFILL_DAYS, max(2, gap))
+    start = today - timedelta(days=window - 1)
     days = fetch_range(client, start, today, user_id=user_id, db=db)
+    recent_complete = db.info.get('wellness_range_complete', False)
     written = 0
     for iso, fields in days.items():
         if fields:
@@ -245,8 +250,9 @@ def _sync_wellness(user_id: int, db: Session, force: bool) -> dict:
     db.flush()
     _fill_resting_hr_average(user_id, sorted(days), db)
     db.commit()
-    _last_today_refresh[user_id] = now
-    return {"status": "ok", "days_written": written}
+    if recent_complete:
+        _last_today_refresh[user_id] = now
+    return {"status": "ok" if recent_complete else "partial", "days_written": written}
 
 
 def _fill_resting_hr_average(user_id: int, isos: list[str], db: Session):

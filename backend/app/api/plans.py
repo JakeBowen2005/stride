@@ -204,7 +204,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # race-pace segment is a week's progression on its own (one lever at a time).
     lookback = (fpd - timedelta(days=28)).isoformat()
     ran = _activities_by_date(user_id, lookback, (fpd - timedelta(days=1)).isoformat(), db)
-    recent_race_pace = max((race_pace_miles({'type': w.type, 'prescription': w.prescription}) for w in
+    recent_race_pace = max((_completed_race_pace_miles(w, ran.get(w.date, [])) for w in
                             db.query(PlannedWorkout).join(Plan, Plan.id == PlannedWorkout.plan_id).filter(
                                 Plan.user_id == user_id, Plan.preview_state.is_(None), PlannedWorkout.type == 'long_run',
                                 PlannedWorkout.date >= lookback, PlannedWorkout.date < fpd.isoformat())
@@ -1077,6 +1077,23 @@ def require_comment(req: FeedbackRequest):
     """The athlete's own account is the one thing the app asks for, and it starts the review."""
     if len((req.feel_notes or "").strip()) < COMMENT_MIN_CHARS:
         raise HTTPException(422, "Add a short comment about how the run went.")
+
+
+def _completed_race_pace_miles(workout: PlannedWorkout, activities: list[Activity]) -> float:
+    """A scheduled MP long run earns load progression only when its work was verified."""
+    if workout.swapped or workout.session_status in {'skipped', 'replaced'} or workout.moved_to:
+        return 0
+    miles = race_pace_miles({'type': workout.type, 'prescription': workout.prescription})
+    if not miles:
+        return 0
+    execution = execution_from_activities(activities, loads(workout.prescription))
+    if execution.get('confidence') not in {'high', 'medium'} or (execution.get('completion') or 0) < 1:
+        return 0
+    targets = execution.get('target_paces_sec_per_mile', [])
+    paces = execution.get('rep_paces_sec_per_mile', [])
+    if not targets or len(paces) != len(targets) or any(target is None or pace > target + 10 for pace, target in zip(paces, targets)):
+        return 0
+    return miles
 
 
 def effective_feedback(req: FeedbackRequest, activity: Activity | None) -> FeedbackRequest:

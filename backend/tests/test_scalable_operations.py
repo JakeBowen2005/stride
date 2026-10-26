@@ -150,3 +150,27 @@ def test_fit_upload_dedup_survives_garmin_identity_merge():
         repeated=import_fit(1,running_fit(),db)
         assert repeated['duplicate'] and repeated['activity_id']==first['activity_id']
         assert db.query(Activity).count()==1
+
+
+def test_replacement_garmin_key_clears_expiry_backoff_and_failed_job(monkeypatch):
+    from cryptography.fernet import Fernet
+    from app.models.garmin import GarminConnection
+    from app.services.provider_connections import client_for, configured
+    monkeypatch.setattr(settings, 'provider_encryption_keys', Fernet.generate_key().decode())
+    with SessionLocal() as db:
+        db.add(ProviderCredential(user_id=1, kind='garmin_personal', ciphertext='expired',
+                                  expires_at=utcnow()-timedelta(days=1)))
+        db.add(GarminConnection(user_id=1, connected=False, last_error='Rejected key',
+                                backoff_until=datetime.now()+timedelta(hours=1)))
+        db.add(SyncJob(user_id=1, status='retry', available_at=utcnow()+timedelta(hours=1)))
+        db.commit()
+    key = 'replacement-private-key-for-testing'
+    response = TestClient(app).post('/api/garmin/connect/1', json={'api_key':key})
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        assert configured(1, db)
+        assert db.get(ProviderCredential, 1).expires_at is None
+        conn = db.query(GarminConnection).filter_by(user_id=1).one()
+        assert conn.backoff_until is None and conn.last_error is None and not conn.connected
+        assert db.get(SyncJob, 1).status == 'cancelled'
+    assert client_for(1)._key == key

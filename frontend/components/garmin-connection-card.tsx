@@ -1,11 +1,11 @@
 "use client";
 
 import { apiUrl, USER_ID } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { GarminSync } from "@/components/garmin-sync";
+import { GarminSync, SYNC_EVENT } from "@/components/garmin-sync";
 
 
 interface Status {
@@ -18,7 +18,7 @@ interface Status {
   last_new_activity_at: string | null;
   last_error: string | null;
   full_sync_done: boolean;
-  full_sync_job: { state: "running" | "done" | "error"; result: unknown } | null;
+  full_sync_job: { state: "running" | "done" | "error"; result: unknown; error?: string | null } | null;
 }
 
 export function GarminConnectionCard() {
@@ -29,6 +29,7 @@ export function GarminConnectionCard() {
   async function load() {
     try {
       const res = await fetch(apiUrl(`/garmin/status/${USER_ID}`));
+      if (!res.ok) throw new Error("Could not load Garmin status");
       setStatus(await res.json());
       setOffline(false);
     } catch {
@@ -38,11 +39,18 @@ export function GarminConnectionCard() {
 
   useEffect(() => {
     const id = setTimeout(load, 0);
-    return () => clearTimeout(id);
+    window.addEventListener(SYNC_EVENT, load);
+    return () => { clearTimeout(id); window.removeEventListener(SYNC_EVENT, load); };
   }, []);
 
   // Poll while a full history import is running
   const running = status?.full_sync_job?.state === "running";
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running && status?.full_sync_job?.state === "done")
+      window.dispatchEvent(new Event(SYNC_EVENT));
+    wasRunning.current = running;
+  }, [running, status?.full_sync_job?.state]);
   useEffect(() => {
     if (!running) return;
     const id = setInterval(load, 4000);
@@ -50,8 +58,15 @@ export function GarminConnectionCard() {
   }, [running]);
 
   async function fullSync() {
-    await fetch(apiUrl(`/garmin/full-sync/${USER_ID}`), { method: "POST" });
-    load();
+    try {
+      const res = await fetch(apiUrl(`/garmin/full-sync/${USER_ID}`), { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Could not start history import");
+      setConnectionMessage("History import queued. Progress appears below.");
+      load();
+    } catch (error) {
+      setConnectionMessage(error instanceof Error ? error.message : "Could not start history import");
+    }
   }
 
   const job = status?.full_sync_job;
@@ -63,10 +78,12 @@ export function GarminConnectionCard() {
           <h2 className="text-[13px] font-bold">Garmin Connect</h2>
           {status?.api_key_present && !status.connected && status.last_error ? (
             <Badge variant="destructive" className="text-xs">Needs attention</Badge>
-          ) : status?.api_key_present ? (
+          ) : status?.connected ? (
             <Badge variant="secondary" className="text-xs">
               Connected{status.display_name ? ` · ${status.display_name}` : ""}
             </Badge>
+          ) : status?.api_key_present ? (
+            <Badge variant="outline" className="text-xs">Not verified · sync to check</Badge>
           ) : (
             <Badge variant="outline" className="text-xs">
               Not set up
@@ -116,7 +133,7 @@ export function GarminConnectionCard() {
                   {(job.result as { message?: string })?.message ?? "Done"}
                 </span>
               )}
-              {job?.state === "error" && <span className="text-xs text-destructive">{String(job.result)}</span>}
+              {job?.state === "error" && <span className="text-xs text-destructive">{status?.last_error || job.error || "History import failed. Try again."}</span>}
             </div>
           </>
         )}

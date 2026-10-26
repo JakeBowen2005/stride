@@ -8,6 +8,7 @@ import { HistoryProfile } from "@/components/history-profile";
 import { RunList } from "@/components/run-list";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
 import { AerobicEfficiencyChartWrapper, MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
+import { SYNC_EVENT } from "@/components/garmin-sync";
 import type { Activity } from "@/lib/types";
 
 
@@ -24,8 +25,15 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const refresh = () => setRevision(value => value + 1);
+    window.addEventListener(SYNC_EVENT, refresh);
+    return () => window.removeEventListener(SYNC_EVENT, refresh);
+  }, []);
+
+  useEffect(() => {
     async function load() {
       try {
+        setError(null);
         const actRes = await fetch(apiUrl(`/analysis/${USER_ID}/activities?type=${filter}&limit=200`));
 
         if (!actRes.ok) throw new Error("Could not load history. Reload to retry.");

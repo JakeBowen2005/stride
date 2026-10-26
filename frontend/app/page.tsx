@@ -137,7 +137,7 @@ export default function TodayPage() {
               </div>
             </div>
           )}
-          <GarminSync onNewActivities={load} />
+          <GarminSync autoSync={false} />
         </div>
       </div>
 
