@@ -90,6 +90,16 @@ def ramp_rate(baseline: float, peak: float, experience: str, goal_type: str) -> 
     return RATE_BEGINNER
 
 
+# One lever at a time: a long run whose race-pace segment is new, or this many miles
+# longer than any recent one, is the week's progression, so that week's volume holds.
+RACE_PACE_STEP_MILES = 3.0
+
+
+def race_pace_step(race_pace_miles: float, recent_race_pace_miles: float) -> bool:
+    """Does this long run introduce race-pace work, or grow it materially?"""
+    return race_pace_miles > 0 and race_pace_miles >= _finite(recent_race_pace_miles) + RACE_PACE_STEP_MILES
+
+
 LEVEL_CAP = 1.35  # the training level never runs more than 35% ahead of the 4-week average
 SPIKE_RATIO = 1.20  # a latest week this far above the one before it is a spike, not a level
 

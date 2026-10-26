@@ -9,18 +9,18 @@ Synthetic experienced marathoner in race shape, five weeks from race day.
 
 ## How each block was decided
 
-- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (64 → 67 mi/week). Why: Ran 121 of 121 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (65 → 68 mi/week). Why: Ran 116 of 116 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 3** (Nov 16–Nov 29): **build** → build. Building up to 10% over the block (68 → 72 mi/week). Why: Ran 133 of 133 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 1** (Oct 19–Nov 01): **build** → build. Week 2 adds 10 mi at race pace in the long run: holding 63.8 mi/week that week, then building again. Why: Ran 121 of 121 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (64 → 67 mi/week). Why: Ran 112 of 112 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 3** (Nov 16–Nov 29): **build** → build. Building up to 10% over the block (67 → 70 mi/week). Why: Ran 131 of 131 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
 
 ## At a glance
 
 | Week | Starts | Phase | Miles | Long run | Quality |
 |---|---|---|---|---|---|
 | 1 | Oct 19 | Peak | 60.5 | 19 | Controlled 4x5min Cruise Intervals |
-| 2 | Oct 26 | Peak | 67.0 | 20 | 2x18min Threshold |
-| 3 | Nov 02 | Peak | 65.0 | 20 | 2x18min Threshold |
-| 4 | Nov 09 | Peak | 68.0 | 20 | 2x19min Threshold, Controlled 4mi at Marathon Pace |
+| 2 | Oct 26 | Peak | 63.0 | 20 | 2x18min Threshold |
+| 3 | Nov 02 | Peak | 64.5 | 20 | 2x18min Threshold |
+| 4 | Nov 09 | Peak | 66.5 | 20 | 2x19min Threshold, Controlled 4mi at Marathon Pace |
 | 5 | Nov 16 | Taper | 48.0 | 14.5 | 2x13min Threshold |
 | 6 | Nov 23 | Race Week | 53.2 | — | Race-Week Sharpener: 2x1mi at MP, RACE DAY — Marathon |
 
@@ -35,30 +35,30 @@ Synthetic experienced marathoner in race shape, five weeks from race day.
 - **Sat Oct 24** · Easy Long Run · 19 mi — 19.0mi easy at 8:05-8:55/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Oct 25** · Rest
 
-### Week 2 · Oct 26–Nov 01 · Peak · 67.0 mi
-- **Mon Oct 26** · Easy Run + Strides · 9.5 mi — Conversational effort the whole run — easy means easy.
+### Week 2 · Oct 26–Nov 01 · Peak · 63.0 mi
+- **Mon Oct 26** · Easy Run + Strides · 8.5 mi — Conversational effort the whole run — easy means easy.
 - **Tue Oct 27** · 2x18min Threshold · 9 mi — 2x18min at 6:30/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your ma…
-- **Wed Oct 28** · Easy Run · 9.5 mi — Conversational effort the entire time.
-- **Thu Oct 29** · Easy Run · 9.5 mi — Conversational effort the entire time.
-- **Fri Oct 30** · Easy Run · 9.5 mi — Conversational effort the entire time.
+- **Wed Oct 28** · Easy Run · 8.5 mi — Conversational effort the entire time.
+- **Thu Oct 29** · Easy Run · 8.5 mi — Conversational effort the entire time.
+- **Fri Oct 30** · Easy Run · 8.5 mi — Conversational effort the entire time.
 - **Sat Oct 31** · 10 + 10 MP Long Run · 20 mi — 10mi easy at 8:05-8:55/mi, then 10mi at goal MP (6:50/mi). The ultimate marathon long run. *Why:* 20 miles with half at race pace.
 - **Sun Nov 01** · Rest
 
-### Week 3 · Nov 02–Nov 08 · Peak · 65.0 mi
+### Week 3 · Nov 02–Nov 08 · Peak · 64.5 mi
 - **Mon Nov 02** · Easy Run + Strides · 9 mi — Conversational effort the whole run — easy means easy.
 - **Tue Nov 03** · 2x18min Threshold · 9 mi — 2x18min at 6:30/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your ma…
 - **Wed Nov 04** · Easy Run · 9 mi — Conversational effort the entire time.
 - **Thu Nov 05** · Easy Run · 9 mi — Conversational effort the entire time.
-- **Fri Nov 06** · Easy Run · 9 mi — Conversational effort the entire time.
+- **Fri Nov 06** · Easy Run · 8.5 mi — Conversational effort the entire time.
 - **Sat Nov 07** · MP Block Long Run · 20 mi — 5mi easy, then 3x4mi at goal MP (6:50/mi) with 1mi float between, 1mi cooldown. *Why:* Accumulates massive marathon pace volume.
 - **Sun Nov 08** · Rest
 
-### Week 4 · Nov 09–Nov 15 · Peak · 68.0 mi
-- **Mon Nov 09** · Easy Run + Strides · 10.5 mi — Conversational effort the whole run — easy means easy.
+### Week 4 · Nov 09–Nov 15 · Peak · 66.5 mi
+- **Mon Nov 09** · Easy Run + Strides · 10 mi — Conversational effort the whole run — easy means easy.
 - **Tue Nov 10** · 2x19min Threshold · 9.5 mi — 2x19min at 6:30/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your ma…
-- **Wed Nov 11** · Easy Run · 10.5 mi — Conversational effort the entire time.
+- **Wed Nov 11** · Easy Run · 10 mi — Conversational effort the entire time.
 - **Thu Nov 12** · Controlled 4mi at Marathon Pace · 7 mi — 4mi at 6:50/mi (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Marathon-pace rhythm as the second session; controlled, the long run stays the priority.
-- **Fri Nov 13** · Easy Run · 10.5 mi — Conversational effort the entire time.
+- **Fri Nov 13** · Easy Run · 10 mi — Conversational effort the entire time.
 - **Sat Nov 14** · Easy Long Run · 20 mi — 20.0mi easy at 8:05-8:55/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 15** · Rest
 
