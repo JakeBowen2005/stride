@@ -105,13 +105,13 @@ export function FeedbackForm({ date, activityId, onSubmitted, compact = false, h
               Distance (mi)
               <input inputMode="decimal" value={manualMiles}
                 onChange={(e) => setManualMiles(e.target.value.replace(/[^0-9.]/g, ""))}
-                className="mt-1 h-11 w-full rounded-md border bg-background px-3 font-mono text-sm text-foreground" />
+                className="mt-1 h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 font-mono text-sm text-foreground" />
             </label>
             <label className="flex-1 text-xs text-muted-foreground">
               Time (min)
               <input inputMode="decimal" value={manualMinutes}
                 onChange={(e) => setManualMinutes(e.target.value.replace(/[^0-9.]/g, ""))}
-                className="mt-1 h-11 w-full rounded-md border bg-background px-3 font-mono text-sm text-foreground" />
+                className="mt-1 h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 font-mono text-sm text-foreground" />
             </label>
           </div>
           {manualMissing && (manualMiles || manualMinutes) && (

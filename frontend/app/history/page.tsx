@@ -59,13 +59,13 @@ export default function HistoryPage() {
     }catch{setError("Could not load older runs. Reload to retry.");}finally{setLoadingMore(false);}
   }
 
-  if (error) return <p role="alert" className="text-destructive">{error}</p>;
+  if (error) return <p role="alert" className="glass p-5 text-destructive">{error}</p>;
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-xl font-semibold">History</h1>
-        <div className="flex items-center justify-center py-20 text-muted-foreground">
+      <div className="space-y-4">
+        <h1 className="display pt-1">History</h1>
+        <div className="glass flex items-center justify-center py-20 text-muted-foreground">
           Loading your runs...
         </div>
       </div>
@@ -73,18 +73,22 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold">History</h1>
+    <div className="space-y-4">
+      <h1 className="display pt-1">History</h1>
 
+      <div className="grid items-start gap-4 lg:grid-cols-2">
       <HistoryProfile revision={revision} onInspect={async (id) => {
         const activity = await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);
         if (activity) setSelected({ ...activity, splits: activity.splits || [] });
       }} />
 
       <TrainingTrends revision={revision} onInspect={async id=>{const a=await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);if(a)setSelected({...a,splits:a.splits||[]});}} />
+      </div>
       <MileageOverTimeChartWrapper revision={revision} />
       <AerobicEfficiencyChartWrapper revision={revision} />
 
+      <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
+      <h2 className="text-lg font-bold tracking-tight">Runs</h2>
       <Tabs
         value={filter}
         onValueChange={(v) => setFilter(v as FilterType)}
@@ -96,10 +100,11 @@ export default function HistoryPage() {
           <TabsTrigger value="easy">Easy</TabsTrigger>
         </TabsList>
       </Tabs>
+      </div>
 
       <RunList activities={activities} onSelect={setSelected} />
 
-      {hasMore && <button className="min-h-11 rounded border px-4" disabled={loadingMore} onClick={loadOlder}>{loadingMore?"Loading…":"Load older runs"}</button>}
+      {hasMore && <button className="glass lift min-h-11 rounded-full px-5 text-sm font-semibold" disabled={loadingMore} onClick={loadOlder}>{loadingMore?"Loading…":"Load older runs"}</button>}
       <RunDetailSheet
         activity={selected}
         open={!!selected}

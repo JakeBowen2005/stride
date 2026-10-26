@@ -168,7 +168,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
         {tiles.map((m) => (
           <button
             key={m.key}
@@ -176,13 +176,13 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
             onClick={() => setSelected(active?.key === m.key ? null : m.key)}
             aria-pressed={active?.key === m.key}
             className={cn(
-              "rounded-xl border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              active?.key === m.key && "border-foreground/40 ring-1 ring-foreground/20",
+              "glass-tile lift border border-transparent px-3.5 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active?.key === m.key && "border-[var(--glass-border)] ring-1 ring-[var(--ring)]",
             )}
           >
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{m.label}</div>
+            <div className="text-xs font-medium text-muted-foreground">{m.label}</div>
             <div className="mt-0.5 flex items-baseline gap-1">
-              <span className="font-mono text-xl font-semibold">{m.display(today)}</span>
+              <span className="num text-[22px] font-semibold leading-tight">{m.display(today)}</span>
               {m.unit && <span className="text-xs text-muted-foreground">{m.unit}</span>}
             </div>
             <div className="truncate text-xs text-muted-foreground">{m.sub(today) || " "}</div>
@@ -194,15 +194,15 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          className="min-h-8 rounded-full px-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
         >
           {showAll ? "Show fewer" : `+${available.length - tiles.length} more metrics`}
         </button>
       ) : null}
 
       {active && (
-        <Card>
-          <CardContent className="space-y-1 pt-3">
+        <Card className="rounded-2xl border-0 bg-[var(--glass-inner)] py-0 shadow-none backdrop-blur-none">
+          <CardContent className="space-y-1 px-3.5 py-3">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-sm font-medium" title={active.help}>{active.label} · last {activeSeries.length} days</h4>
               <div className="flex items-center gap-2">
@@ -217,7 +217,7 @@ export function MetricTiles({ today, history }: { today: Wellness | null; histor
                   onClick={() => setSelected(null)}
                   aria-label="Hide chart"
                   title="Hide chart"
-                  className="-mr-1 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="-mr-1 rounded-full p-1.5 text-muted-foreground hover:bg-[var(--row-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <X className="size-4" />
                 </button>

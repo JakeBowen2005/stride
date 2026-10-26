@@ -273,8 +273,8 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <p className="eyebrow">Your next training days</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
-        <div className="py-20 text-center text-muted-foreground">
+        <h1 className="display mt-1">Current Plan</h1>
+        <div className="glass py-20 text-center text-muted-foreground">
           Loading your plan...
         </div>
       </div>
@@ -285,7 +285,7 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <p className="eyebrow">Your next training days</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
+        <h1 className="display mt-1">Current Plan</h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="py-12 text-center">
@@ -304,7 +304,7 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <p className="eyebrow">Your next training days</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
+        <h1 className="display mt-1">Current Plan</h1>
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             {error || "No plan available"}
@@ -321,7 +321,7 @@ export default function PlanPage() {
     return (
       <div className="space-y-6">
         <p className="eyebrow">Your next training days</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Current Plan</h1>
+        <h1 className="display mt-1">Current Plan</h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
@@ -384,13 +384,13 @@ export default function PlanPage() {
   const preferenceMismatch = !!currentPreferences && !!builtFor && scheduleChanged(builtFor, currentPreferences);
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <h1 className="font-heading text-2xl font-black italic tracking-tight">
-            Current Plan{plan.load ? ` · ${MODE_LABEL[plan.load.mode] ?? plan.load.mode}` : ""}
+          <h1 className="display">
+            {plan.load ? <><span className="sr-only">Current Plan · </span>{MODE_LABEL[plan.load.mode] ?? plan.load.mode}</> : "Current Plan"}
           </h1>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{plan.goal.description}</span>
             <span className="num">{formatDateShort(plan.start_date)} &ndash; {formatDateShort(plan.end_date)}</span>
             {plan.phase && plan.phase.phase !== "general" && (
@@ -421,7 +421,7 @@ export default function PlanPage() {
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
-      {preferenceMismatch && builtFor && currentPreferences && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+      {preferenceMismatch && builtFor && currentPreferences && <div role="status" className="glass flex flex-wrap items-center justify-between gap-3 rounded-[22px] px-4 py-3 text-sm">
         <p>This block was built for {describeSchedule(builtFor.days_per_week, builtFor.rest_days)}. Your settings now say {describeSchedule(currentPreferences.days_per_week, (currentPreferences.rest_days || "").split(","))}.</p>
         <Button size="sm" disabled={generating} onClick={() => generatePlan(false, "current", "schedule")}>{generating ? "Building…" : "Update my plan"}</Button>
       </div>}
@@ -440,36 +440,39 @@ export default function PlanPage() {
         </div>
       </Panel>}
 
-      <div className="panel grid grid-cols-2 divide-x divide-[#2a2a2a]/15 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {weekTotals.slice(0, 2).map((t, i) => (
-          <StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
-            sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} />
+          <div key={i} className="glass rounded-[22px]"><StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
+            sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} /></div>
         ))}
-        <StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} />
-        <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
-          sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} tone="var(--type-easy)" />
+        <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
+        {/* The goal tile is the one solid accent, as in the wireframes */}
+        <div className="rounded-[22px] border border-white/30 bg-primary text-primary-foreground shadow-[var(--glass-shadow)] [&_.stat-label]:text-primary-foreground/85 [&_.text-muted-foreground]:text-primary-foreground/85">
+          <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
+            sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} />
+        </div>
       </div>
 
-      <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-0">
+      <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
         <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />
       </Panel>
 
       {!isDesktop && selected && (
-        <div id="plan-inspector" className="scroll-mt-16">
+        <div id="plan-inspector" className="scroll-mt-20">
           <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">{inspector}</Panel>
         </div>
       )}
 
-      <div id="plan-coach" className="panel min-w-0 scroll-mt-16">
+      <div id="plan-coach" className="panel min-w-0 scroll-mt-24">
         <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
-          className="panel-head w-full text-left hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
-          <span>Coach perspective · this week &amp; next</span>
+          className="panel-head w-full pb-3 text-left transition-colors hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
+          <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="dot" style={{ background: "var(--accent-warm)" }} />Coach perspective · this week &amp; next</span>
           <span aria-hidden="true" className="meta inline-flex items-center gap-1">
             {coachOpen ? "Hide" : "Show"}<span className={cn("inline-block transition-transform", coachOpen && "rotate-180")}>▾</span>
           </span>
         </button>
         {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
-        <div id="plan-coach-body" hidden={!coachOpen} className="px-3 py-2.5">
+        <div id="plan-coach-body" hidden={!coachOpen} className="px-4 pb-4 sm:px-5">
           <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
         </div>
       </div>
@@ -488,8 +491,8 @@ export default function PlanPage() {
           <ul className="space-y-1.5 text-sm">
             {changes.map((w) => (
               <li key={w.date}>
-                <button type="button" className="text-left hover:underline" onClick={() => openDay(w.date)}>
-                  <span className="font-mono text-xs font-semibold">{formatDateShort(w.date)}</span>{" "}
+                <button type="button" className="rounded-lg text-left transition-colors hover:underline" onClick={() => openDay(w.date)}>
+                  <span className="num text-xs font-bold">{formatDateShort(w.date)}</span>{" "}
                   <span className="text-muted-foreground">{w.adjustment_note}</span>
                 </button>
               </li>
@@ -498,11 +501,11 @@ export default function PlanPage() {
           {plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
         </Panel>}
         <Panel label="Pacing guide" meta={`per ${unit}`} bodyClassName="px-3 py-2">
-          <div className="space-y-0.5 text-[13px]">
+          <div className="space-y-1 text-[13px]">
             {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
-              <div key={label} className="flex items-baseline justify-between gap-3">
+              <div key={label} className="glass-tile flex items-baseline justify-between gap-3 rounded-xl px-3 py-2">
                 <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
-                <span className="num shrink-0">{paceInUnits(value, units)}/{unit}</span>
+                <span className="num shrink-0 font-bold">{paceInUnits(value, units)}/{unit}</span>
               </div>
             ))}
           </div>

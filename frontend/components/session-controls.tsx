@@ -58,12 +58,12 @@ function Segmented<T extends string>({ label, value, options, onChange, disabled
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5" onKeyDown={onKeyDown}>
       {options.map((o) => {
         const active = o.value === value;
-        const color = o.kind ? kindColor(o.kind).color : "var(--ink)";
+        const color = o.kind ? kindColor(o.kind).color : "var(--primary)";
         return (
           <button key={o.value} data-value={o.value} type="button" role="radio" aria-checked={active} tabIndex={active ? 0 : -1}
             disabled={disabled} onClick={() => onChange(o.value)}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-            style={active ? { background: color, borderColor: color, color: "#fff" } : { borderColor: "var(--border)" }}>
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+            style={active ? { background: color, borderColor: color, color: o.kind ? "var(--type-on)" : "var(--primary-foreground)" } : { borderColor: "var(--border)" }}>
             {o.kind && !active && <span aria-hidden="true" className="size-2 rounded-full" style={{ background: color }} />}
             {o.label}
           </button>
@@ -134,7 +134,7 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
   const canApply = !busy && !(action === "move" && !target) && !(needsOptions && (!currentMenu || !optionId || loadingOptions));
 
   return (
-    <div className="space-y-3 border-t pt-3" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div className="space-y-3 border-t border-[var(--glass-border)] pt-3" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="stat-label">Change this session</span>
         <Segmented label="Change type" value={action} options={ACTIONS} disabled={busy} onChange={(v) => { setAction(v); setOptionId(""); }} />
@@ -147,7 +147,7 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
       {needsOptions && (
         <div className="space-y-2" aria-busy={loadingOptions}>
           {loadingOptions && <div className="space-y-2" role="status" aria-label="Loading options">
-            {[0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-md bg-muted" />)}
+            {[0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />)}
           </div>}
           {currentMenu?.reasons.map((text, i) => <p key={i} className="text-xs text-muted-foreground">{text}</p>)}
           <div role="radiogroup" aria-label="Workout options" className="space-y-2">
@@ -157,8 +157,8 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
               const checked = optionId === option.id;
               return (
                 <label key={option.id} htmlFor={`opt-${option.id}`}
-                  className={cn("block cursor-pointer rounded-md border-[1.5px] p-3 transition-shadow hover:shadow-md", checked && "shadow-md")}
-                  style={{ borderColor: checked ? color : "var(--border)", background: checked ? tint : "var(--card)" }}>
+                  className={cn("lift block cursor-pointer rounded-2xl border-[1.5px] bg-[var(--glass-inner)] p-3.5", checked && "shadow-md")}
+                  style={{ borderColor: checked ? color : "var(--glass-border)", background: checked ? tint : "var(--glass-inner)" }}>
                   <span className="flex items-start gap-2">
                     <input type="radio" id={`opt-${option.id}`} aria-labelledby={`opt-${option.id}-t`} aria-describedby={`opt-${option.id}-d`}
                       className="mt-1 accent-current" style={{ color }} name={`session-${workout.id}`} value={option.id}

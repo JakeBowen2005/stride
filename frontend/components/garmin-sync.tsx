@@ -42,7 +42,7 @@ export function GarminSync({
   onNewActivities?: () => void;
   autoSync?: boolean;
   label?: string;
-  variant?: "default" | "sidebar";
+  variant?: "default" | "bar";
 }) {
   const [status, setStatus] = useState<GarminStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -116,18 +116,15 @@ export function GarminSync({
 
   const notConnected = status && !status.api_key_present;
 
-  if (variant === "sidebar") {
+  if (variant === "bar") {
     const healthy = status?.api_key_present && !status.last_error;
     return (
-      <div className="space-y-1 text-xs text-[#c9c9c3]">
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full" style={{ background: healthy ? "#34d399" : "#fb923c" }} />
-          <span>Garmin</span>
-        </div>
-        <div>{message ?? (notConnected ? "not connected" : `synced ${timeAgo(status?.last_sync_at ?? null)}`)}</div>
-        {notConnected ? <Link href="/settings" className="underline underline-offset-2 hover:text-white">Connect</Link> :
+      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <span aria-hidden="true" className="dot" style={{ background: healthy ? "var(--status-good)" : "var(--status-serious)" }} />
+        <span className="truncate"><span className="sr-only">Garmin: </span><span aria-hidden="true" className="max-md:hidden">Garmin · </span>{message ?? (notConnected ? "not connected" : `synced ${timeAgo(status?.last_sync_at ?? null)}`)}</span>
+        {notConnected ? <Link href="/settings" className="shrink-0 rounded-full px-2 py-1 font-semibold text-foreground underline-offset-2 hover:underline">Connect</Link> :
           <button type="button" onClick={() => sync(true)} disabled={syncing}
-            className="underline underline-offset-2 hover:text-white disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
+            className="min-h-8 shrink-0 rounded-full px-2.5 font-semibold text-foreground transition-colors hover:bg-[var(--row-hover)] disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
       </div>
     );
   }
@@ -141,7 +138,7 @@ export function GarminSync({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button variant="outline" size="sm" className="h-10 sm:h-7" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
+      <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
         {syncing ? "Syncing…" : label}
       </Button>
       {notConnected || (status?.last_error && !message) ? (

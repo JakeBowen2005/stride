@@ -69,10 +69,10 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
   }
   if (!outlook.milestones.length) return null;
   return (
-    <Panel label="Route to your goal" meta={outlook.schedule_gap ? "Availability decision" : outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-3 py-2">
-      {outlook.schedule_gap && <p role="alert" className="mb-2 rounded border p-2 text-sm">{outlook.schedule_gap.message} <a className="underline" href="/settings">Review daily time and goal</a></p>}
+    <Panel label="Route to your goal" meta={outlook.schedule_gap ? "Availability decision" : outlook.est_weeks_to_ready ? `~${outlook.est_weeks_to_ready} wks` : "On track"} bodyClassName="px-4 pb-4 pt-2">
+      {outlook.schedule_gap && <p role="alert" className="glass-tile mb-2 p-3 text-sm">{outlook.schedule_gap.message} <a className="underline" href="/settings">Review daily time and goal</a></p>}
       {outlook.decision && (
-        <div role="alert" className="mb-2 rounded-md border border-amber-500/60 bg-amber-500/15 p-2 text-xs leading-relaxed">
+        <div role="alert" className="mb-2 rounded-xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] p-2.5 text-xs leading-relaxed">
           <p className="font-medium">Decision needed: {outlook.decision.question}</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-4">
             {outlook.decision.options.map((o) => (
@@ -82,20 +82,20 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
             ))}
           </ul>
           <label className="block mt-2">Your decision
-            <select className="block w-full min-h-11 rounded border bg-background p-2" value={choice} onChange={e=>setChoice(e.target.value)}>
+            <select className="block w-full min-h-11 rounded-xl border border-input bg-[var(--glass-inner)] p-2" value={choice} onChange={e=>setChoice(e.target.value)}>
               {outlook.decision.options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
           </label>
-          {choice === "later_race" && <label className="block">New race date<input type="date" className="block min-h-11 rounded border p-2" value={raceDate} onChange={e=>setRaceDate(e.target.value)}/></label>}
-          {choice === "shorter" && <label className="block">New distance<select className="block min-h-11 rounded border p-2" value={distance} onChange={e=>setDistance(e.target.value)}>{["5k","10k","half","marathon","50k","50mi","100k"].map(d=><option key={d}>{d}</option>)}</select></label>}
+          {choice === "later_race" && <label className="block">New race date<input type="date" className="block min-h-11 rounded-xl border border-input bg-[var(--glass-inner)] p-2" value={raceDate} onChange={e=>setRaceDate(e.target.value)}/></label>}
+          {choice === "shorter" && <label className="block">New distance<select className="block min-h-11 rounded-xl border border-input bg-[var(--glass-inner)] p-2" value={distance} onChange={e=>setDistance(e.target.value)}>{["5k","10k","half","marathon","50k","50mi","100k"].map(d=><option key={d}>{d}</option>)}</select></label>}
           <p className="my-2">Your current block stays approved until you preview and approve a revision.</p>
-          <button className="min-h-11 rounded border px-3" disabled={saving} onClick={saveDecision}>{saving ? "Saving…" : "Save goal decision"}</button>
+          <button className="min-h-11 rounded-full border border-[var(--glass-border)] bg-[var(--glass-inner)] px-4 font-semibold transition-colors hover:bg-[var(--row-hover)]" disabled={saving} onClick={saveDecision}>{saving ? "Saving…" : "Save goal decision"}</button>
         </div>
       )}
       {message && <p role="status" className="mb-2 text-sm">{message}</p>}
       {outlook.accepted_decision && <p className="text-xs mb-2">Saved decision: {outlook.accepted_decision.choice.replaceAll("_", " ")}</p>}
       {outlook.gaps.map((g) => (
-        <p key={g.milestone} role="alert" className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs leading-relaxed">
+        <p key={g.milestone} role="alert" className="mb-2 rounded-xl border border-[color-mix(in_srgb,var(--warn)_35%,transparent)] bg-[var(--warn-tint)] p-2.5 text-xs leading-relaxed">
           {g.message}
         </p>
       ))}
@@ -108,8 +108,8 @@ export function GoalRoute({ outlook }: { outlook: Outlook }) {
                 <span className={cn(m.status === "done" && "text-muted-foreground line-through decoration-1")}>{m.label}</span>
                 <span className="num shrink-0 text-xs text-muted-foreground">{m.status === "done" ? "Done ✓" : outlook.schedule_gap && ["volume","long_run"].includes(m.key) ? "Review availability" : weeks(m.est_weeks)}</span>
               </div>
-              <div className="mt-1 h-1.5 rounded-full bg-secondary" aria-hidden="true">
-                <div className="h-1.5 rounded-full bg-foreground" style={{ width: `${pct}%` }} />
+              <div className="mt-1 h-1.5 rounded-full bg-[var(--glass-inner)]" aria-hidden="true">
+                <div className="h-1.5 rounded-full bg-[var(--accent-warm)]" style={{ width: `${pct}%` }} />
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 <span className="num">{m.current ?? 0}</span> / <span className="num">{m.target}</span> {m.unit} · {m.detail}
@@ -137,7 +137,7 @@ export function BlockReviewPanel({ review }: { review: BlockReview }) {
     ["Still needed", review.missing],
   ];
   return (
-    <Panel label="Last block review" meta={review.decision ? DECISION_LABEL[review.decision] ?? review.decision : undefined} bodyClassName="space-y-2 px-3 py-2">
+    <Panel label="Last block review" meta={review.decision ? DECISION_LABEL[review.decision] ?? review.decision : undefined} bodyClassName="space-y-2.5 px-4 pb-4 pt-2">
       {sections.filter(([, items]) => items.length).map(([title, items]) => (
         <div key={title}>
           <p className="stat-label">{title}</p>

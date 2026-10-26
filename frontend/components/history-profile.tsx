@@ -30,8 +30,8 @@ export function HistoryProfile({ revision, onInspect }: { revision: number; onIn
     }).catch(() => { if (active) setError("Training overview unavailable. Your runs are still shown below."); });
     return () => { active = false; };
   }, [revision]);
-  if (error) return <p role="status" className="text-sm text-muted-foreground">{error}</p>;
-  if (!profile) return <p role="status" className="text-sm text-muted-foreground">Reading your training history…</p>;
+  if (error) return <p role="status" className="glass p-4 text-sm text-muted-foreground">{error}</p>;
+  if (!profile) return <p role="status" className="glass p-4 text-sm text-muted-foreground">Reading your training history…</p>;
   const missing = (profile.coverage.fit_status.pending || 0) + (profile.coverage.fit_status.retry || 0);
   const unavailable = profile.coverage.fit_status.unavailable || 0;
   const distance = (miles: number) => `${distanceInUnits(miles, units)} ${unitLabel(units)}`;
@@ -40,18 +40,18 @@ export function HistoryProfile({ revision, onInspect }: { revision: number; onIn
     catch { setError("Could not open that run. Reload to retry."); }
   };
   return <Card>
-    <CardHeader><CardTitle>What your history shows</CardTitle></CardHeader>
+    <CardHeader><CardTitle className="text-[13px] font-bold">What your history shows</CardTitle></CardHeader>
     <CardContent className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><p className="text-xs text-muted-foreground">Recent recorded average</p>
-          <p className="text-lg font-medium">{distance(profile.current.recorded_mpw_last_4_weeks)} / week</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="glass-tile px-3.5 py-3"><p className="text-xs text-muted-foreground">Recent recorded average</p>
+          <p className="num text-2xl font-semibold tracking-tight">{distance(profile.current.recorded_mpw_last_4_weeks)} / week</p>
           <p className="text-xs text-muted-foreground">Last four completed weeks</p></div>
-        <div><p className="text-xs text-muted-foreground">Recorded history</p>
-          <p className="text-lg font-medium">{profile.coverage.recorded_runs} runs</p>
+        <div className="glass-tile px-3.5 py-3"><p className="text-xs text-muted-foreground">Recorded history</p>
+          <p className="num text-2xl font-semibold tracking-tight">{profile.coverage.recorded_runs} runs</p>
           <p className="text-xs text-muted-foreground">{profile.coverage.first_recorded_run ? `Since ${historyDate(profile.coverage.first_recorded_run)}` : "No runs recorded yet"}</p></div>
       </div>
-      {profile.historical_capacity.sustained_blocks.length > 0 && <details>
-        <summary className="cursor-pointer text-sm font-medium">Previously sustained training</summary>
+      {profile.historical_capacity.sustained_blocks.length > 0 && <details className="glass-tile px-3.5 py-2.5">
+        <summary className="cursor-pointer text-sm font-semibold">Previously sustained training</summary>
         <p className="mt-2 text-xs text-muted-foreground">Past capacity provides context. Current training determines the next step.</p>
         <ul className="mt-2 space-y-3">{profile.historical_capacity.sustained_blocks.map(block => <li key={block.start} className="text-sm">
           <p>{distance(block.average_mpw)} / week · {historyDate(block.start)}–{historyDate(block.end)}</p>

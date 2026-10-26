@@ -184,7 +184,7 @@ export default function OnboardingPage() {
         onBack={back}
       >
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <h2 className="text-4xl font-bold tracking-tight">STRIDE</h2>
+          <h2 className="wordmark text-5xl">Stride</h2>
           <p className="mt-3 max-w-xs text-muted-foreground">
             Your AI running coach. Simple workouts, specific to your goals, backed by data.
           </p>
@@ -314,8 +314,8 @@ export default function OnboardingPage() {
                   type="button"
                   aria-pressed={continuousMinutes === o.v}
                   onClick={() => setContinuousMinutes(o.v)}
-                  className={`h-11 rounded-md text-xs transition-colors ${
-                    continuousMinutes === o.v ? "bg-foreground text-background" : "bg-secondary hover:bg-secondary/80"
+                  className={`h-11 rounded-full text-xs font-semibold transition-colors ${
+                    continuousMinutes === o.v ? "bg-primary text-primary-foreground" : "bg-[var(--glass-inner)] hover:bg-[var(--row-hover)]"
                   }`}
                 >
                   {o.l}
@@ -412,7 +412,7 @@ export default function OnboardingPage() {
           <GoalCards selected={goalType} onChange={setGoalType} />
 
           {goalType === "race" && (
-            <div className="space-y-4 rounded-md border p-4">
+            <div className="glass-tile space-y-4 p-4">
               <div className="space-y-2">
                 <Label>Distance</Label>
                 <Select
@@ -472,7 +472,7 @@ export default function OnboardingPage() {
           )}
 
           {goalType === "mileage" && (
-            <div className="space-y-2 rounded-md border p-4">
+            <div className="glass-tile space-y-2 p-4">
               <Label>
                 Target weekly mileage:{" "}
                 <span className="font-mono font-semibold">
@@ -516,7 +516,7 @@ export default function OnboardingPage() {
             </div>
           ) : (
             <>
-              <div className="w-full max-w-sm space-y-2 rounded-md bg-secondary/40 p-4 text-sm">
+              <div className="glass-tile w-full max-w-sm space-y-2 p-4 text-sm">
                 <p className="font-medium">Garmin connection</p><p>Separate athlete connections await Business API approval. You can import original FIT files or continue without recorded history.</p>
                 <p className="text-muted-foreground">The owner connection is managed in Settings. No Garmin password is collected by Stride.</p>
               </div>
@@ -544,12 +544,12 @@ export default function OnboardingPage() {
     >
       <div className="space-y-3 text-sm">
         {saveError && (
-          <p role="alert" className="rounded-md bg-destructive/10 p-2 text-destructive">
+          <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-destructive">
             {saveError}. Your answers are still here; tap Try again.
           </p>
         )}
         {readiness && !readiness.ready && (
-          <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          <div className="space-y-2 rounded-2xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] p-3">
             <p className="font-medium">This goal looks like a stretch right now:</p>
             <ul className="list-disc space-y-1 pl-5">
               {readiness.reasons.map((r) => (
@@ -587,7 +587,7 @@ export default function OnboardingPage() {
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between rounded px-2 py-1.5 odd:bg-secondary/30">
+    <div className="glass-tile flex items-center justify-between rounded-xl px-3 py-2">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value}</span>
     </div>
