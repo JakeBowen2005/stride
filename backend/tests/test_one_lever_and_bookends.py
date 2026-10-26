@@ -92,3 +92,22 @@ def test_trail_demo_bookends_read_in_five_minutes():
     for text in bookends:
         minutes = re.match(r"(\d+)min easy$", text)
         assert minutes and int(minutes.group(1)) % 5 == 0, text
+
+
+def test_scheduled_mp_work_only_counts_when_actual_laps_verify_its_dose():
+    import json
+    from app.models.activity import Activity
+    from app.models.plan import PlannedWorkout
+    data = long_run_prescription([('easy', 10), ('race_pace', 10, 410)], 'MP long run', easy_pace=540)
+    workout = PlannedWorkout(type='long_run', prescription=json.dumps(data))
+    run = Activity(id=1, distance_meters=20*MI, duration_seconds=20*540, splits='[]')
+    assert plans_api._completed_race_pace_miles(workout, [run]) == 0  # distance alone is not MP work
+    run.splits = json.dumps([
+        {'intensity':'WARMUP','distance_m':10*MI,'duration_s':10*540},
+        {'intensity':'ACTIVE','distance_m':10*MI,'duration_s':10*410},
+    ])
+    assert plans_api._completed_race_pace_miles(workout, [run]) == 10
+    run.splits = run.splits.replace(str(10*410), str(10*540))
+    assert plans_api._completed_race_pace_miles(workout, [run]) == 0  # completed distance, too slow for MP
+    workout.swapped = True
+    assert plans_api._completed_race_pace_miles(workout, [run]) == 0

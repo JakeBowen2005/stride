@@ -56,7 +56,7 @@ export function Nav() {
           })}
         </nav>
         <div className="flex min-w-0 items-center justify-end gap-1 sm:w-[clamp(9rem,22vw,17rem)]">
-          <GarminSync variant="bar" autoSync={false} />
+          <GarminSync variant="bar" />
           <form action="/auth/logout" method="post" className="max-sm:hidden">
             <button type="submit" aria-label="Sign out" title="Sign out"
               className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--row-hover)] hover:text-foreground">

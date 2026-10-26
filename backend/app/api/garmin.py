@@ -120,6 +120,17 @@ def connect_personal(user_id:int,data:PersonalConnection,db:Session=Depends(get_
     except GarminNotConnected:
         raise HTTPException(503,'Private provider credential storage is not configured.')
     row.revoked_at=None
+    row.expires_at=None
+    conn=db.query(GarminConnection).filter_by(user_id=user_id).first()
+    if conn:
+        conn.connected=False
+        conn.backoff_until=None
+        conn.last_error=None
+    # A replacement key must not inherit a failed job's retry delay.
+    from app.models.operations import SyncJob
+    job=db.get(SyncJob,user_id)
+    if job and job.status in {'retry','error'}:
+        job.status,job.lease_token='cancelled',None
     db.commit()
     return {'saved':True,'verified':False,'message':'Key saved privately. Sync to verify it.'}
 
