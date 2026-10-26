@@ -244,6 +244,16 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     return context, result['sources'], result['fingerprint'], plan
 
 
+def _distance_swap_note(matched, ran_by_date):
+    """A long run moved to an easy day (or run short): judge the run as what it was."""
+    ran = ran_by_date.get(matched.date) if matched else None
+    if not ran or not ran['off_plan'] or ran['type'] == 'workout':
+        return None
+    swap = f", swapped with {ran['swapped_with']}" if ran['swapped_with'] else ""
+    return (f"OFF-PLAN: prescribed {matched.title} ({matched.distance_miles} mi), but the athlete ran this as "
+            f"{ran['title']}{swap}. Judge it as a {ran['title'].lower()}, not against the prescription.")
+
+
 def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     from app.api.plans import _get_activities_for_date
     user = db.get(User, user_id)
@@ -279,10 +289,30 @@ def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
             executed_by_id[run.id] = found | {'title': session_title(found)}
     actuals_by_day = {}
     for run in runs:actuals_by_day.setdefault(run.date.date().isoformat(),[]).append(run)
+    # What was run on each completed plan day: the same record the calendar shows (swaps paired)
+    from app.core.session_match import ran_session, pair_swaps
+    ran_rows = []
+    long_by_week = {}
+    for r in rows:
+        if r.type == 'long_run':
+            long_by_week[r.week_number] = max(long_by_week.get(r.week_number, 0), r.distance_miles or 0)
+    for r in rows:
+        day_runs = actuals_by_day.get(r.date)
+        if day_runs and r.type != 'rest':
+            primary_run = max(day_runs, key=lambda a: a.distance_meters)
+            found = executed_by_id.get(primary_run.id)
+            spec_r = loads(r.prescription)
+            ran_rows.append({'date': r.date, 'session': ran_session(r.type, r.title, r.distance_miles or 0,
+                (primary_run.distance_meters or 0) / 1609.34, found,
+                bool(found and r.type == 'workout' and off_plan(spec_r, found)), long_by_week.get(r.week_number))})
+    pair_swaps(ran_rows)
+    ran_by_date = {x['date']: x['session'] for x in ran_rows}
     row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'weekday': date.fromisoformat(r.date).strftime('%a'),
                  'days_from_today': (date.fromisoformat(r.date) - today).days,
                  'status': 'completed' if actuals_by_day.get(r.date) else r.session_status,
                  'moved_to': r.moved_to, 'moved_from': r.moved_from, 'activity_id': max(actuals_by_day[r.date],key=lambda a:a.distance_meters).id if actuals_by_day.get(r.date) else r.activity_id,
+                 'ran_as': ({k: ran_by_date[r.date][k] for k in ('title', 'type', 'off_plan', 'swapped_with')}
+                            if r.date in ran_by_date else None),
                  'feel': r.feel_rating, 'effort_1_to_10': r.effort_rating, 'reported_completion': loads_json(r.reported_completion), 'notes': r.feel_notes, 'evaluation': loads_json(r.evaluation)} for r in rows]
     matched = None
     if activity:
@@ -349,7 +379,7 @@ def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         'week_view': _week_view(rows, runs, today),
         'training_summary': _training_summary(user_id, runs, executed_by_id, today, rows, goal_data),
         'run': _run(activity, executed_run, matched) if activity else None,
-        'run_vs_plan': off_plan_note or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
+        'run_vs_plan': off_plan_note or _distance_swap_note(matched, ran_by_date) or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
         # Four weeks of single-line history; older trends are already in training_summary.last_6_weeks.
         'recent_runs': [_brief_run(a, executed_by_id.get(a.id)) for a in runs if a.date.date() >= today - timedelta(days=28)],
         'quality_evidence': quality_history(user_id, db), 'recovery': wellness_data,
@@ -456,14 +486,17 @@ def _check_ai_budget(user_id,db,configured):
         # Commit releases it before any provider network call.
         db.execute(text('SELECT pg_advisory_xact_lock(68743103)'))
     utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # The athlete's allowance resets at their own midnight; the app-wide cap stays on the UTC day.
+    from app.athlete_clock import day_start_utc
     used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
-        CoachingReview.created_at >= utc_day, CoachingReview.model.is_not(None)).scalar()
+        CoachingReview.created_at >= day_start_utc(), CoachingReview.model.is_not(None)).scalar()
     global_used=db.query(func.coalesce(func.sum(CoachingReview.attempts),0)).filter(
         CoachingReview.created_at>=utc_day,CoachingReview.model.is_not(None)).scalar()
     if global_used>=settings.openai_coach_global_daily_limit:
         raise HTTPException(429,'The app AI budget is reached for today. Training rules and saved reviews still work.')
     if used >= settings.openai_coach_daily_limit:
-        raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
+        raise HTTPException(429, f'Daily AI review limit reached ({used} of {settings.openai_coach_daily_limit} today; '
+                                 'it resets at midnight). Saved reviews and training rules still work.')
 
 
 def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):

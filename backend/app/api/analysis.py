@@ -355,8 +355,8 @@ def operations(user_id: int, db: Session = Depends(get_db)):
     except (OSError, ValueError, TypeError):
         info = {}
     from app.models.coaching import CoachingAttempt,CoachingReview
-    from datetime import datetime,timezone
-    day=datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0)
+    from app.athlete_clock import day_start_utc
+    day=day_start_utc()
     usage=db.query(func.count(CoachingAttempt.id),func.coalesce(func.sum(CoachingAttempt.input_tokens),0),
         func.coalesce(func.sum(CoachingAttempt.output_tokens),0),func.avg(CoachingAttempt.latency_ms)).join(CoachingReview,CoachingReview.id==CoachingAttempt.review_id).filter(CoachingReview.user_id==user_id,CoachingAttempt.created_at>=day).one()
     return {'ai_usage':{'attempts_today':usage[0],'input_tokens_today':usage[1],'output_tokens_today':usage[2],

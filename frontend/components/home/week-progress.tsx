@@ -6,7 +6,7 @@ import { useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import type { PlanDayLite } from "@/components/home/today-card";
-import { sessionKind } from "@/lib/workout-style";
+import { ranDay, sessionKind } from "@/lib/workout-style";
 
 const HARD = new Set(["workout", "long_run", "race"]);
 
@@ -49,14 +49,14 @@ export function WeekProgress({ days }: { days: PlanDayLite[] }) {
               >
                 {d.type === "rest" ? "–" : formatDistance(d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? d.distance_miles)}
               </span>
-              <span aria-hidden="true" className="dot size-1.5" style={{ background: `var(--type-${sessionKind(d.type, d.title)})`, opacity: d.type === "rest" ? 0.4 : 1 }} />
+              <span aria-hidden="true" className="dot size-1.5" style={{ background: `var(--type-${d.actual ? ranDay(d).kind : sessionKind(d.type, d.title)})`, opacity: d.type === "rest" ? 0.4 : 1 }} />
             </button>
           );
         })}
       </div>
       {sel && (
         <div className="glass-tile p-3.5 text-sm">
-          <div className="font-semibold">{sel.actual?.workout?.title ?? sel.title}</div>
+          <div className="font-semibold">{ranDay(sel).title}</div>
           <div className="text-muted-foreground">
             {sel.type === "rest" ? "Rest" : `${formatDistance(sel.distance_miles)} ${unit} planned`}
             {sel.actual && ` · ran ${formatDistance(sel.actual.distance_miles)} ${unit}`}

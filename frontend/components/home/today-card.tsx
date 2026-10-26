@@ -30,6 +30,7 @@ export interface PlanDayLite {
     duration_seconds?: number;
     average_heartrate?: number | null;
     workout?: ExecutedWorkout | null;
+    session?: import("@/lib/types").RanSession | null;
     total_distance_miles?: number;
     other_runs?: ActivityLine[];
     walks?: ActivityLine[];
@@ -61,7 +62,7 @@ function ActualRun({ day, onOpenActivity }: { day: PlanDayLite; onOpenActivity?:
   const workout = actual.workout;
   const [selected, setSelected] = useState("primary");
   const activities = [
-    { key: "primary", id: actual.activity_id, kind: "Run", title: workout?.title ?? RUN_TITLE[day.type] ?? "Run", ...actual },
+    { key: "primary", id: actual.activity_id, kind: "Run", title: actual.session?.title ?? workout?.title ?? RUN_TITLE[day.type] ?? "Run", ...actual },
     ...(actual.other_runs ?? []).map((a) => ({ ...a, key: `run-${a.id}`, kind: "Run", title: a.name ?? "Additional run" })),
     ...(actual.walks ?? []).map((a) => ({ ...a, key: `walk-${a.id}`, kind: "Walk", title: a.name ?? "Walk" })),
   ];
@@ -88,7 +89,7 @@ function ActualRun({ day, onOpenActivity }: { day: PlanDayLite; onOpenActivity?:
     <div className="space-y-3" aria-live="polite">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[13px] font-bold" style={{ color: "var(--accent-warm)" }}><CircleCheck className="size-4" aria-hidden />{total ? "All activities" : activity.kind === "Walk" ? "Walk recorded" : "Ran today"}</span>
-        {primary && workout?.off_plan && <Badge variant="secondary" className="text-[11px]">Off plan</Badge>}
+        {primary && (actual.session?.off_plan ?? workout?.off_plan) && <Badge variant="secondary" className="text-[11px]">Off plan</Badge>}
       </div>
       {total ? <h3 className="text-xl font-semibold leading-tight">Today&apos;s total</h3> : <button type="button" disabled={activity.id == null || !onOpenActivity} onClick={() => activity.id != null && onOpenActivity?.(activity.id)}
         className="group flex w-full items-start justify-between gap-3 text-left disabled:cursor-default">

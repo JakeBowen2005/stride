@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { KindPill } from "@/components/cockpit/pill";
 import { StructureBar } from "@/components/cockpit/structure-bar";
-import { sessionKind } from "@/lib/workout-style";
+import { ranDay } from "@/lib/workout-style";
 import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import { AlsoToday } from "@/components/home/today-card";
@@ -86,14 +86,15 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
   // Once run, a quality day is titled by what the laps show was actually run; the planned
   // session stays visible underneath. Garmin's auto-names ("Fullerton Running") say little.
   const executed = workout.actual?.workout ?? null;
-  const displayTitle = executed?.title ?? workout.title;
+  const ran = ranDay(workout);
+  const displayTitle = ran.title;
   const actualLine = hasActual
-    ? [executed?.off_plan ? `instead of ${workout.title}` : !executed && actualWasWorkout ? actualWorkoutTitle : null,
+    ? [ran.offPlan ? [ran.swapNote, `instead of ${workout.title}`].filter(Boolean).join(", ") : !executed && actualWasWorkout ? actualWorkoutTitle : null,
        workout.actual?.avg_pace ? `${paceInUnits(workout.actual.avg_pace, units)}/${unit}` : null]
         .filter(Boolean)
         .join(" · ")
     : null;
-  const kind = executed ? sessionKind("workout", executed.title, executed.category) : sessionKind(workout.type, workout.title, workout.prescription?.category);
+  const kind = ran.kind;
   const repHr = executed?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
   const hasFeedback = !!localFeedback;

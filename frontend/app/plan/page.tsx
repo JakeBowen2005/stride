@@ -44,6 +44,7 @@ interface ApiPlanDay {
   walks?: import("@/lib/types").ActivityLine[];
   actual?: {
     workout?: ExecutedWorkout | null;
+    session?: import("@/lib/types").RanSession | null;
     distance_miles: number;
     avg_pace: string | null;
     duration_seconds: number;
