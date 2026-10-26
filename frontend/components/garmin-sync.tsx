@@ -76,7 +76,7 @@ export function GarminSync({
         const res = await fetch(apiUrl(`/garmin/sync/${USER_ID}`), { method: "POST", signal });
         let data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || "Sync failed");
-        if (data.state === "running") {
+        if (data.state === "running" || data.status === "busy") {
           setMessage("Syncing with Garmin…");
           data = await waitForSync(async () => {
             const response = await fetch(apiUrl(`/garmin/status/${USER_ID}`), { signal });

@@ -7,6 +7,8 @@ type SyncResult = {
 };
 
 type SyncStatus = {
+  connected?: boolean;
+  last_sync_at?: string | null;
   last_error?: string | null;
   full_sync_job?: {
     state: string;
@@ -26,6 +28,7 @@ export async function waitForSync(
     signal.addEventListener("abort", abort, { once: true });
   }),
 ): Promise<SyncResult> {
+  let initialSync: string | null | undefined;
   for (let attempt = 0; attempt < 120; attempt++) {
     if (signal.aborted) throw new Error("Sync cancelled");
     const status = await read();
@@ -34,6 +37,9 @@ export async function waitForSync(
     if (job?.state === "done" && job.result) return job.result;
     // A busy inline sync has no durable job; its status still exposes failures.
     if (!job && status.last_error) throw new Error(status.last_error);
+    if (!job && attempt > 0 && status.connected && status.last_sync_at && status.last_sync_at !== initialSync)
+      return { status: "ok" };
+    if (attempt === 0) initialSync = status.last_sync_at;
     await pause();
   }
   return { status: "pending", message: "Sync is still pending. Check progress in Settings." };

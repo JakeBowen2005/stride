@@ -33,3 +33,13 @@ test('unmounted sync polling stops before another request', async () => {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(waitForSync(async () => { throw new Error('must not fetch'); }, controller.signal), /cancelled/);
 });
+test('busy inline sync waits for a newer successful check instead of accepting the old timestamp', async () => {
+  const states = [
+    {connected:true,last_sync_at:'2026-10-23T10:00:00'},
+    {connected:true,last_sync_at:'2026-10-23T10:00:00'},
+    {connected:true,last_sync_at:'2026-10-26T13:00:00'},
+  ];
+  const result = await waitForSync(async () => states.shift(), new AbortController().signal, async () => {});
+  assert.equal(result.status, 'ok');
+  assert.equal(states.length, 0);
+});
