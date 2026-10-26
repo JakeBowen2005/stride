@@ -161,7 +161,7 @@ def _unzip_fit(blob: bytes) -> bytes:
 def laps_from_fit(data: bytes) -> list[dict]:
     """Normalize FIT lap messages into Stride's split format (same keys as before)."""
     import fitdecode
-    from app.services.lap_analyzer import lap_pace_per_mile
+    from app.services.lap_analyzer import lap_split
 
     laps = []
     if not data:
@@ -174,22 +174,8 @@ def laps_from_fit(data: bytes) -> list[dict]:
                 return frame.get_value(name, fallback=None)
             distance = value("total_distance") or 0.0
             duration = value("total_timer_time") or value("total_elapsed_time") or 0.0
-            hr = value("avg_heart_rate")
-            intensity = value("intensity")
-            entry = {
-                "mile": len(laps) + 1,  # lap number (kept as "mile" for frontend compatibility)
-                "distance_m": round(distance, 1),
-                "distance_miles": round(distance / METERS_PER_MILE, 2),
-                "duration_s": round(duration, 1),
-                "duration_seconds": round(duration, 1),
-                "heart_rate": round(hr) if hr else None,
-                "elevation_diff_ft": round(((value("total_ascent") or 0) - (value("total_descent") or 0)) * METERS_TO_FEET, 1),
-                "intensity": str(intensity).upper() if intensity else None,
-            }
-            pace = lap_pace_per_mile(entry)
-            entry["pace_seconds"] = round(pace, 1) if pace else None
-            entry["pace"] = f"{int(pace // 60)}:{int(pace % 60):02d}/mi" if pace else "—"
-            laps.append(entry)
+            laps.append(lap_split(len(laps) + 1, distance, duration, value("avg_heart_rate"), value("intensity"),
+                                  round(((value("total_ascent") or 0) - (value("total_descent") or 0)) * METERS_TO_FEET, 1)))
     return laps
 
 

@@ -28,6 +28,9 @@ def test_synthetic_history_to_approved_block_feedback_and_revision(scenario,phas
         assert db.query(Plan).filter_by(is_active=True).count()==1
         assert db.query(CoachingJob).count()==0 and db.query(CoachingReview).count()==0
         assert db.get(User,1).name.startswith('Demo')
+        # Synthetic laps use the same stored shape as Garmin FIT laps, so the run sheet renders them
+        laps=[lap for a in db.query(Activity).all() for lap in json.loads(a.splits or '[]')]
+        assert laps and all(lap['pace'].endswith('/mi') and lap['distance_miles'] and lap['mile'] for lap in laps)
         plan=db.query(Plan).filter_by(is_active=True).one()
         rows=db.query(PlannedWorkout).filter_by(plan_id=plan.id).all()
         assert all(json.loads(r.prescription)['schema_version']==1 for r in rows)

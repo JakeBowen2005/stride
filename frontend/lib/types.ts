@@ -218,7 +218,7 @@ export interface Activity {
 
 export interface Split {
   mile: number; // split/lap number
-  pace: string;
+  pace?: string;
   heart_rate?: number;
   // Garmin laps
   distance_miles?: number;
