@@ -2,7 +2,7 @@
 
 import { distanceInUnits, unitLabel, type Units } from "@/lib/units";
 import { formatDateShort, localDateStr } from "@/lib/format";
-import { QUALITY_KINDS, kindColor, sessionKind } from "@/lib/workout-style";
+import { QUALITY_KINDS, kindColor, ranDay } from "@/lib/workout-style";
 import type { PlanWeek, Workout } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -49,10 +49,8 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
             </div>
             <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.max(days.length, week.workouts.length)}, minmax(0, 1fr))` }}>
               {week.workouts.map((w) => {
-                // A completed day shows what was actually run (e.g. threshold on an interval day).
-                const ran = w.actual?.workout ?? null;
-                const title = ran ? ran.title : w.title;
-                const kind = ran ? sessionKind("workout", ran.title, ran.category) : sessionKind(w.type, w.title, w.prescription?.category);
+                // A completed day shows what was actually run (threshold on an interval day, a swapped long run).
+                const { title, kind, offPlan, swapNote } = ranDay(w);
                 const { color, tint } = kindColor(kind);
                 const hard = QUALITY_KINDS.includes(kind);
                 const st = status(w, today);
@@ -62,7 +60,7 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                 const dow = new Date(`${w.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
                 return (
                   <button key={w.date} type="button" onClick={() => onSelect(w)} aria-pressed={selected}
-                    aria-label={`${formatDateShort(w.date)}: ${ran ? `ran ${title}` : title}${ran?.off_plan ? ` instead of ${w.title}` : ""}, ${distanceInUnits(miles, units)} ${unit}${st ? `, ${st.text}` : ""}`}
+                    aria-label={`${formatDateShort(w.date)}: ${w.actual ? `ran ${title}` : title}${offPlan ? ` instead of ${w.title}` : ""}${swapNote ? `, ${swapNote}` : ""}, ${distanceInUnits(miles, units)} ${unit}${st ? `, ${st.text}` : ""}`}
                     className={cn("lift flex min-h-[148px] w-full flex-col gap-1.5 rounded-[20px] border px-3 py-3 text-left",
                       hard && "hatch", w.type === "rest" && "opacity-75", w.skipped && "opacity-55",
                       selected && "ring-2 ring-[var(--ring)] ring-offset-0")}
@@ -77,9 +75,9 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                       {w.actual && <span aria-hidden="true" style={{ color: "var(--accent-warm)" }}>✓</span>}
                     </span>
                     <span className="line-clamp-3 break-words text-[13px] font-semibold leading-snug">{title}</span>
-                    {ran?.off_plan && (
-                      <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                        planned <span className="line-through">{w.title}</span>
+                    {offPlan && (
+                      <span className="line-clamp-3 text-[11px] leading-snug text-muted-foreground">
+                        {swapNote ? <>{swapNote} · </> : null}planned <span className="line-through">{w.title}</span>
                       </span>
                     )}
                     <span className="mt-auto flex items-center gap-1.5">
@@ -120,9 +118,7 @@ function CompactCalendar({ weeks, units, selectedDate, onSelect, today }: {
             </div>
             <div className="grid grid-cols-7 gap-1">
               {week.workouts.map((w) => {
-                const ran = w.actual?.workout ?? null;
-                const title = ran ? ran.title : w.title;
-                const kind = ran ? sessionKind("workout", ran.title, ran.category) : sessionKind(w.type, w.title, w.prescription?.category);
+                const { title, kind } = ranDay(w);
                 const { color, tint } = kindColor(kind);
                 const hard = QUALITY_KINDS.includes(kind);
                 const miles = w.actual ? w.actual.total_distance_miles ?? w.actual.distance_miles : w.distance_miles;

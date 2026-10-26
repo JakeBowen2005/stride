@@ -576,6 +576,10 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
 
     weeks_map: dict[int, dict] = {}
     easy_cache: dict = {}
+    long_run_by_week: dict[int, float] = {}
+    for row in planned_workouts:
+        if row.type == "long_run":
+            long_run_by_week[row.week_number] = max(long_run_by_week.get(row.week_number, 0), row.distance_miles or 0)
     for pw in planned_workouts:
         if pw.week_number not in weeks_map:
             weeks_map[pw.week_number] = {
@@ -594,6 +598,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
             if activities:
                 actual = _build_actual_aggregated(activities, walks_by_date.get(pw.date))
                 actual["workout"] = _executed_summary(pw, activities, user_id, db, easy_cache)
+                actual["session"] = _day_session(pw, actual, long_run_by_week.get(pw.week_number))
                 if is_prescribed:
                     comparison = _build_comparison_aggregated(pw, activities)
 
@@ -636,6 +641,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         }
         weeks_map[pw.week_number]["days"].append(day_data)
 
+    attach_sessions([d for wk in weeks_map.values() for d in wk["days"]])
     phases = json.loads(db_plan.phases) if db_plan.phases else []
     weeks = []
     for wk_num in sorted(weeks_map.keys()):
@@ -1527,6 +1533,33 @@ def _executed_summary(pw: PlannedWorkout, activities: list[Activity], user_id: i
     return {"title": session_title(executed), "label": executed["label"], "category": executed["category"],
             "kind": executed["kind"], "reps": executed["reps"], "recovery_seconds": executed["recovery_seconds"],
             "work_miles": executed["work_miles"], "off_plan": pw.type == "workout" and off_plan(prescribed, executed)}
+
+
+def _day_session(pw: PlannedWorkout, actual: dict | None, week_long_run_miles: float | None = None) -> dict | None:
+    """The day's single "what was run" record (calendar, day detail, block summary, coach)."""
+    if not actual:
+        return None
+    from app.core.session_match import ran_session
+    workout = actual.get("workout")
+    return ran_session(pw.type, pw.title, pw.distance_miles or 0, actual["distance_miles"] or 0,
+                       workout, bool(workout and workout["off_plan"]), week_long_run_miles)
+
+
+def attach_sessions(days: list[dict]) -> None:
+    """Set day["actual"]["session"] for completed days and pair long-run swaps across them."""
+    from app.core.session_match import pair_swaps
+    rows = [{"date": d["date"], "session": (d["actual"] or {}).get("session")} for d in days]
+    pair_swaps(rows)
+    # A swapped run is measured against the session it traded places with (10 vs the long
+    # run's 10, not "7 mi long" against the recovery day's 3).
+    by_date = {d["date"]: d for d in days}
+    for d in days:
+        partner = by_date.get(((d["actual"] or {}).get("session") or {}).get("swapped_with"))
+        if partner and d.get("comparison"):
+            diff = round(d["actual"]["distance_miles"] - partner["distance_miles"], 2)
+            d["comparison"] = {**d["comparison"], "distance_diff_miles": diff,
+                               "summary": f"{d['actual']['distance_miles']}mi, swapped with {partner['title']} "
+                                          f"({partner['distance_miles']}mi planned on {partner['date']})."}
 
 
 def _displayed_evaluation(pw: PlannedWorkout, actual: dict | None) -> dict | None:

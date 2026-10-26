@@ -74,6 +74,18 @@ export interface ExecutedWorkout {
   off_plan: boolean;
 }
 
+/** The day's one "what was run" record from the backend (calendar, day detail, block summary, coach).
+ * Quality comes from the laps; a long run run on an easy day (or the reverse) is inferred from distance. */
+export interface RanSession {
+  title: string;
+  type: WorkoutType;
+  off_plan: boolean;
+  planned_title: string;
+  planned_type: WorkoutType;
+  /** The day this long run traded places with */
+  swapped_with: string | null;
+}
+
 export interface ActivityLine {
   id: number;
   name: string | null;
@@ -86,6 +98,7 @@ export interface ActivityLine {
 export interface ActualRun {
   activity_id?: number;
   workout?: ExecutedWorkout | null;
+  session?: RanSession | null;
   distance_miles: number;
   avg_pace: string | null;
   duration_seconds: number;

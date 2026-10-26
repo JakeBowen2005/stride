@@ -97,7 +97,7 @@ export function GarminConnectionCard() {
         {offline && <p className="text-sm text-destructive">Can&apos;t reach the Stride backend.</p>}
 
         {status?.connection_issue && <p role="status" className="glass-tile rounded-xl p-3.5 text-sm">{status.connection_issue}</p>}
-        {status?.can_reconnect && (!status.connected || status.last_error) && <Button variant="outline" disabled={reconnecting} onClick={async () => {
+        {status?.can_reconnect && (!status.connected || !!status.connection_issue) && <Button variant="outline" disabled={reconnecting} onClick={async () => {
           setReconnecting(true);
           try {
             const response = await fetch(apiUrl(`/garmin/reconnect/${USER_ID}`), { method: "POST" });

@@ -20,7 +20,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_coach_model: str = "gpt-5.4-mini"
     openai_coach_global_daily_limit: int = 100
-    openai_coach_daily_limit: int = 12
+    # Per athlete, per local day. A run review is ~30k input / ~500 output tokens (~$0.025 on
+    # gpt-5.4-mini), so 30 is at most ~$0.75/day; cached (unchanged) reviews never count.
+    openai_coach_daily_limit: int = 30
     openai_coach_timeout_seconds: float = 35
     openai_auto_reviews: bool = True
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"

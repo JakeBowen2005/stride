@@ -114,9 +114,10 @@ def process_one():
         state, error, review_id = 'queued', type(exc).__name__, None
         delay = timedelta(minutes=5)
         if isinstance(exc, HTTPException) and exc.status_code==429:
-            error = 'Daily AI limit reached; queued for the next UTC day'
+            error = 'Daily AI limit reached; waiting for the allowance to reset'
             quota_wait = True
-            delay = (datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0)+timedelta(days=1)-datetime.now(timezone.utc))
+            # The check costs nothing; hourly retries pick up the athlete's midnight reset or a raised limit
+            delay = timedelta(hours=1)
         logger.warning('Automatic review deferred (%s)', type(exc).__name__)
     with SessionLocal() as db:
         _begin_schedule_write(db)
