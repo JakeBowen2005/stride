@@ -71,3 +71,41 @@ def _build(user_id,db,as_of,persist):
 def analyze(user_id,db,as_of=None,*,persist=True):
     as_of=as_of or today()
     return cached(user_id,VERSION,as_of.isoformat(),db,lambda:_build(user_id,db,as_of,persist),persist=persist)
+
+
+def aerobic_efficiency(user_id,db,weeks=26):
+    """Weekly easy pace normalized to one reference heart rate (Friel's efficiency factor).
+
+    Each easy run's speed per heartbeat is scaled to the athlete's median easy heart rate,
+    so a lower pace means more speed for the same effort. Hilly runs are left out because
+    climbing slows pace at the same heart rate.
+    """
+    as_of=today()
+    monday=as_of-timedelta(days=as_of.weekday())
+    start=monday-timedelta(weeks=weeks-1)
+    rows=db.query(Activity).filter(Activity.user_id==user_id,runs_only(),Activity.workout_type.in_(('easy','recovery')),
+        Activity.average_heartrate>=90,Activity.distance_meters.between(3000,16000),Activity.duration_seconds>0,
+        Activity.date>=datetime.combine(start,datetime.min.time())).order_by(Activity.date).all()
+    rows=[a for a in rows if a.elevation_gain is None or a.elevation_gain/a.distance_meters<=.015]
+    empty={'reference_heartrate':None,'weeks':[],'change_sec_per_mile':None,
+           'note':'Needs easy runs with heart rate to chart. Weather, surface and sensor differences are not adjusted for.'}
+    if len(rows)<3:
+        return empty
+    hearts=sorted(a.average_heartrate for a in rows)
+    reference=hearts[len(hearts)//2]
+    by_week={}
+    for a in rows:
+        speed=a.distance_meters/a.duration_seconds*reference/a.average_heartrate  # m/s at the reference heart rate
+        week=a.date.date()-timedelta(days=a.date.weekday())
+        by_week.setdefault(week,[]).append((1609.34/speed,a.id))
+    points=[]
+    for week in sorted(by_week):
+        paces=sorted(p for p,_ in by_week[week])
+        points.append({'week_start':week.isoformat(),'pace_sec_per_mile':round(paces[len(paces)//2]),
+                       'runs':len(paces),'activity_ids':[i for _,i in by_week[week]]})
+    change=None
+    if len(points)>=6:
+        third=len(points)//3
+        change=round(mean(p['pace_sec_per_mile'] for p in points[-third:])-mean(p['pace_sec_per_mile'] for p in points[:third]))
+    return {'reference_heartrate':round(reference),'weeks':points,'change_sec_per_mile':change,
+            'note':'Easy runs scaled to one heart rate; flat-ish runs only. Heat, surface and sensor differences are not adjusted for, so treat small changes as noise.'}

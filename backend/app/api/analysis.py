@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.activity import Activity, PersonalRecord, activity_classification, is_walk
 from app.models.user import User
-from app.services.analyzer import analyze_athlete, detect_prs, compute_weekly_mileage, classify_activities
+from app.services.analyzer import analyze_athlete, detect_prs, compute_mileage, compute_weekly_mileage, classify_activities
 from app.services.pace_calibrator import calibrate_paces
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -82,6 +82,15 @@ def run_classification(user_id: int, db: Session = Depends(get_db)):
 def get_weekly_mileage(user_id: int, weeks: int = Query(default=52), db: Session = Depends(get_db)):
     """Get weekly mileage data."""
     return compute_weekly_mileage(user_id, db, weeks)
+
+
+@router.get("/{user_id}/mileage")
+def get_mileage(user_id: int, bucket: Literal["week", "month", "year"] = "week",
+                count: int | None = Query(default=None, ge=1, le=104), db: Session = Depends(get_db)):
+    """Recorded vs planned miles per week, month or year, with empty periods filled in."""
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Athlete not found")
+    return compute_mileage(user_id, db, bucket, count)
 
 
 # --- Activities endpoints for frontend ---
@@ -404,6 +413,13 @@ async def upload_fit(user_id:int,request:Request,db:Session=Depends(get_db)):
         db.rollback();raise HTTPException(422,str(exc))
     except Exception:
         db.rollback();raise HTTPException(422,'Unable to import this FIT file. Check it is an original running activity.')
+
+
+@router.get('/{user_id}/aerobic-efficiency')
+def aerobic_efficiency_trend(user_id:int,weeks:int=Query(default=26,ge=4,le=104),db:Session=Depends(get_db)):
+    from app.services.longitudinal import aerobic_efficiency
+    if not db.get(User,user_id):raise HTTPException(404,'Athlete not found')
+    return aerobic_efficiency(user_id,db,weeks)
 
 
 @router.get('/{user_id}/trends')

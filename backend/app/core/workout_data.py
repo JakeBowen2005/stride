@@ -105,6 +105,13 @@ def long_run_prescription(parts, note, easy_pace=None):
     return data
 
 
+def race_pace_miles(day):
+    """Miles at race pace in a structured long run (0 for anything else)."""
+    data = loads(day.get('prescription')) if day.get('type') == 'long_run' else None
+    return round(sum(s.get('reps', 1) * (s.get('distance_meters') or 0) for s in (data or {}).get('segments') or []
+                     if s.get('category') == 'race_pace') / MI, 1)
+
+
 def day_prescription(day):
     """New non-ladder days retain their effort/fueling guidance as an authored note."""
     existing=loads(day.get('prescription'))

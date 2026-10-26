@@ -218,7 +218,7 @@ export interface Activity {
 
 export interface Split {
   mile: number; // split/lap number
-  pace: string;
+  pace?: string;
   heart_rate?: number;
   // Garmin laps
   distance_miles?: number;
@@ -232,11 +232,21 @@ export interface WeeklyMileage {
   actual: number;
 }
 
-export interface PaceVsTarget {
-  date: string;
-  workout_title: string;
-  target_pace_seconds: number;
-  actual_pace_seconds: number;
+export type MileageBucket = "week" | "month" | "year";
+
+export interface MileagePeriod {
+  period_start: string;
+  actual: number;
+  planned: number | null;
+  runs: number;
+  partial: boolean;
+}
+
+export interface AerobicEfficiency {
+  reference_heartrate: number | null;
+  weeks: { week_start: string; pace_sec_per_mile: number; runs: number; activity_ids: number[] }[];
+  change_sec_per_mile: number | null;
+  note: string;
 }
 
 export interface OnboardingData {

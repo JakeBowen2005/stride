@@ -7,8 +7,8 @@ import { TrainingTrends } from "@/components/training-trends";
 import { HistoryProfile } from "@/components/history-profile";
 import { RunList } from "@/components/run-list";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
-import { MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
-import type { Activity, WeeklyMileage } from "@/lib/types";
+import { AerobicEfficiencyChartWrapper, MileageOverTimeChartWrapper } from "@/components/charts-wrapper";
+import type { Activity } from "@/lib/types";
 
 
 type FilterType = "all" | "workouts" | "long_runs" | "easy";
@@ -18,7 +18,6 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [selected, setSelected] = useState<Activity | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [weeklyMileage, setWeeklyMileage] = useState<WeeklyMileage[]>([]);
   const [hasMore,setHasMore]=useState(false);
   const [loadingMore,setLoadingMore]=useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +26,9 @@ export default function HistoryPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [actRes, mileageRes] = await Promise.all([
-          fetch(apiUrl(`/analysis/${USER_ID}/activities?type=${filter}&limit=200`)),
-          fetch(apiUrl(`/analysis/${USER_ID}/weekly-mileage?weeks=16`)),
-        ]);
+        const actRes = await fetch(apiUrl(`/analysis/${USER_ID}/activities?type=${filter}&limit=200`));
 
-        if (!actRes.ok || !mileageRes.ok) throw new Error("Could not load history. Reload to retry.");
+        if (!actRes.ok) throw new Error("Could not load history. Reload to retry.");
         if (actRes.ok) {
           const data = await actRes.json();
           setHasMore(data.length===200);
@@ -43,11 +39,6 @@ export default function HistoryPage() {
               splits: a.splits || [],
             }))
           );
-        }
-
-        if (mileageRes.ok) {
-          const data = await mileageRes.json();
-          setWeeklyMileage(data.map((d: Record<string, unknown>) => ({ ...d, planned: 0 })));
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load data");
@@ -93,7 +84,8 @@ export default function HistoryPage() {
 
       <TrainingTrends revision={revision} onInspect={async id=>{const a=await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);if(a)setSelected({...a,splits:a.splits||[]});}} />
       </div>
-      <MileageOverTimeChartWrapper data={weeklyMileage} />
+      <MileageOverTimeChartWrapper revision={revision} />
+      <AerobicEfficiencyChartWrapper revision={revision} />
 
       <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
       <h2 className="text-lg font-bold tracking-tight">Runs</h2>

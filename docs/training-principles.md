@@ -81,6 +81,8 @@ the runner felt good afterward; it is a separate scale.
   a deload immediately after starting a program. Poor recovery can reduce training sooner.
 - After injury/break: start at 50% of previous volume, rebuild over 3-4 weeks
 - NEVER increase mileage AND intensity in the same week
+  - A long run that introduces race-pace work (or adds 3+ miles of it) is that week's
+    intensity step: weekly volume holds at the week before, then grows the week after
 
 ### Workout Progression (One Lever at a Time)
 Workouts progress through defined ladders — NOT random rotation. Each 2-week block

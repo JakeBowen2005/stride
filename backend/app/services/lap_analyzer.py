@@ -49,6 +49,25 @@ def lap_pace_per_mile(lap: dict) -> float | None:
     return dur / (dist / METERS_PER_MILE)
 
 
+def lap_split(number: int, distance_m: float, duration_s: float, heart_rate: float | None = None,
+              intensity: str | None = None, elevation_diff_ft: float = 0.0) -> dict:
+    """One lap in Stride's stored split format (what the API returns and SplitsTable renders)."""
+    entry = {
+        "mile": number,  # lap number (kept as "mile" for frontend compatibility)
+        "distance_m": round(distance_m, 1),
+        "distance_miles": round(distance_m / METERS_PER_MILE, 2),
+        "duration_s": round(duration_s, 1),
+        "duration_seconds": round(duration_s, 1),
+        "heart_rate": round(heart_rate) if heart_rate else None,
+        "elevation_diff_ft": elevation_diff_ft,
+        "intensity": str(intensity).upper() if intensity else None,
+    }
+    pace = lap_pace_per_mile(entry)
+    entry["pace_seconds"] = round(pace, 1) if pace else None
+    entry["pace"] = f"{int(pace // 60)}:{int(pace % 60):02d}/mi" if pace else "—"
+    return entry
+
+
 def _fmt_time(seconds: float) -> str:
     seconds = round(seconds)
     return f"{seconds // 60}:{seconds % 60:02d}"

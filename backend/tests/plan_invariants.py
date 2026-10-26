@@ -16,6 +16,8 @@ CLAUDE.md, using the production policy functions as the source of truth:
 - race week: at most one workout (a sharpener ≥3 days before the race), a short
   shakeout the day before, then race day; nothing hard after it
 - intensity distribution: roughly 80/20 easy by work-segment miles (see EASY_SHARE_MIN)
+- one lever at a time: a week whose long run introduces race-pace work, or grows it by
+  `load_policy.RACE_PACE_STEP_MILES`, doesn't also raise volume over the week before it
 
 Race-day miles are not training load, so they are left out of ramp, taper and
 80/20 totals. Days with ``prescribed`` False are already-run history and are only
@@ -24,7 +26,9 @@ counted, never judged.
 
 from datetime import date, timedelta
 
-from app.core.load_policy import DELOAD_FACTOR, deload_due, ramp_rate
+from app.core.load_policy import DELOAD_FACTOR, deload_due, race_pace_step, ramp_rate
+from app.core.periodization import is_ultra
+from app.core.workout_data import race_pace_miles
 from app.core.plan_validator import BUDGET_OVER_TOLERANCE, is_hard, validate_plan
 
 DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -88,12 +92,15 @@ def plan_invariant_violations(
     rest_days: list[str] | None = None,
     completed_weeks: list[float] | None = None,
     prior_hard_dates: frozenset[str] | set[str] = frozenset(),
+    recent_race_pace_miles: float | None = None,
 ) -> list[str]:
     """Every rule the plan breaks, as readable strings. Empty means it conforms.
 
     rest_days defaults to the plan's athlete snapshot. completed_weeks (oldest →
     newest full calendar weeks, as the API feeds `deload_due`) enables the deload
     cadence check; without it only the deload week's shape is checked.
+    recent_race_pace_miles (the most race-pace miles in a recently run long run) enables
+    the one-lever check on the first week; later weeks compare against earlier ones.
     """
     weeks = plan["weeks"]
     load = plan.get("load") or {}
@@ -221,6 +228,21 @@ def plan_invariant_violations(
         if (total - hard) / total < EASY_SHARE_MIN:
             problems.append(f"80/20: week {w['week_number']} is {(total - hard) / total:.0%} easy "
                             f"({hard:.1f} of {total:.1f} mi at workout intensity); floor is {EASY_SHARE_MIN:.0%}")
+
+    # 7. One lever at a time: a new or materially longer race-pace long run holds volume.
+    if not developmental and not is_ultra(goal.get("distance")):
+        absorbed = recent_race_pace_miles
+        for i, w in enumerate(weeks):
+            race_pace = max([race_pace_miles(d) for d in w["days"] if d["type"] == "long_run"], default=0)
+            if i == 0:
+                previous = (completed_weeks or [0])[-1] if absorbed is not None else None
+            else:
+                previous = weeks[i - 1]["budget_miles"]
+            if (previous is not None and _phase(w) in {"build", "peak"} and race_pace_step(race_pace, absorbed or 0)
+                    and w["budget_miles"] > max(previous, float(load.get("training_level") or 0), baseline) + MILES_TOLERANCE):
+                problems.append(f"one lever: week {w['week_number']} adds {race_pace:g} mi at race pace in the long run "
+                                f"and raises volume to {w['budget_miles']} over {previous}")
+            absorbed = max(absorbed or 0, race_pace)
     return problems
 
 
