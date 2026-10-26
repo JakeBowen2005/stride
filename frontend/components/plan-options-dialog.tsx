@@ -52,7 +52,7 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoa
               const on = reasons.includes(reason);
               return (
                 <button key={reason} type="button" aria-pressed={on} onClick={() => toggle(reason)}
-                  className={cn("rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary",
+                  className={cn("min-h-9 rounded-full border px-3.5 py-1 text-sm transition-colors hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-primary",
                     on ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}>
                   {reason}
                 </button>
@@ -66,7 +66,7 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, onAskCoa
               onChange={(e) => setNote(e.target.value)} />
             <p className="text-right text-xs text-muted-foreground">{note.length}/{CONCERN_LIMIT}</p>
           </div>
-          {reasons.includes("Schedule conflict") && <div className="rounded-md border p-3 text-sm"><p>Move an unrun session directly. Stride checks the destination, recovery spacing and mileage budget before saving.</p><Button variant="outline" className="mt-2" disabled={!onMoveSession || busy} onClick={() => run(() => onMoveSession?.())}>Move a session</Button>{!onMoveSession && <p className="text-xs text-muted-foreground">No unrun session is available to move in this block.</p>}</div>}
+          {reasons.includes("Schedule conflict") && <div className="glass-tile p-3.5 text-sm"><p>Move an unrun session directly. Stride checks the destination, recovery spacing and mileage budget before saving.</p><Button variant="outline" className="mt-2" disabled={!onMoveSession || busy} onClick={() => run(() => onMoveSession?.())}>Move a session</Button>{!onMoveSession && <p className="text-xs text-muted-foreground">No unrun session is available to move in this block.</p>}</div>}
           <div className="space-y-1">
             <Button className="w-full" disabled={busy || !concern || aiConfigured !== true} onClick={() => run(() => onAskCoach(concern))}>
               Ask coach to adjust

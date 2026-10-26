@@ -109,9 +109,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
       className={cn(
         "transition-colors",
         // Pinned inside the inspector panel: that panel is already the card.
-        pinned ? "p-1" : "rounded-md border bg-card p-3 cursor-pointer hover:border-primary/30 hover:bg-secondary/50",
-        !pinned && isToday && "border-primary bg-primary/5",
-        !pinned && hasActual && "bg-secondary/30",
+        pinned ? "p-1" : "glass-tile lift cursor-pointer border border-transparent p-3.5",
+        !pinned && isToday && "border-[var(--foreground)]",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
       )}
@@ -176,7 +175,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
       </div>
 
       {expanded && (
-        <div className="mt-3 space-y-2 border-t pt-3 text-sm">
+        <div className="mt-3 space-y-2 border-t border-[var(--glass-border)] pt-3 text-sm">
           {/* Completed day: show Actual first, then Planned below for comparison */}
           {hasActual && workout.actual && (
             <>
@@ -305,22 +304,22 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Feedback</span>
               <div className="flex flex-wrap gap-2 text-xs">
                 {(localFeedback.feel_rating ?? workout.actual?.watch_feel) != null && (
-                  <span className="rounded bg-secondary px-2 py-0.5 font-mono">
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-mono">
                     Feel: {localFeedback.feel_rating ?? workout.actual?.watch_feel}/10{localFeedback.feel_rating == null ? " (watch)" : ""}
                   </span>
                 )}
                 {(localFeedback.effort_rating ?? workout.actual?.watch_effort) != null && (
-                  <span className="rounded bg-secondary px-2 py-0.5 font-mono">
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-mono">
                     Effort: {localFeedback.effort_rating ?? workout.actual?.watch_effort}/10{localFeedback.effort_rating == null ? " (watch)" : ""}
                   </span>
                 )}
                 {localFeedback.pace_assessment && (
-                  <span className="rounded bg-secondary px-2 py-0.5">
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5">
                     Pace: {PACE_LABELS[localFeedback.pace_assessment] ?? localFeedback.pace_assessment}
                   </span>
                 )}
                 {localFeedback.swapped && (
-                  <span className="rounded bg-yellow-500/15 text-yellow-600 px-2 py-0.5">
+                  <span className="rounded-full bg-[var(--warn-tint)] px-2 py-0.5 text-[var(--warn)]">
                     Swapped{localFeedback.actual_workout_type ? ` to ${localFeedback.actual_workout_type.replace("_", " ")}` : ""}
                   </span>
                 )}

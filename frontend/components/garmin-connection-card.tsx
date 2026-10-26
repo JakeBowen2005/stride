@@ -58,9 +58,9 @@ export function GarminConnectionCard() {
 
   return (
     <Card>
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="space-y-4 pt-0">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Garmin Connect</h2>
+          <h2 className="text-[13px] font-bold">Garmin Connect</h2>
           {status?.api_key_present && !status.connected && status.last_error ? (
             <Badge variant="destructive" className="text-xs">Needs attention</Badge>
           ) : status?.api_key_present ? (
@@ -78,7 +78,7 @@ export function GarminConnectionCard() {
 
         {status?.business_pending && <p className="text-sm">Separate Garmin connections are awaiting Business API approval. Import your original FIT files below to build your history now.</p>}
         {status && !status.api_key_present && !status.business_pending && (
-          <div className="space-y-2 rounded-md bg-secondary/40 p-3 text-sm">
+          <div className="space-y-2 glass-tile rounded-xl p-3.5 text-sm">
             <p className="font-medium">Connect Garmin with a Personal API key.</p>
             <p className="text-muted-foreground">
               Create a key in Garmin Connect (Settings → Personal API Key), then add it to the Stride server as{" "}
@@ -95,7 +95,7 @@ export function GarminConnectionCard() {
           </div>
         )}
 
-        {status?.owner_key_storage_ready && <form className="space-y-2" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const r=await fetch(apiUrl(`/garmin/connect/${USER_ID}`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:f.get('key')})});const d=await r.json();setConnectionMessage(r.ok?d.message:typeof d.detail==='string'?d.detail:'Could not save key.');if(r.ok){form.reset();load();}}}><label className="block text-sm">Your owner Personal API key<input className="block min-h-11 w-full rounded border p-2" name="key" type="password" required autoComplete="off"/></label><Button type="submit" variant="outline">Save encrypted key</Button></form>}
+        {status?.owner_key_storage_ready && <form className="space-y-2" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const r=await fetch(apiUrl(`/garmin/connect/${USER_ID}`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:f.get('key')})});const d=await r.json();setConnectionMessage(r.ok?d.message:typeof d.detail==='string'?d.detail:'Could not save key.');if(r.ok){form.reset();load();}}}><label className="block text-sm">Your owner Personal API key<input className="block min-h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] p-2" name="key" type="password" required autoComplete="off"/></label><Button type="submit" variant="outline">Save encrypted key</Button></form>}
         {connectionMessage && <p role="status" className="text-sm">{connectionMessage}</p>}
         {status?.api_key_present && <Button variant="outline" onClick={async()=>{const r=await fetch(apiUrl(`/garmin/disconnect/${USER_ID}`),{method:'POST'});if(r.ok){setConnectionMessage('Disconnected. Revoke the key in Garmin to finish removal there.');load();}}}>Disconnect Garmin</Button>}
         {status?.api_key_present && (

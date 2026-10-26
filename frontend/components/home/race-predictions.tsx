@@ -28,10 +28,10 @@ export function RacePredictions({
   const hasGoal = rows.some((r) => goal?.distance === r.key && goal?.target_time);
   return (
     <Card>
-      <CardContent className="pt-3">
+      <CardContent className="pt-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr className="text-left text-xs text-muted-foreground">
               <th className="pb-1 font-medium">Distance</th>
               <th className="pb-1 text-right font-medium">Predicted</th>
               <th className="pb-1 text-right font-medium">PR</th>
@@ -40,8 +40,8 @@ export function RacePredictions({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.key} className="border-t">
-                <td className="py-1.5">{r.label}</td>
+              <tr key={r.key} className="border-t border-[var(--glass-border)] transition-colors hover:bg-[var(--row-hover)]">
+                <td className="py-2 font-semibold">{r.label}</td>
                 <td className="py-1.5 text-right font-mono">{fmt(r.pred)}</td>
                 <td className="py-1.5 text-right font-mono text-muted-foreground">{fmt(r.pr)}</td>
                 {hasGoal && <td className="py-1.5 text-right font-mono">{goal?.distance === r.key ? fmt(goal.target_time) : ""}</td>}

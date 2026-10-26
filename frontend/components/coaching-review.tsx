@@ -114,13 +114,13 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
   return <section className={cn(presentation === "today" ? "space-y-3 text-sm" : "space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
     <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
       {showLabel && <span className="stat-label">{activityId ? "Run review" : "Block review"}</span>}
-      <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
+      <Button size="xs" variant={review ? "default" : "outline"} className="h-8 px-3.5 text-xs" disabled={busy || configured !== true}
         title={PRIVACY} onClick={() => generate(review?.athlete_concern)}>
         <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden /> {refreshLabel}
       </Button>
     </div>
-    <p role="status" className={cn("text-xs", review?.stale ? "rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-950" : "text-muted-foreground")}>{coachingState(review, autoJob?.status ?? null, busy)}</p>
-    {review && (presentation === "today" ? <div className="space-y-1 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+    <p role="status" className={cn("text-xs", review?.stale ? "rounded-xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] px-3 py-2.5 text-sm text-foreground" : "text-muted-foreground")}>{coachingState(review, autoJob?.status ?? null, busy)}</p>
+    {review && (presentation === "today" ? <div className="space-y-1 rounded-xl bg-[var(--glass-inner)] px-3 py-2 text-xs text-muted-foreground">
       <p>{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
       <details className="text-[11px]">
         <summary className="cursor-pointer py-1 underline underline-offset-2">Review details</summary>
@@ -137,11 +137,11 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     {autoJob?.status === "failed" && !review && <p role="status" className="text-xs text-muted-foreground">Automatic review couldn&apos;t finish. Tap Refresh to try again.</p>}
     {!review && configured === true && !busy && !autoPending && <p className="text-xs text-muted-foreground">No review yet.</p>}
     {review && <>
-      {review.athlete_concern && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
+      {review.athlete_concern && <p className="rounded-xl bg-muted px-3 py-2 text-xs"><span className="font-semibold">You asked:</span> {review.athlete_concern}</p>}
       {(!review.stale || expanded) && <p className={cn("leading-relaxed", !expanded && "line-clamp-3", review.stale && "text-muted-foreground")}>{review.summary}</p>}
       {review.stale && <p className="text-xs text-muted-foreground">This advice predates newer evidence. Refresh explicitly to review it; browsing never starts a paid refresh.</p>}
       {/* The suggested change sits right under the advice it comes from; the evidence is behind More. */}
-      {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
+      {review.suggestions.map(option => <div key={option.id} className="space-y-2 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-inner)] p-3">
         <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({distance(option.replacement.distance_miles)} {unit})</span></p>
         <p className="text-xs text-muted-foreground">{option.reason}</p>
         {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {distance(change.before.distance_miles)} → {distance(change.replacement.distance_miles)} {unit} to keep the weekly budget.</p>)}
@@ -150,7 +150,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
       {(review.stale || hasDetails || review.summary.length > 220) && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
-          className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          className="inline-flex min-h-8 items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-inner)] px-3.5 text-xs font-semibold text-foreground transition-colors hover:bg-[var(--row-hover)]">
           {expanded ? "Less" : review.stale ? "Show previous advice" : "More"}
         </button>
       )}

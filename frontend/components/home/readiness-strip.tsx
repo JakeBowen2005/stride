@@ -23,17 +23,17 @@ const FEEDBACK: Record<string, string> = {
 };
 
 function ReadinessRing({ score, level }: { score: number; level: string | null | undefined }) {
-  const r = 13;
+  const r = 15;
   const c = 2 * Math.PI * r;
   const color = LEVEL_COLOR[(level || "").toUpperCase()] ?? "var(--viz-series-1)";
   return (
-    <div className="relative size-8 shrink-0" role="img" aria-label={`Training readiness ${score} of 100${level ? `, ${level.toLowerCase()}` : ""}`}>
-      <svg viewBox="0 0 32 32" className="size-8 -rotate-90">
-        <circle cx="16" cy="16" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="3.5" />
-        <circle cx="16" cy="16" r={r} fill="none" stroke={color} strokeWidth="3.5" strokeLinecap="round"
+    <div className="relative size-14 shrink-0" role="img" aria-label={`Training readiness ${score} of 100${level ? `, ${level.toLowerCase()}` : ""}`}>
+      <svg viewBox="0 0 38 38" className="size-14 -rotate-90">
+        <circle cx="19" cy="19" r={r} fill="none" stroke="var(--glass-inner)" strokeWidth="4" />
+        <circle cx="19" cy="19" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
           strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(score, 100) / 100)} />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold">{score}</span>
+      <span className="absolute inset-0 flex items-center justify-center text-base font-bold">{score}</span>
     </div>
   );
 }
@@ -53,22 +53,22 @@ export function ReadinessStrip({ wellness, signals, mileageRisk }: {
     ? FEEDBACK[wellness.readiness_feedback] ?? wellness.readiness_feedback.replaceAll("_", " ").toLowerCase()
     : "";
   return (
-    <div className="space-y-1.5 rounded-md border bg-card px-3 py-2">
+    <div className="glass-tile space-y-2 px-3.5 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {wellness?.readiness_score != null && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <ReadinessRing score={wellness.readiness_score} level={wellness.readiness_level} />
             <span className="text-sm">
-              <span className="font-medium">Readiness</span>
-              <span className="text-muted-foreground">
-                {[text, wellness.recovery_time_min ? `${Math.round(wellness.recovery_time_min / 60)}h recovery left` : ""].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              <span className="block font-bold">Readiness</span>
+              <span className="text-xs text-muted-foreground">
+                {[text, wellness.recovery_time_min ? `${Math.round(wellness.recovery_time_min / 60)}h recovery left` : ""].filter(Boolean).join(" · ")}
               </span>
             </span>
           </div>
         )}
         {goods.length > 0 && (
           <button type="button" onClick={() => setShowGood((v) => !v)} aria-expanded={showGood}
-            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            className="ml-auto flex min-h-8 items-center gap-1 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-[var(--row-hover)] hover:text-foreground">
             <CircleCheck className="size-3.5" style={{ color: "var(--status-good)" }} aria-hidden />
             {goods.length} good
             <ChevronDown className={cn("size-3.5 transition-transform", showGood && "rotate-180")} />

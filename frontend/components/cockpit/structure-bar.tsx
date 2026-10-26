@@ -48,18 +48,19 @@ export function StructureBar({ prescription, kind, height = 40 }: { prescription
   const workMin = Math.round(parts.filter((b) => b.kind === "work").reduce((s, b) => s + b.seconds, 0) / 60);
   return (
     <span className="block space-y-1">
-      <span className="flex items-end gap-px overflow-hidden rounded-sm" style={{ height }} role="img"
+      <span className="flex items-end gap-px overflow-hidden rounded-md" style={{ height }} role="img"
         aria-label={`Session shape: ${parts.filter((b) => b.kind === "work").length} work blocks, about ${workMin} minutes of work, ${Math.round(total / 60)} minutes total`}>
         {parts.map((b, i) => (
           <span key={i} title={`${b.label} · ${Math.round(b.seconds / 60 * 10) / 10} min`}
             style={{
               flexGrow: b.seconds, flexBasis: 0, minWidth: 2,
               height: b.kind === "work" ? "100%" : b.kind === "recovery" ? "30%" : "45%",
-              background: b.kind === "work" ? color : b.kind === "recovery" ? `color-mix(in srgb, ${color} 45%, white)` : "#c9ccc5",
+              background: b.kind === "work" ? color : b.kind === "recovery" ? `color-mix(in srgb, ${color} 45%, transparent)` : "var(--muted-foreground)",
+              opacity: b.kind === "bookend" ? 0.45 : 1,
             }} />
         ))}
       </span>
-      <span className="flex justify-between font-mono text-[10.5px] text-muted-foreground">
+      <span className="flex justify-between font-mono text-[11px] text-muted-foreground">
         <span>~{workMin} min work</span><span>~{Math.round(total / 60)} min total</span>
       </span>
     </span>

@@ -12,6 +12,7 @@ import { GoalEditor } from "@/components/goal-editor";
 import { GarminConnectionCard } from "@/components/garmin-connection-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ThemePreference } from "@/components/theme-preference";
 
 
 interface PR {
@@ -124,13 +125,13 @@ export default function SettingsPage() {
     load();
   }, []);
 
-  if (error) return <p role="alert" className="text-destructive">{error}</p>;
+  if (error) return <p role="alert" className="glass p-5 text-destructive">{error}</p>;
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <div className="py-20 text-center text-muted-foreground">Loading...</div>
+      <div className="space-y-4">
+        <h1 className="display pt-1">Settings</h1>
+        <div className="glass py-20 text-center text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -139,21 +140,32 @@ export default function SettingsPage() {
   const distance = (miles: number) => (miles * (unit === 'km' ? 1.60934 : 1)).toFixed(1);
   const workload = analysis?.workload ?? analysis?.injury_risk;
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between"><h1 className="text-xl font-semibold">Settings</h1><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
-      {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="rounded-md border p-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
+    <div className="space-y-4">
+      <div className="flex items-end justify-between gap-3 pt-1"><h1 className="display">Settings</h1><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
+      {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="glass rounded-[22px] px-4 py-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
+
+      {/* Two columns of glass cards on wide screens; one column on phones */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
+      <Card>
+        <CardContent className="space-y-3 pt-0">
+          <h2 className="text-[13px] font-bold">Appearance</h2>
+          <p className="text-sm text-muted-foreground">System follows your phone or computer. Daybreak is light; Dusk is dark.</p>
+          <ThemePreference />
+        </CardContent>
+      </Card>
 
       {/* Profile */}
       <Card>
-        <CardContent className="space-y-4 pt-4">
+        <CardContent className="space-y-4 pt-0">
           {user && <ProfilePreferences user={user} onSaved={setUser} />}
         </CardContent>
       </Card>
 
       {/* Training Preferences */}
       <Card>
-        <CardContent className="space-y-4 pt-4">
-          <h2 className="text-sm font-medium">Training</h2>
+        <CardContent className="space-y-4 pt-0">
+          <h2 className="text-[13px] font-bold">Training</h2>
           {!analysis && <p className="text-sm text-muted-foreground">No running history yet. Import original FIT files below or complete onboarding to establish your starting point.</p>}
           <div className="space-y-2 text-sm">
             <Row
@@ -178,9 +190,9 @@ export default function SettingsPage() {
 
       {/* Current Goal */}
       <Card>
-        <CardContent className="space-y-4 pt-4">
+        <CardContent className="space-y-4 pt-0">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">Current Goal</h2>
+            <h2 className="text-[13px] font-bold">Current Goal</h2>
             {!editingGoal && (
               <Button variant="outline" size="sm" onClick={() => setEditingGoal(true)}>
                 Change
@@ -217,15 +229,17 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      </div>
+      <div className="space-y-4">
       {/* Personal Records */}
       <Card>
-        <CardContent className="space-y-4 pt-4">
-          <h2 className="text-sm font-medium">Personal Records</h2>
+        <CardContent className="space-y-4 pt-0">
+          <h2 className="text-[13px] font-bold">Personal Records</h2>
           <div className="space-y-1 text-sm">
             {prs.map((pr) => (
               <div
                 key={pr.id}
-                className="flex items-center justify-between rounded px-2 py-1.5 odd:bg-secondary/30"
+                className="glass-tile flex items-center justify-between rounded-xl px-3.5 py-2.5"
               >
                 <span>{pr.distance}</span>
                 <div className="flex items-center gap-3">
@@ -257,8 +271,8 @@ export default function SettingsPage() {
       {/* Running Stats */}
       {analysis && (
         <Card>
-          <CardContent className="space-y-4 pt-4">
-            <h2 className="text-sm font-medium">Running Stats</h2>
+          <CardContent className="space-y-4 pt-0">
+            <h2 className="text-[13px] font-bold">Running Stats</h2>
             <div className="space-y-2 text-sm">
               <Row label="Total runs" value={String(analysis.overview.total_runs)} />
               <Row label="Total distance" value={`${distance(analysis.overview.total_miles)} ${unit}`} />
@@ -281,8 +295,8 @@ export default function SettingsPage() {
       {/* Injury Risk */}
       {analysis && (
         <Card>
-          <CardContent className="space-y-4 pt-4">
-            <h2 className="text-sm font-medium">Training load · Stride policy heuristic</h2>
+          <CardContent className="space-y-4 pt-0">
+            <h2 className="text-[13px] font-bold">Training load · Stride policy heuristic</h2>
             <div className="space-y-2 text-sm">
               <Row
                 label="Last completed week / four completed weeks"
@@ -291,7 +305,7 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-foreground">
                 {workload?.acute_week_start && <>Week {workload.acute_week_start}–{workload.acute_week_end}: {distance(workload.acute_miles ?? 0)} {unit}; four-week baseline (including that week): {distance(workload.baseline_miles ?? 0)} {unit}/week. As of {workload.as_of}. </>}This compares running distance, not injury probability. Garmin Load uses a different intensity-weighted measure. A low ratio does not establish that increasing training is safe.
               </p>
-              <div className="rounded-md bg-secondary/50 p-2 text-sm text-muted-foreground">
+              <div className="glass-tile rounded-xl p-3 text-sm text-muted-foreground">
                 {analysis.injury_risk.assessment}
               </div>
             </div>
@@ -299,7 +313,7 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      <Card><CardContent className="space-y-3 pt-4"><h2 className="text-sm font-medium">Operations</h2>
+      <Card><CardContent className="space-y-3 pt-0"><h2 className="text-[13px] font-bold">Operations</h2>
         {!operations ? <p className="text-sm text-muted-foreground">Operational status is unavailable. Backup and review status could not be verified.</p> : <>
           {operations.ai_usage && <p className="text-sm">AI today: {operations.ai_usage.attempts_today} attempts · {operations.ai_usage.input_tokens_today} input / {operations.ai_usage.output_tokens_today} output tokens{operations.ai_usage.mean_latency_ms!=null?` · mean ${(operations.ai_usage.mean_latency_ms/1000).toFixed(1)} seconds`:''}.</p>}
           {operations.backup.storage && <p role={operations.backup.storage.warning?'alert':undefined} className="text-sm">Storage: {(operations.backup.storage.database_bytes/1024**2).toFixed(1)} MiB database · {(operations.backup.storage.backup_bytes/1024**2).toFixed(1)} MiB local backups · {(operations.backup.storage.free_bytes/1024**3).toFixed(1)} GiB free.{operations.backup.storage.warning?' Low free space: operator attention needed.':''}</p>}
@@ -310,11 +324,19 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground">Configuration alone does not prove recovery. Keep a verified offsite backup. Coaching policy {operations.app.policy_version}.</p>
         </>}
       </CardContent></Card>
-      <TimeAvailability />
-      <AccountSettings />
+      </div>
+      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
       {/* Connections */}
       <GarminConnectionCard />
       <FitImport />
+      </div>
+      <div className="space-y-4">
+      <TimeAvailability />
+      <AccountSettings />
+      </div>
+      </div>
 
     </div>
   );
@@ -322,9 +344,9 @@ export default function SettingsPage() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="glass-tile flex items-center justify-between gap-4 rounded-xl px-3.5 py-2.5">
       <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+      <span className="text-right font-semibold">{value}</span>
     </div>
   );
 }

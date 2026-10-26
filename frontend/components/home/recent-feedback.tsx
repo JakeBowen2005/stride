@@ -26,9 +26,9 @@ export function RecentFeedback({ days, onSaved }: { days: Activity[]; onSaved?: 
   const [open, setOpen] = useState<string | null>(null);
   if (!days.length) return null;
   return (
-    <section className="space-y-2 rounded-lg border p-3" aria-label="Runs waiting for your comment">
-      <h2 className="stat-label">Runs waiting for your comment</h2>
-      <ul className="divide-y">
+    <section className="glass-tile space-y-1 p-4" aria-label="Runs waiting for your comment">
+      <h2 className="text-[13px] font-bold">Runs waiting for your comment</h2>
+      <ul className="divide-y divide-[var(--glass-border)]">
         {days.map((d) => {
           const label = new Date(`${d.date.slice(0,10)}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
           return (
@@ -36,7 +36,7 @@ export function RecentFeedback({ days, onSaved }: { days: Activity[]; onSaved?: 
               <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
                 aria-expanded={open === d.date} onClick={() => setOpen(open === d.date ? null : d.date)}>
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium">{label} · {d.title}</span>
+                  <span className="block text-sm font-semibold">{label} · {d.title}</span>
                   <span className="block text-xs text-muted-foreground">
                     {distanceInUnits(d.distance_miles, units)} {unitLabel(units)}
                     {" · add a comment to get your coach review"}

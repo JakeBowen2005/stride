@@ -14,13 +14,13 @@ export function SplitsTable({ splits: all }: { splits: Split[] }) {
   const isLaps = splits.some((s) => s.distance_miles !== undefined);
 
   return (
-    <div className="space-y-1">
-      <h4 className="text-sm font-medium">{isLaps ? "Laps" : "Splits"}</h4>
-      <div className="space-y-0.5">
+    <div className="space-y-1.5">
+      <h4 className="text-[13px] font-bold">{isLaps ? "Laps" : "Splits"}</h4>
+      <div className="space-y-1">
         {splits.map((split) => (
           <div
             key={split.mile}
-            className="flex items-center justify-between rounded px-2 py-1 text-sm odd:bg-secondary/30"
+            className="glass-tile flex items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors hover:bg-[var(--row-hover)]"
           >
             <span className="text-muted-foreground">
               {isLaps ? `Lap ${split.mile}` : `Mile ${split.mile}`}
@@ -32,7 +32,7 @@ export function SplitsTable({ splits: all }: { splits: Split[] }) {
               )}
             </span>
             <div className="flex items-center gap-4">
-              <span className="font-mono">{paceInUnits(split.pace.replace(/\/mi$/, ""), units)}/{unit}</span>
+              <span className="font-mono font-bold">{paceInUnits(split.pace.replace(/\/mi$/, ""), units)}/{unit}</span>
               {split.heart_rate && (
                 <span className="font-mono text-xs text-muted-foreground">
                   {Math.round(split.heart_rate)} bpm
