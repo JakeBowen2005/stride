@@ -10,6 +10,8 @@ import { GarminSync, SYNC_EVENT } from "@/components/garmin-sync";
 
 interface Status {
   api_key_present: boolean;
+  connection_issue?: string | null;
+  can_reconnect?: boolean;
   business_pending?: boolean;
   owner_key_storage_ready?: boolean;
   connected: boolean;
@@ -24,6 +26,7 @@ interface Status {
 export function GarminConnectionCard() {
   const [status, setStatus] = useState<Status | null>(null);
   const [connectionMessage,setConnectionMessage]=useState("");
+  const [reconnecting, setReconnecting] = useState(false);
   const [offline, setOffline] = useState(false);
 
   async function load() {
@@ -72,7 +75,7 @@ export function GarminConnectionCard() {
   const job = status?.full_sync_job;
 
   return (
-    <Card>
+    <Card id="garmin">
       <CardContent className="space-y-4 pt-0">
         <div className="flex items-center justify-between">
           <h2 className="text-[13px] font-bold">Garmin Connect</h2>
@@ -93,13 +96,25 @@ export function GarminConnectionCard() {
 
         {offline && <p className="text-sm text-destructive">Can&apos;t reach the Stride backend.</p>}
 
+        {status?.connection_issue && <p role="status" className="glass-tile rounded-xl p-3.5 text-sm">{status.connection_issue}</p>}
+        {status?.can_reconnect && (!status.connected || status.last_error) && <Button variant="outline" disabled={reconnecting} onClick={async () => {
+          setReconnecting(true);
+          try {
+            const response = await fetch(apiUrl(`/garmin/reconnect/${USER_ID}`), { method: "POST" });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || "Could not reconnect Garmin.");
+            setConnectionMessage("Reconnected to the server key. Sync queued; progress appears below.");
+            await load();
+          } catch (error) { setConnectionMessage(error instanceof Error ? error.message : "Could not reconnect Garmin."); }
+          finally { setReconnecting(false); }
+        }}>{reconnecting ? "Reconnecting…" : "Reconnect Garmin using server key"}</Button>}
         {status?.business_pending && <p className="text-sm">Separate Garmin connections are awaiting Business API approval. Import your original FIT files below to build your history now.</p>}
         {status && !status.api_key_present && !status.business_pending && (
           <div className="space-y-2 glass-tile rounded-xl p-3.5 text-sm">
             <p className="font-medium">Connect Garmin with a Personal API key.</p>
             <p className="text-muted-foreground">
-              Create a key in Garmin Connect (Settings → Personal API Key), then add it to the Stride server as{" "}
-              <code>GARMIN_API_KEY</code> and restart. Keys last 30 days to a year; Garmin emails you before one expires.
+              Create a key in Garmin Connect (Settings → Personal API Key), then add it to this server’s environment as{" "}
+              <code>GARMIN_API_KEY</code> and redeploy. For Render, use your service’s Environment page. Your local .env file is not deployed.
             </p>
             <a
               className="text-sm underline underline-offset-2"

@@ -12,6 +12,7 @@ type SyncStatus = {
   last_error?: string | null;
   full_sync_job?: {
     state: string;
+    status?: string;
     error?: string | null;
     result?: SyncResult | null;
   } | null;
@@ -34,6 +35,8 @@ export async function waitForSync(
     const status = await read();
     const job = status.full_sync_job;
     if (job?.state === "error") throw new Error(status.last_error || job.error || "Garmin sync failed. Try again in Settings.");
+    if (job?.status === "retry" && status.last_error)
+      return { status: "backoff", message: status.last_error };
     if (job?.state === "done" && job.result) return job.result;
     // A busy inline sync has no durable job; its status still exposes failures.
     if (!job && status.last_error) throw new Error(status.last_error);

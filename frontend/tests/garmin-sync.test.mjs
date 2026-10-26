@@ -43,3 +43,36 @@ test('busy inline sync waits for a newer successful check instead of accepting t
   assert.equal(result.status, 'ok');
   assert.equal(states.length, 0);
 });
+test('a failed background retry releases the button with the actual error instead of waiting four minutes', async () => {
+  let pauses = 0;
+  const result = await waitForSync(async () => ({last_error:'Garmin rejected the API key',
+    full_sync_job:{state:'running',status:'retry'}}), new AbortController().signal, async () => { pauses++; });
+  assert.equal(result.status, 'backoff');
+  assert.equal(syncMessage(result), 'Garmin rejected the API key');
+  assert.equal(pauses, 0);
+});
+
+test('a disconnected athlete gets a working reconnect link instead of a disabled sync button', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const source = readFileSync(new URL('../components/garmin-sync.tsx', import.meta.url), 'utf8');
+  const component = {};
+  let firstState = true;
+  const hooks = {
+    useState: value => { const current = firstState ? {api_key_present:false,last_sync_at:'2026-10-23T10:00:00',connection_issue:'Garmin was disconnected.'} : value; firstState = false; return [current, () => {}]; },
+    useEffect: () => {}, useCallback: fn => fn, useRef: value => ({current:value}),
+  };
+  runInNewContext(ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText,
+    {exports:component, require:id => ({
+      react:hooks, 'next/link':{default:({children,...props}) => React.createElement('a',props,children)},
+      '@/lib/api':{}, '@/lib/garmin-sync':exports,
+      '@/components/ui/button':{Button:({children,disabled}) => React.createElement('button',{disabled},children)},
+    }[id] || require(id))});
+  const html = renderToStaticMarkup(React.createElement(component.GarminSync));
+  assert.match(html, /href="\/settings#garmin"/);
+  assert.match(html, /Reconnect Garmin/);
+  assert.match(html, /Garmin was disconnected/);
+  assert.doesNotMatch(html, /disabled/);
+});
