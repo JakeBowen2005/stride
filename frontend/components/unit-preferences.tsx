@@ -15,7 +15,7 @@ export function UnitPreferences({ children }: { children: React.ReactNode }) {
   const [units, setUnits] = useState<Units>("miles");
   const path = usePathname();
   useEffect(() => {
-    if ((path.startsWith("/login") || path.startsWith("/auth"))) return;
+    if (path.startsWith("/login") || path.startsWith("/auth") || path === "/privacy" || path === "/about") return;
     const abort = new AbortController();
     const load = () => {
       fetch(apiUrl(`/users/${USER_ID}`), { signal: abort.signal }).then(async response => {
