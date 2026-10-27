@@ -280,6 +280,13 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
                                  'day_time_budgets':json.loads(user.day_time_budgets or '{}')},
     }
 
+    if plan_data.get("load") is not None:
+        try:  # shadow only (docs/aerobic-hours.md phase 2): recorded for review, never changes the block
+            from app.services.aerobic_hours import shadow
+            plan_data["load"]["shadow_hours"] = shadow(plan_data, user_id, db, easy_pace_seconds)
+        except Exception:
+            logger.exception("Shadow hours budget failed; the block is unaffected")
+
     # Persist atomically: the previous plan is only deactivated in the same commit
     # that saves its replacement, so a failure above leaves the old plan usable.
     preview = True

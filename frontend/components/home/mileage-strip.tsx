@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useUnits } from "@/components/unit-preferences";
+import { hoursLabel } from "@/lib/format";
 import { distanceValueInUnits, unitLabel } from "@/lib/units";
 import { calendarMileage } from "@/lib/mileage-calendar";
 import type { WeeklyMileage } from "@/lib/types";
@@ -19,9 +20,11 @@ export function MileageStrip({ data }: { data: WeeklyMileage[] }) {
   const weeks = calendarMileage(data, WEEKS).map((d) => ({
     start: d.week_start,
     miles: distanceValueInUnits(d.actual, units),
+    seconds: d.seconds ?? 0,
     label: new Date(`${d.week_start}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   }));
   const total = weeks.reduce((sum, w) => sum + w.miles, 0);
+  const totalSeconds = weeks.reduce((sum, w) => sum + w.seconds, 0);
   const max = Math.max(1, ...weeks.map((w) => w.miles));
   const shown = active != null ? weeks[active] : null;
   const last = weeks.length - 1;
@@ -33,11 +36,15 @@ export function MileageStrip({ data }: { data: WeeklyMileage[] }) {
         <div className="num text-[22px] font-bold leading-tight">
           {(shown ? shown.miles : total).toFixed(1)} <span className="text-xs font-normal text-muted-foreground">{unit}</span>
         </div>
+        {/* Mileage stays the hero; running time is context (docs/aerobic-hours.md §4.2) */}
+        {(shown ? shown.seconds : totalSeconds) > 0 && (
+          <div className="text-xs text-muted-foreground">{hoursLabel(shown ? shown.seconds : totalSeconds)} running</div>
+        )}
       </div>
       <ol className="flex h-14 flex-1 items-end gap-[5px] sm:gap-[7px]" onMouseLeave={() => setActive(null)}>
         {weeks.map((w, i) => (
           <li key={w.start} className="flex h-full flex-1 items-end">
-            <button type="button" aria-label={`Week of ${w.label}: ${w.miles.toFixed(1)} ${unit}${i === last ? ", in progress" : ""}`}
+            <button type="button" aria-label={`Week of ${w.label}: ${w.miles.toFixed(1)} ${unit}${w.seconds ? `, ${hoursLabel(w.seconds)}` : ""}${i === last ? ", in progress" : ""}`}
               onMouseEnter={() => setActive(i)} onFocus={() => setActive(i)} onBlur={() => setActive(null)}
               className={cn("w-full rounded-t-[7px] rounded-b-[3px] transition-[opacity,transform] duration-150 hover:scale-y-[1.04] focus-visible:outline-offset-2",
                 i === last ? "bg-[var(--accent-warm)] opacity-100" : cn("bg-primary dark:bg-white", active === i ? "opacity-90" : "opacity-55"))}

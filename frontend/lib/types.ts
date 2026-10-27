@@ -249,6 +249,8 @@ export interface WeeklyMileage {
   week_start: string;
   planned: number;
   actual: number;
+  /** Running (moving) time that week */
+  seconds?: number;
 }
 
 export type MileageBucket = "week" | "month" | "year";
@@ -259,6 +261,15 @@ export interface MileagePeriod {
   planned: number | null;
   runs: number;
   partial: boolean;
+  /** Running (moving) time; walks never count. */
+  actual_seconds?: number;
+  /** Tooltip context: includes stops (aid stations, lights). Legacy rows count as moving time. */
+  elapsed_seconds?: number;
+  /** Runs with no recorded duration, so the hours bar never silently under-reports. */
+  runs_without_time?: number;
+  /** Estimated from each approved block's frozen easy pace; null when no block covered the period. */
+  planned_seconds?: number | null;
+  walk_seconds?: number;
 }
 
 export interface AerobicEfficiency {
