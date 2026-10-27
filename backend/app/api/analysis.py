@@ -221,7 +221,7 @@ def _session(a: Activity, splits: list, easy_pace: float | None) -> dict | None:
         return None
     from app.core.session_match import session_title
     from app.services.lap_analyzer import analyze_laps
-    found = analyze_laps(splits, easy_pace)
+    found = analyze_laps(splits, easy_pace, a.feel_notes)
     return {"title": session_title(found), "category": found["category"]} if found else None
 
 

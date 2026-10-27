@@ -24,6 +24,7 @@ import {
   secondsToTime,
 } from "@/lib/format";
 import type { Activity } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface RunDetailSheetProps {
   activity: Activity | null;
@@ -105,29 +106,7 @@ function parseWorkoutDetails(desc: string): { type: string; details: string[] } 
 }
 
 export function RunDetailSheet({ activity, open, onClose, onClassificationChanged }: RunDetailSheetProps) {
-  const units = useUnits();
-  const unit = unitLabel(units);
-  const [savingKind, setSavingKind] = useState(false);
-  const [commentSaves, setCommentSaves] = useState(0);
-  const [kindError, setKindError] = useState<string | null>(null);
-  async function correctKind(kind: "run" | "walk" | "auto") {
-    if (!activity) return;
-    setSavingKind(true); setKindError(null);
-    try {
-      const response = await fetch(apiUrl(`/analysis/${USER_ID}/activities/${activity.id}/kind`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save activity type");
-      onClassificationChanged?.();
-      onClose();
-    } catch (error) { setKindError(error instanceof Error ? error.message : "Could not save activity type"); }
-    finally { setSavingKind(false); }
-  }
   if (!activity) return null;
-
-  const workoutAnalysis = activity.description
-    ? parseWorkoutDetails(activity.description)
-    : null;
-
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl data-[side=right]:lg:max-w-4xl">
@@ -144,10 +123,51 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
             {formatDateLong(activity.date)}
           </p>
         </SheetHeader>
+        <RunDetailBody activity={activity} onChanged={onClassificationChanged} onKindChanged={onClose} />
+      </SheetContent>
+    </Sheet>
+  );
+}
 
-        {/* Wide screens: numbers and laps on the left, notes and coaching on the right.
+/**
+ * One run's numbers, laps, notes and review. Shared by the run sheet (Today, History) and the
+ * Plan day sheet, which passes the plan comparison as `aside` and handles feedback itself.
+ */
+export function RunDetailBody({ activity, onChanged, onKindChanged, aside, showFeedback = true, className }: {
+  activity: Activity;
+  onChanged?: () => void;
+  onKindChanged?: () => void;
+  /** Shown first in the right-hand column (e.g. planned vs ran) */
+  aside?: React.ReactNode;
+  /** The run sheet's own comment form; the Plan day sheet uses its day feedback instead */
+  showFeedback?: boolean;
+  className?: string;
+}) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const [savingKind, setSavingKind] = useState(false);
+  const [commentSaves, setCommentSaves] = useState(0);
+  const [kindError, setKindError] = useState<string | null>(null);
+  async function correctKind(kind: "run" | "walk" | "auto") {
+    if (!activity) return;
+    setSavingKind(true); setKindError(null);
+    try {
+      const response = await fetch(apiUrl(`/analysis/${USER_ID}/activities/${activity.id}/kind`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save activity type");
+      onChanged?.();
+      onKindChanged?.();
+    } catch (error) { setKindError(error instanceof Error ? error.message : "Could not save activity type"); }
+    finally { setSavingKind(false); }
+  }
+  const workoutAnalysis = activity.description
+    ? parseWorkoutDetails(activity.description)
+    : null;
+
+  return (
+        <>{/* Wide screens: numbers and laps on the left, notes and coaching on the right.
             Phones keep a single column in the same reading order. */}
-        <div className="grid gap-x-6 gap-y-4 px-4 pb-6 sm:px-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start">
+        <div className={cn("grid gap-x-6 gap-y-4 px-4 pb-6 sm:px-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start", className)}>
           <div className="min-w-0 space-y-4 lg:col-start-1">
             {activity.classification && <section className="glass-tile space-y-2 p-3.5 text-sm" aria-label="Activity classification">
               <p className="font-medium">{activity.classification.kind === "walk" ? "Walk · excluded from running mileage" : "Run · included in running mileage"}{activity.classification.override ? " · corrected by you" : ""}</p>
@@ -226,12 +246,13 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
           </div>
 
           <div className="min-w-0 space-y-3 empty:hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 [&>*]:rounded-[20px] [&>*]:bg-[var(--glass-inner)] [&>*]:p-4">
-            <section aria-label="Your run feedback">
+            {aside}
+            {showFeedback && <section aria-label="Your run feedback">
               <h4 className="text-[13px] font-bold">Your run feedback</h4>
               <FeedbackForm key={`${activity.id}-${activity.notes ?? ""}`} activityId={activity.id} date={activity.date.slice(0,10)}
                 watch={{ feel: activity.watch_feel, effort: activity.watch_effort }} initial={{ notes: activity.notes }}
-                onSubmitted={() => { setCommentSaves((n) => n + 1); onClassificationChanged?.(); }} />
-            </section>
+                onSubmitted={() => { setCommentSaves((n) => n + 1); onChanged?.(); }} />
+            </section>}
             {/* Notes / Garmin lap summary */}
             {activity.description && (
               <div>
@@ -289,7 +310,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               </div>
             )}
 
-            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}`} activityId={activity.id} hasComment={!!activity.notes || commentSaves > 0} />}
+            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}-${activity.notes ?? ""}`} activityId={activity.id} hasComment={!!activity.notes || commentSaves > 0} />}
           </div>
 
           {activity.splits.length > 0 && (
@@ -297,8 +318,6 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               <SplitsTable splits={activity.splits} />
             </div>
           )}
-        </div>
-      </SheetContent>
-    </Sheet>
+        </div></>
   );
 }

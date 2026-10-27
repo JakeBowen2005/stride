@@ -13,6 +13,7 @@ Detection order:
    contiguous fast auto-laps are a continuous tempo.
 """
 
+import re
 import statistics
 
 METERS_PER_MILE = 1609.34
@@ -34,6 +35,11 @@ STANDARD_REPS = [
     (2 * METERS_PER_MILE, "2 miles"),
     (3 * METERS_PER_MILE, "3 miles"),
 ]
+
+# A lap at the edge of a work block this much slower than the session's typical work pace is the
+# warmup or cooldown running into the rep (an 8:03 mile before 6:50 reps), not part of it.
+# Short laps get more room: GPS pace over 0.1-0.3 mi is noisy.
+EDGE_SLOWER_RATIO, EDGE_SLOWER_RATIO_SHORT = 1.10, 1.15
 
 # Laps at least this much faster than easy pace count as work (0.82 = 18% faster).
 # Tuned on real data: at 0.90, moderate "steady" miles (e.g. 8:38 vs a 9:48 easy pace)
@@ -117,10 +123,110 @@ def _find_work_laps(laps: list[dict], easy_pace_sec: float | None) -> list[int]:
         reference = statistics.median(valid)
 
     cutoff = reference * WORK_PACE_RATIO
-    return [
+    work = [
         i for i, p in enumerate(paces)
         if p and p <= cutoff and (laps[i].get("distance_m") or 0) >= 150
     ]
+    return _trim_edges(laps, work, paces)
+
+
+def _trim_edges(laps: list[dict], work: list[int], paces: list[float | None]) -> list[int]:
+    """Drop laps at the start/end of each work block that are clearly slower than the work.
+
+    A slow easy-pace reference (or a brisk warmup) lets the last warmup mile pass the work
+    cutoff; it then merges into the first rep and the session reads as a lopsided fartlek."""
+    if len(work) < 3:
+        return work
+    # Time-weighted: a few 30s strides must not make a real mile rep look slow
+    by_pace = sorted(work, key=lambda i: paces[i])
+    half = sum(laps[i].get("duration_s") or 0 for i in work) / 2
+    elapsed, typical = 0.0, paces[by_pace[-1]]
+    for i in by_pace:
+        elapsed += laps[i].get("duration_s") or 0
+        if elapsed >= half:
+            typical = paces[i]
+            break
+
+    def slow(i: int) -> bool:
+        short = (laps[i].get("distance_m") or 0) < 0.35 * METERS_PER_MILE
+        return paces[i] > typical * (EDGE_SLOWER_RATIO_SHORT if short else EDGE_SLOWER_RATIO)
+
+    # A lone slow lap is dropped only before the first block or after the last (warmup or
+    # cooldown); one between blocks is a rep in its own right.
+    groups = _groups(work)
+    kept: list[int] = []
+    for n, group in enumerate(groups):
+        while len(group) > 1 and slow(group[0]):
+            group = group[1:]
+        while len(group) > 1 and slow(group[-1]):
+            group = group[:-1]
+        if len(group) == 1 and slow(group[0]) and n in (0, len(groups) - 1) and len(groups) > 1:
+            continue
+        kept.extend(group)
+    return kept
+
+
+# "2x12min", "2 x 12 minutes", "6x800", "4x1k", "3x2 miles", "8x400m" in the athlete's comment
+STRUCTURE_PATTERN = re.compile(
+    r"\b(\d{1,2})\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(minutes?|mins?|'|seconds?|secs?|s|miles?|mi|km|k|m)?(?![a-z0-9])",
+    re.IGNORECASE)
+
+
+def structure_hint(text: str | None) -> dict | None:
+    """The first rep structure the athlete names, e.g. {"reps": 2, "seconds": 720}."""
+    hints = structure_hints(text)
+    return hints[0] if hints else None
+
+
+def structure_hints(text: str | None) -> list[dict]:
+    """Every rep structure named in a comment, in order ("skipped the 6x800, did 5x1k" names two).
+
+    Only unambiguous forms count: a unit, or a bare distance of 100+ (meters). "2x12" alone
+    could be minutes or laps, so it is ignored rather than guessed."""
+    found = []
+    for m in STRUCTURE_PATTERN.finditer(text or ""):
+        reps, value, unit = int(m.group(1)), float(m.group(2)), (m.group(3) or "").lower()
+        if not 2 <= reps <= 40 or value <= 0:
+            continue
+        if unit.startswith("min") or unit == "'":
+            found.append({"reps": reps, "seconds": value * 60})
+        elif unit.startswith("sec") or unit == "s":
+            found.append({"reps": reps, "seconds": value})
+        elif unit.startswith("mi"):
+            found.append({"reps": reps, "meters": value * METERS_PER_MILE})
+        elif unit in ("k", "km"):
+            found.append({"reps": reps, "meters": value * 1000})
+        elif unit == "m" or (not unit and value >= 100):
+            found.append({"reps": reps, "meters": value})
+    return found
+
+
+# A described rep this far from every measured rep is not what the laps show: keep the lap read.
+HINT_TOLERANCE = 0.25
+
+
+def _match_hint(laps: list[dict], reps_idx: list[list[int]], hint: dict) -> list[list[int]]:
+    """Keep the measured reps the athlete's description accounts for (best fit, in order)."""
+    key, target = ("seconds", hint["seconds"]) if "seconds" in hint else ("meters", hint["meters"])
+
+    def error(rep: list[int]) -> float:
+        merged = _merge([laps[i] for i in rep])
+        value = merged["duration_s"] if key == "seconds" else merged["distance_m"]
+        return abs(value - target) / target
+
+    best = sorted(range(len(reps_idx)), key=lambda k: error(reps_idx[k]))[:hint["reps"]]
+    if len(best) < hint["reps"] or any(error(reps_idx[k]) > HINT_TOLERANCE for k in best):
+        return None
+    return [reps_idx[k] for k in sorted(best)]
+
+
+def _drop_strides(laps: list[dict], reps_idx: list[list[int]]) -> list[list[int]]:
+    """Strides (a few 15-30s bursts after the main set) are not reps of the session."""
+    durations = [sum(laps[i].get("duration_s") or 0 for i in rep) for rep in reps_idx]
+    main = [d for d in durations if d > STRIDE_MAX_SECONDS]
+    if len(main) < 2 or len(main) == len(durations) or statistics.median(main) < 3 * STRIDE_MAX_SECONDS:
+        return reps_idx
+    return [rep for rep, d in zip(reps_idx, durations) if d > STRIDE_MAX_SECONDS]
 
 
 def _lap_hr(lap: dict) -> float | None:
@@ -161,13 +267,22 @@ def _groups(indices: list[int]) -> list[list[int]]:
     return groups
 
 
-def _category(kind: str, minutes: float) -> str:
-    if kind == "tempo" or minutes >= 5:
+# Reps of 5-8 minutes are either cruise intervals (threshold, short float) or VO2 work such as
+# mile repeats at 5K pace (intervals, long jog). Recovery this share of the rep or more = intervals.
+INTERVAL_REST_SHARE = 0.35
+# Fast bursts this short next to real reps are strides, not part of the session.
+STRIDE_MAX_SECONDS = 45
+
+
+def _category(kind: str, minutes: float, rest_seconds: float | None = None) -> str:
+    if kind == "tempo" or minutes >= 8:
         return "threshold"
+    if minutes >= 5:
+        return "intervals" if rest_seconds and rest_seconds >= INTERVAL_REST_SHARE * minutes * 60 else "threshold"
     return "intervals" if minutes >= 1.5 else "speed"
 
 
-def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict | None:
+def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None, comment: str | None = None) -> dict | None:
     """Structured read of a quality session from its laps, or None for a steady run.
 
     Returns {kind, category, label, text, reps: [{distance_m, duration_s, pace_sec_per_mile,
@@ -175,6 +290,11 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
     pace calibrator and evaluator parse. Garmin auto-laps split a rep that crosses a mile
     marker (an 8-minute rep becomes 1.00mi + 0.10mi), so when a session has recoveries,
     back-to-back work laps are merged into one rep.
+
+    `comment` is the athlete's own description ("did 2x12min at threshold"). When the laps
+    show more reps than it describes, the described ones are kept and the rest (a brisk
+    warmup mile, a stride) are not counted as work. `described` is True when the comment's
+    structure matches the reps exactly: the athlete has said what they ran.
     """
     if not laps or len(laps) < 2:
         return None
@@ -226,6 +346,16 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
                 current.append(i)
             else:
                 reps_idx.append([i])
+    reps_idx = _drop_strides(laps, reps_idx)
+    # The structure in the comment that the laps bear out (a comment may also name the planned one)
+    hint = None
+    for candidate in structure_hints(comment):
+        if len(reps_idx) >= candidate["reps"] and (matched := _match_hint(laps, reps_idx, candidate)):
+            hint, reps_idx = candidate, matched
+            break
+    total_work_miles = sum(laps[i].get("distance_m") or 0 for rep in reps_idx for i in rep) / METERS_PER_MILE
+    # The athlete's comment names exactly what the laps show: their own account of the session
+    described = hint is not None
     work = [_merge([laps[i] for i in rep]) for rep in reps_idx]
     if any(rep["distance_m"] < 50 for rep in work):
         return None  # e.g. treadmill laps with no distance: no paces to report or evaluate
@@ -243,9 +373,12 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
              "pace_sec_per_mile": round(p), "average_hr": round(rep["average_hr"]) if rep["average_hr"] else None}
             for rep, p in zip(work, paces)]
 
+    category = _category("reps", minutes, rest)
+
     def out(label: str, text: str) -> dict:
-        return {"kind": "reps", "category": _category("reps", minutes), "label": label, "text": text, "reps": reps,
-                "recovery_seconds": round(rest) if rest else None, "work_miles": round(total_work_miles, 2)}
+        return {"kind": "reps", "category": category, "label": label, "text": text, "reps": reps,
+                "recovery_seconds": round(rest) if rest else None, "work_miles": round(total_work_miles, 2),
+                "described": described}
 
     distance_label = _nearest_standard(statistics.median(distances)) if _cv(distances) <= 0.10 else None
     if distance_label:
@@ -260,6 +393,10 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
         meters = next(m for m, lab in STANDARD_REPS if lab == distance_label)
         if abs(statistics.median(distances) - meters) / meters > 0.02:
             distance_label = None
+
+    # 4:00 reps that happen to cover ~1 km: the athlete's own "5x4min" decides which they ran
+    if distance_label and hint and "seconds" in hint:
+        distance_label = None
 
     # Distance-based reps (e.g. 800s, miles)
     if distance_label:
@@ -280,7 +417,7 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
     if _cv(durations) <= 0.10:
         whole = round(minutes)
         pace_list = ", ".join(_fmt_time(p) for p in paces)
-        kind = "threshold" if whole >= 5 else "fartlek"
+        kind = "threshold" if category == "threshold" else "fartlek"
         return out(f"{n}x{whole}min", f"Garmin laps: {n}x{whole}min {kind} ({pace_list}/mi){rest_note}")
 
     # Consistent but non-standard distance (e.g. 500m reps)
@@ -296,11 +433,11 @@ def analyze_laps(laps: list[dict], easy_pace_sec: float | None = None) -> dict |
     return result
 
 
-def summarize_workout(laps: list[dict], easy_pace_sec: float | None = None) -> str | None:
+def summarize_workout(laps: list[dict], easy_pace_sec: float | None = None, comment: str | None = None) -> str | None:
     """Build a workout summary string from laps, or None if it looks like a steady run.
 
     `easy_pace_sec` is the athlete's typical easy pace (sec/mile); it makes
     detection much more reliable than comparing laps within one run.
     """
-    analysis = analyze_laps(laps, easy_pace_sec)
+    analysis = analyze_laps(laps, easy_pace_sec, comment)
     return analysis["text"] if analysis else None

@@ -177,14 +177,38 @@ def parse_activity(raw: dict) -> dict | None:
     }
 
 
-def build_description(user_desc: str | None, laps: list[dict], easy_pace_sec: float | None) -> str | None:
+def build_description(user_desc: str | None, laps: list[dict], easy_pace_sec: float | None,
+                      comment: str | None = None) -> str | None:
     """User notes win if they already describe the workout; otherwise add a lap summary."""
     if user_desc and is_workout_description(user_desc):
         return user_desc
-    summary = summarize_workout(laps, easy_pace_sec)
+    summary = summarize_workout(laps, easy_pace_sec, comment)
     if user_desc and summary:
         return f"{user_desc}\n\n{summary}"
     return summary or user_desc
+
+
+def refresh_activity_lap_summary(activity: Activity, db: Session) -> bool:
+    """Re-read one run's "Garmin laps: ..." text, e.g. after the athlete's comment named the
+    structure ("2x12min"). Same rules as refresh_lap_summaries; the caller commits."""
+    if activity.source != "garmin" or "Garmin laps:" not in (activity.description or ""):
+        return False
+    try:
+        laps = json.loads(activity.splits or "[]")
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(laps, list) or not all(isinstance(lap, dict) for lap in laps):
+        return False
+    easy = EasyPaceIndex(activity.user_id, db).at(activity.date)
+    summary = summarize_workout(laps, easy, activity.feel_notes) if easy else None
+    if not summary:
+        return False
+    head = activity.description.split("Garmin laps:")[0].rstrip()
+    updated = f"{head}\n\n{summary}" if head else summary
+    if updated == activity.description:
+        return False
+    activity.description = updated
+    return True
 
 
 def refresh_lap_summaries(db: Session) -> int:
@@ -206,7 +230,7 @@ def refresh_lap_summaries(db: Session) -> int:
             continue
         index = indexes.setdefault(activity.user_id, EasyPaceIndex(activity.user_id, db))
         easy = index.at(activity.date)
-        summary = summarize_workout(laps, easy) if easy else None
+        summary = summarize_workout(laps, easy, activity.feel_notes) if easy else None
         if not summary:
             continue  # never delete a summary; without an easy-pace reference keep what's stored
         head = activity.description.split("Garmin laps:")[0].rstrip()
@@ -406,7 +430,8 @@ def _enrich(client, activity, source, db, easy_pace):
         pending(source, type(exc).__name__)
         return False
     activity.splits = json.dumps(laps)
-    activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace)
+    activity.description = build_description(_strip_lap_summary(activity.description), laps, easy_pace,
+                                             activity.feel_notes)
     activity.has_workout_description = is_workout_description(activity.description)
     source.fit_checked_at = datetime.now()
     source.enrichment_status, source.parser_version = 'complete', PARSER_VERSION
@@ -713,7 +738,7 @@ def reanalyze_laps(user_id: int, db: Session) -> dict:
             continue
         if not laps or "distance_m" not in laps[0]:
             continue  # legacy Strava mile splits, not Garmin laps
-        new_desc = build_description(_strip_lap_summary(a.description), laps, easy_paces.at(a.date))
+        new_desc = build_description(_strip_lap_summary(a.description), laps, easy_paces.at(a.date), a.feel_notes)
         if new_desc != a.description:
             a.description = new_desc
             a.has_workout_description = is_workout_description(new_desc)

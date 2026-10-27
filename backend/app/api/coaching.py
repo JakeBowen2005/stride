@@ -57,7 +57,19 @@ def create_review(user_id: int, req: ReviewRequest, db: Session = Depends(get_db
 
 @router.get('/{user_id}/jobs/{activity_id}')
 def job_status(user_id: int, activity_id: int, db: Session = Depends(get_db)):
-    row = db.query(CoachingJob).filter_by(user_id=user_id,activity_id=activity_id).order_by(CoachingJob.id.desc()).first()
+    row = db.query(CoachingJob).filter_by(user_id=user_id,activity_id=activity_id,plan_id=None).order_by(CoachingJob.id.desc()).first()
+    return _job(row)
+
+
+@router.get('/{user_id}/plans/{plan_id}/job')
+def block_job_status(user_id: int, plan_id: int, db: Session = Depends(get_db)):
+    """The automatic coach-perspective refresh a synced or commented run queued for this plan."""
+    row = db.query(CoachingJob).filter_by(user_id=user_id,plan_id=plan_id).filter(
+        CoachingJob.status != 'superseded').order_by(CoachingJob.id.desc()).first()
+    return _job(row)
+
+
+def _job(row):
     return {'enabled':settings.openai_auto_reviews, 'status':row.status if row else None,
             'attempts':row.attempts if row else 0, 'message':row.last_error if row else None}
 
