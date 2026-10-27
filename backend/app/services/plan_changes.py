@@ -16,8 +16,8 @@ from sqlalchemy import func
 
 from app.athlete_clock import day_start_utc, today as athlete_today
 from app.config import settings
-from app.core.request_ops import (CONTENT, DAY_NAMES, REDUCING, OpError, apply_ops, hard_adjacency,
-                                  request_violations, solve)
+from app.core.request_ops import (CONTENT, DAY_NAMES, REDUCING, OpError, apply_ops, constraint_problems,
+                                  hard_adjacency, request_violations, solve)
 from app.models.coaching import CoachingReview
 from app.models.plan import Plan, PlannedWorkout
 from app.models.plan_change import PlanChangeRequest
@@ -30,12 +30,14 @@ MAX_TEXT = 500
 MAX_CLARIFY_ROUNDS = 2
 
 # Deterministic pre-screen, before any model call. The model may only tighten it.
-RED_FLAGS = re.compile(r"\b(chest (pain|tight\w*)|faint\w*|passed out|black(ed)? out|short(ness)? of breath|can'?t breathe|"
-                       r"heart (racing|palpitation\w*)|palpitation\w*|collaps\w*)\b", re.I)
-INJURY = re.compile(r"\b(pain\w*|injur\w*|sprain\w*|strain\w*|stress fracture|fracture\w*|tendon\w*|tendinitis|shin ?splints?|"
-                    r"achilles|it ?band|plantar|limp\w*|swollen|swelling|hurt\w*|tweak\w*|niggle\w*)\b", re.I)
-ILLNESS = re.compile(r"\b(sick|ill|illness|fever\w*|flu|covid|cold|virus|vomit\w*|nause\w*|stomach bug|food poisoning|"
-                     r"sore throat|congest\w*|chills)\b", re.I)
+# Phrases, not bare words: "cold Saturday", "sick of it", "painting" and "my plans collapsed" are not symptoms.
+RED_FLAGS = re.compile(r"\b(chest (pain|tight\w*|pressure)|faint(ed|ing)|passed out|black(ed)? out|short(ness)? of breath|"
+                       r"can'?t (catch my )?breathe?|heart (racing|palpitation\w*)|palpitations|collapsed (on|during|while|after))\b", re.I)
+INJURY = re.compile(r"\b(pain|painful|injur(y|ed|ies)|sprain(ed)?|strain(ed)?|stress fracture|fractured?|tendon\w*|tendin\w*|"
+                    r"shin ?splints?|achilles|it ?band|plantar|limp(ing)?|swollen|swelling|(it|knee|shin|calf|foot|hip|ankle|hamstring|"
+                    r"back) (hurts|is hurting|aches)|hurt my|niggle\w*|tweaked my)\b", re.I)
+ILLNESS = re.compile(r"\b(fever\w*|flu|covid|vomit\w*|nause\w*|stomach bug|food poisoning|sore throat|chills|"
+                     r"(i'?m|i am|feeling|feel|got|getting|have|caught|coming down with)( a)? (sick|ill|unwell|cold|virus|bug))\b(?! of)", re.I)
 SAFETY_RANK = {'none': 0, 'illness': 1, 'injury': 2, 'red_flag': 3}
 
 
@@ -54,8 +56,12 @@ def screen(text: str) -> str:
 
 
 def tighten(screened: str, model_safety: str | None) -> str:
-    """The model's reading can only make the safety level stricter, never looser."""
-    return max(screened, model_safety or 'none', key=lambda s: SAFETY_RANK.get(s, 0))
+    """The model can make the level stricter. It may clear a word-list "illness" match the context shows
+    is not one ("cold weather"), but never an injury or red flag."""
+    model = model_safety or 'none'
+    if screened == 'illness' and model == 'none':
+        return 'none'
+    return max(screened, model, key=lambda s: SAFETY_RANK.get(s, 0))
 
 
 # ---------------------------------------------------------------- the editable window
@@ -279,9 +285,27 @@ def ai_available(user: User) -> bool:
 
 # ---------------------------------------------------------------- the request lifecycle
 
+def undo_blocker(row: PlanChangeRequest, db) -> str | None:
+    """Why an applied change can no longer be undone, or None when it can."""
+    from app.api.plans import _get_activities_for_date
+    after = json.loads(row.after_rows or '{}')
+    rows = {str(r.id): r for r in db.query(PlannedWorkout).filter(PlannedWorkout.id.in_([int(i) for i in after])).all()}
+    today = athlete_today().isoformat()
+    for rid, snap in after.items():
+        pw = rows.get(rid)
+        if pw is None:
+            return 'That week has been replaced by a new block, so there is nothing to undo.'
+        if _snapshot(pw) != snap:
+            return f'{_label(pw.date)} has changed since, so undo would overwrite a newer edit.'
+        if pw.date < today or pw.activity_id or _get_activities_for_date(pw.date, row.user_id, db):
+            return f'{_label(pw.date)} is already run or past, so the change stays.'
+    return None
+
+
 def serialize(row: PlanChangeRequest, db=None) -> dict:
     proposal = json.loads(row.proposal or '{}')
-    return {'id': row.id, 'status': row.status, 'source': row.source, 'safety': row.safety,
+    extra = {'undoable': undo_blocker(row, db) is None} if db is not None and row.status == 'applied' else {}
+    return extra | {'id': row.id, 'status': row.status, 'source': row.source, 'safety': row.safety,
             'request_text': row.request_text, 'thread': json.loads(row.thread or '[]'),
             'understood': proposal.get('understood'), 'constraints': proposal.get('constraints', []),
             'ops': proposal.get('ops', []), 'changes': proposal.get('changes', []),
@@ -369,14 +393,19 @@ def create(user_id: int, text: str, db, *, constraints: list[dict] | None = None
     row.safety = screen(full_text)
 
     if row.safety == 'red_flag':
-        skip = [{'op': 'skip', 'date': d['date']} for d in ctx['days'] if d['editable'] and d['distance_miles'] > 0][:3]
-        row.status = 'safety'
-        row.proposal = json.dumps({'note': SAFETY_NOTES['red_flag'], 'ops': skip, 'understood': None, 'constraints': []})
+        _red_flag(row, ctx, None)
         db.commit()
         return serialize(row)
 
     if constraints is not None:  # the quick picker: rules only, no model call
         picked = valid_constraints(constraints, ctx)
+        if not picked or not constraint_problems(ctx['days'], picked, ctx['easy_pace']):
+            # Nothing to rearrange: those days are already easy or rest (or outside the window).
+            _finish(row, plan, ctx, kind='no_change', understood=_describe(picked), constraints=picked, ops=None,
+                    explanation='Your plan already fits that: nothing hard is on those days.' if picked else
+                    'Those days are already run or outside the next two weeks.', reasons=[], source='picker', db=db)
+            db.commit()
+            return serialize(row)
         ops, reasons = solver_proposal(plan, ctx, picked, db, reduce_only=row.safety != 'none')
         _finish(row, plan, ctx, kind='proposal', understood=_describe(picked), constraints=picked, ops=ops,
                 explanation=_solver_explanation(ops, ctx) if ops else None, reasons=reasons, source='picker', db=db)
@@ -410,10 +439,9 @@ def create(user_id: int, text: str, db, *, constraints: list[dict] | None = None
         row.output_tokens += usage.get('output_tokens', 0)
         if result is None:
             break
-        row.safety = tighten(row.safety, result.safety)
+        row.safety = tighten(screen(full_text), result.safety)
         if row.safety == 'red_flag':
-            row.status = 'safety'
-            row.proposal = json.dumps({'note': SAFETY_NOTES['red_flag'], 'ops': [], 'understood': result.understood, 'constraints': []})
+            _red_flag(row, ctx, result.understood)
             db.commit()
             return serialize(row)
         cons = valid_constraints([c.model_dump() for c in result.constraints], ctx)
@@ -453,6 +481,14 @@ def create(user_id: int, text: str, db, *, constraints: list[dict] | None = None
     return serialize(row)
 
 
+def _red_flag(row: PlanChangeRequest, ctx: dict, understood: str | None) -> None:
+    """Same answer whichever check caught it: a medical note and an offer to skip the next 3 run days."""
+    skip = [{'op': 'skip', 'date': d['date']} for d in ctx['days'] if d['editable'] and d['distance_miles'] > 0][:3]
+    row.status = 'safety'
+    row.proposal = json.dumps({'note': SAFETY_NOTES['red_flag'], 'ops': skip, 'understood': understood, 'constraints': [],
+                               'changes': diff(ctx, apply_ops(ctx['days'], skip)) if skip else []})
+
+
 def _label(iso: str) -> str:
     d = date.fromisoformat(iso)
     return f"{DAY_NAMES[d.weekday()].title()} {d.strftime('%b')} {d.day}"
@@ -479,7 +515,7 @@ def _solver_explanation(ops: list[dict] | None, ctx: dict) -> str | None:
         elif o['op'] == 'skip':
             parts.append(f"{_label(o['date'])} becomes rest")
         elif o['op'] == 'shorten':
-            parts.append(f"{_label(o['date'])} drops to {o['miles']:g} mi")
+            parts.append(f"{_label(o['date'])} gets shorter")
     return ('Rearranged by Stride\'s rules: ' + '; '.join(parts) + '. Hard days stay apart, and the week never gets bigger.')
 
 
@@ -534,28 +570,22 @@ def apply(user_id: int, request_id: int, db) -> dict:
     except Exception:
         db.rollback()
         raise
-    return serialize(row)
+    return serialize(row, db)
 
 
 def undo(user_id: int, request_id: int, db) -> dict:
-    from app.api.plans import _begin_schedule_write, _get_activities_for_date, _session_minutes, _validate_schedule
+    from app.api.plans import _begin_schedule_write, _session_minutes, _validate_schedule
     _begin_schedule_write(db)
     row = db.get(PlanChangeRequest, request_id)
     if not row or row.user_id != user_id:
         raise HTTPException(404, 'Request not found')
     if row.status != 'applied':
         raise HTTPException(409, 'Only an applied change can be undone.')
-    before, after = json.loads(row.before_rows or '{}'), json.loads(row.after_rows or '{}')
-    today = athlete_today().isoformat()
+    before = json.loads(row.before_rows or '{}')
+    blocker = undo_blocker(row, db)
+    if blocker:
+        raise HTTPException(409, blocker)
     rows = {str(r.id): r for r in db.query(PlannedWorkout).filter(PlannedWorkout.id.in_([int(i) for i in before])).all()}
-    for rid, snap in after.items():
-        pw = rows.get(rid)
-        if pw is None:
-            raise HTTPException(409, 'That week has been replaced by a new block, so there is nothing to undo.')
-        if _snapshot(pw) != snap:
-            raise HTTPException(409, f'{_label(pw.date)} has changed since, so undo would overwrite a newer edit.')
-        if pw.date < today or pw.activity_id or _get_activities_for_date(pw.date, user_id, db):
-            raise HTTPException(409, f'{_label(pw.date)} is already run or past, so the change stays.')
     plan = db.get(Plan, row.plan_id)
     try:
         # Time limits judge only what undo adds back beyond the current (approved) days.
@@ -585,4 +615,4 @@ def discard(user_id: int, request_id: int, db) -> dict:
 
 def history(user_id: int, db, limit: int = 10) -> list[dict]:
     rows = (db.query(PlanChangeRequest).filter_by(user_id=user_id).order_by(PlanChangeRequest.id.desc()).limit(limit).all())
-    return [serialize(r) for r in rows]
+    return [serialize(r, db) for r in rows]

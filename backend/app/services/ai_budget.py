@@ -54,14 +54,21 @@ def spent(db, user_id: int | None = None) -> float:
 
 
 def athlete_cap(user_id: int, db) -> float:
-    from app.models.account import Account
-    account = db.get(Account, user_id)
-    owner = (account.role == 'owner') if account is not None and account.role else user_id == settings.default_user_id
-    return settings.openai_owner_monthly_budget_usd if owner else settings.openai_athlete_monthly_budget_usd
+    from app.services.accounts import is_owner
+    return settings.openai_owner_monthly_budget_usd if is_owner(user_id, db) else settings.openai_athlete_monthly_budget_usd
 
 
 def check(user_id: int, db) -> None:
-    if spent(db) >= settings.openai_monthly_budget_usd:
+    from app.services.accounts import is_owner, owner_ids
+    total = spent(db)
+    if is_owner(user_id, db):
+        limit_hit = total >= settings.openai_monthly_budget_usd
+    else:
+        # The owner's allowance is reserved inside the app-wide cap, so invitees can't use it up.
+        owners = sum(spent(db, uid) for uid in owner_ids(db))
+        athletes_pool = max(0.0, settings.openai_monthly_budget_usd - settings.openai_owner_monthly_budget_usd)
+        limit_hit = total >= settings.openai_monthly_budget_usd or total - owners >= athletes_pool
+    if limit_hit:
         raise HTTPException(429, "This month's app AI budget is used up. Training rules and saved reviews still work.")
     if spent(db, user_id) >= athlete_cap(user_id, db):
         raise HTTPException(429, "You've used this month's AI coaching allowance. Training rules and saved reviews still work; "
@@ -69,5 +76,9 @@ def check(user_id: int, db) -> None:
 
 
 def usage(user_id: int, db) -> dict:
-    return {'month_start': month_start().date().isoformat(), 'spent_usd': round(spent(db, user_id), 4),
-            'cap_usd': athlete_cap(user_id, db)}
+    from app.services.accounts import is_owner
+    used, cap = spent(db, user_id), athlete_cap(user_id, db)
+    out = {'month_start': month_start().date().isoformat(), 'used_percent': min(100, round(100 * used / cap)) if cap else 100,
+           'owner': is_owner(user_id, db)}
+    # Dollar amounts are operator information; athletes see how much of their allowance is used.
+    return out | ({'spent_usd': round(used, 4), 'cap_usd': cap} if out['owner'] else {})

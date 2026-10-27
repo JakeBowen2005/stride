@@ -139,7 +139,7 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
               </ComposedChart>
             </ResponsiveContainer>
             <p className="text-xs text-muted-foreground">
-              The latest {noun} is still in progress. Periods with no recorded runs show as zero; missing uploads are not proven rest.
+              Garmin data. The latest {noun} is still in progress. Periods with no recorded runs show as zero; missing uploads are not proven rest.
               {timeMode && " Time is moving time from your watch; walks never count, and planned time is estimated from each block's easy pace."}
               {timeMode && untimed > 0 && ` ${untimed} run${untimed === 1 ? " has" : "s have"} no recorded time and ${untimed === 1 ? "is" : "are"} missing from these hours.`}
             </p>

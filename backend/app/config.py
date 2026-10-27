@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     openai_plan_change_model: str = ""
     openai_plan_change_daily_limit: int = 10
     # Monthly dollar caps (docs/multi-user-design.md §2.6); daily attempt limits stay as a burst guard.
-    openai_monthly_budget_usd: float = 15.0
+    openai_monthly_budget_usd: float = 15.0  # app-wide; the owner's allowance is reserved inside it
     openai_athlete_monthly_budget_usd: float = 1.0
     openai_owner_monthly_budget_usd: float = 10.0
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"

@@ -674,7 +674,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         # A plan whose last day is behind us shouldn't be shown as "current"
         "is_stale": db_plan.end_date < today,
         "phase": _current_phase(weeks, today),
-        "load": json.loads(db_plan.load) if db_plan.load else None,
+        "load": _visible_load(db_plan, user_id, db),
         "assessment": json.loads(db_plan.assessment) if db_plan.assessment else None,
         "quality_policy": json.loads(db_plan.athlete_snapshot or "{}").get("quality_policy"),
         "weeks": weeks,
@@ -686,6 +686,16 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         "review": _review(db_plan),
         "expectations": expectations(weeks,json.loads(db_plan.athlete_snapshot or "{}").get("easy_pace_seconds",600)),
     }
+
+
+def _visible_load(db_plan: Plan, user_id: int, db: Session) -> dict | None:
+    """Shadow hours budgets are for the owner to review (docs/aerobic-hours.md phase 2), not for athletes:
+    a guard that is shown but not applied would only undermine trust in the plan."""
+    from app.services.accounts import is_owner
+    load = json.loads(db_plan.load) if db_plan.load else None
+    if load and not is_owner(user_id, db):
+        load.pop("shadow_hours", None)
+    return load
 
 
 def _run_days_since(user: User, db: Session) -> list[int]:

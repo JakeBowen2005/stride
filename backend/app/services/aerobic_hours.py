@@ -106,7 +106,8 @@ def shadow(plan_data: dict, user_id: int, db, easy_pace: float) -> dict:
             notes.append(f"Week {week.get('week_number', i + 1)}: ≈{minutes / 60:.1f} h planned vs a {budget_hours:.1f} h time budget "
                          "(not enforced yet).")
         for f in flagged:
-            notes.append(f"{f['date']}: {f['title']} ({f['miles']:g} mi, ≈{f['minutes']} min) is over 10% longer than your longest "
+            when = datetime.fromisoformat(f['date'])
+            notes.append(f"{when:%a %b} {when.day}: {f['title']} ({f['miles']:g} mi, ≈{f['minutes']} min) is over 10% longer than your longest "
                          "run of the last 30 days (not enforced yet).")
         # Within a block, week 2 may step once more from week 1's planned longest run.
         longest_planned = max(days, key=lambda d: d['distance_miles'], default=None)

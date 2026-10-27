@@ -286,3 +286,52 @@ def test_requests_listed_with_remaining(ai):
     assert listing["ai_available"] and listing["remaining_today"] == settings.openai_plan_change_daily_limit - 1
     assert listing["requests"][0]["request_text"] == "Is my week fine?"
     assert start
+
+
+# ---------------------------------------------------------------- review fixes
+
+@pytest.mark.parametrize("text", ["It'll be cold Saturday, can the long run go Sunday?", "I'm sick of early alarms",
+                                  "Painting the house Thursday", "My plans collapsed, so Friday is free", "tweak my week please"])
+def test_everyday_words_are_not_symptoms(text):
+    from app.services.plan_changes import screen
+    assert screen(text) == "none"
+
+
+@pytest.mark.parametrize("text,level", [("I caught a cold", "illness"), ("I'm sick", "illness"), ("got a fever", "illness"),
+                                        ("my knee hurts", "injury"), ("sprained my ankle", "injury"),
+                                        ("chest pain on my run", "red_flag"), ("I fainted yesterday", "red_flag")])
+def test_symptoms_are_screened(text, level):
+    from app.services.plan_changes import screen
+    assert screen(text) == level
+
+
+def test_model_may_clear_only_an_illness_match():
+    from app.services.plan_changes import tighten
+    assert tighten("illness", "none") == "none"
+    assert tighten("injury", "none") == "injury"
+    assert tighten("none", "injury") == "injury"
+
+
+def test_picker_on_easy_days_says_no_change():
+    start = seed()
+    body = client.post("/api/plans/1/requests", json={"constraints": no_hard(start, 2, 4)}).json()
+    assert body["status"] == "no_change" and "already fits" in body["explanation"]
+
+
+def test_applied_change_reports_undoable():
+    start = seed()
+    body = client.post("/api/plans/1/requests", json={"constraints": no_hard(start, 5, 6)}).json()
+    assert client.post(f"/api/plans/1/requests/{body['id']}/apply").json()["undoable"] is True
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source="manual", date=datetime.combine(start + timedelta(days=3), datetime.min.time()),
+                        distance_meters=21000, duration_seconds=6300))
+        db.commit()
+    listing = client.get("/api/plans/1/requests").json()
+    assert listing["requests"][0]["undoable"] is False and listing["daily_limit"] == settings.openai_plan_change_daily_limit
+
+
+def test_red_flag_from_the_model_also_offers_rest(ai):
+    seed()
+    ai([proposal(safety="red_flag")])
+    body = client.post("/api/plans/1/requests", json={"text": "felt weird on my run yesterday"}).json()
+    assert body["status"] == "safety" and body["ops"] and all(o["op"] == "skip" for o in body["ops"])

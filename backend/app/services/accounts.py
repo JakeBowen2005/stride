@@ -28,6 +28,25 @@ PASSWORDS=LimitedPasswords()
 DUMMY_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
 
 
+def is_owner(user_id, db):
+    """The operator: an account with role 'owner', or the configured athlete in owner (single-password) mode."""
+    from app.config import settings
+    from app.models.account import Account
+    account = db.get(Account, user_id)
+    if account is not None and account.role:
+        return account.role == 'owner'
+    return user_id == settings.default_user_id
+
+
+def owner_ids(db):
+    from app.config import settings
+    from app.models.account import Account
+    ids = {a.user_id for a in db.query(Account).filter_by(role='owner')}
+    if not settings.accounts_enabled:
+        ids.add(settings.default_user_id)
+    return ids
+
+
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 

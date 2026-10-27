@@ -65,3 +65,20 @@ def test_generated_block_records_shadow_hours():
         import json
         load = json.loads(db.query(Plan).order_by(Plan.id.desc()).first().load)
     assert load["shadow_hours"]["enforced"] is False and load["shadow_hours"]["weeks"]
+
+
+def test_shadow_hours_are_owner_only(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.config import settings
+    from app.main import app
+    _runs()
+    client = TestClient(app)
+    assert client.post("/api/plans/1/preview").status_code == 200
+    with SessionLocal() as db:
+        from app.models.plan import Plan
+        p = db.query(Plan).order_by(Plan.id.desc()).first()
+        p.is_active, p.preview_state = True, None
+        db.commit()
+    assert "shadow_hours" in client.get("/api/plans/1/current").json()["load"]
+    monkeypatch.setattr(settings, "default_user_id", 99)
+    assert "shadow_hours" not in client.get("/api/plans/1/current").json()["load"]

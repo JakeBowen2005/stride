@@ -473,14 +473,14 @@ export default function PlanPage() {
             <span className="stat-label">Running time</span>{" "}
             <span className="text-muted-foreground">
               {plan.load.shadow_hours.weeks.map((w) => `W${w.week_number} ≈ ${hoursLabel(w.planned_minutes * 60)}`).join(" · ")}
-              {" · "}recent {plan.load.shadow_hours.hours_baseline.toFixed(1)} h/week
+              {" · "}recent {hoursLabel(plan.load.shadow_hours.hours_baseline * 3600)}/week
             </span>
           </summary>
           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-            <p>Time check in shadow mode: Stride records where a weekly hours budget or the longest-run guard would limit this block, but doesn&apos;t apply them yet.</p>
+            <p>Only you (the owner) see this. Time check in shadow mode: Stride records where a weekly hours budget or the longest-run guard would limit this block, but doesn&apos;t apply them yet.</p>
             {plan.load.shadow_hours.notes.length ? <ul className="list-disc pl-4">{plan.load.shadow_hours.notes.map((n) => <li key={n}>{n}</li>)}</ul>
               : <p>Nothing in this block would be limited.</p>}
-            {plan.load.shadow_hours.sustainable_hours > 0 && <p>Highest weekly time you&apos;ve held for 6 straight weeks (last 2 years): {plan.load.shadow_hours.sustainable_hours.toFixed(1)} h.</p>}
+            {plan.load.shadow_hours.sustainable_hours > 0 && <p>Highest weekly time you&apos;ve held for 6 straight weeks (last 2 years): {hoursLabel(plan.load.shadow_hours.sustainable_hours * 3600)}.</p>}
           </div>
         </details>
       )}

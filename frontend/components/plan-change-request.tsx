@@ -35,8 +35,10 @@ export type ChangeRequest = {
   note: string | null;
   ops: { op: string; date: string }[];
   cached?: boolean;
+  /** Applied changes only: false once a changed day is run, past or edited again */
+  undoable?: boolean;
 };
-type Listing = { requests: ChangeRequest[]; ai_available: boolean; remaining_today: number };
+type Listing = { requests: ChangeRequest[]; ai_available: boolean; remaining_today: number; daily_limit: number };
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
   let res: Response;
@@ -53,7 +55,7 @@ export function editableDays(days: Workout[], today: string): Workout[] {
   const last = new Date(`${today}T12:00:00`);
   last.setDate(last.getDate() + WINDOW_DAYS - 1);
   const end = last.toISOString().slice(0, 10);
-  return days.filter((d) => d.date >= today && d.date <= end && !d.actual && d.type !== "race");
+  return days.filter((d) => d.date >= today && d.date <= end && !d.actual && d.type !== "race" && d.prescribed !== false);
 }
 
 function weekday(date: string) {
@@ -86,8 +88,9 @@ export function PlanChangeRequest({ days, today, units, onChanged }: {
     getJson<Listing>(`/plans/${USER_ID}/requests`).then((l) => { if (live) setListing(l); }).catch(() => {});
     return () => { live = false; };
   }, [current?.status]);
-  const lastApplied = listing?.requests.find((r) => r.status === "applied") ?? null;
+  const lastApplied = listing?.requests.find((r) => r.status === "applied" && r.undoable) ?? null;
   const aiOff = listing !== null && !listing.ai_available;
+  const outOfRequests = listing !== null && listing.ai_available && listing.remaining_today <= 0;
 
   async function run(action: () => Promise<ChangeRequest>) {
     setBusy(true); setError(null);
@@ -130,16 +133,16 @@ export function PlanChangeRequest({ days, today, units, onChanged }: {
               </button>
             ))}
           </div>
-          <Textarea id="plan-request" value={text} maxLength={REQUEST_LIMIT} rows={3} enterKeyHint="send" disabled={busy}
+          <Textarea id="plan-request" value={text} maxLength={REQUEST_LIMIT} rows={3} disabled={busy}
             placeholder="e.g. Halloween weekend: out Friday and Saturday night, and I don't want my long run hungover."
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim() && !aiOff) suggest(); }} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{text.length}/{REQUEST_LIMIT}</span>
-            {listing && listing.ai_available && <span>{listing.remaining_today} of 10 left today</span>}
+            {listing && listing.ai_available && <span>{listing.remaining_today} of {listing.daily_limit} AI requests left today</span>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button className="h-10 flex-1 sm:h-9" disabled={busy || !text.trim() || aiOff} onClick={suggest}>
+            <Button className="h-10 flex-1 sm:h-9" disabled={busy || !text.trim() || aiOff || outOfRequests} onClick={suggest}>
               {busy && !picker ? <><Loader2 className="animate-spin" aria-hidden="true" /> Reading your week…</> : "Suggest changes"}
             </Button>
             <Button variant="outline" className="h-10 sm:h-9" aria-expanded={picker} onClick={() => setPicker((p) => !p)} disabled={busy}>
@@ -147,6 +150,7 @@ export function PlanChangeRequest({ days, today, units, onChanged }: {
             </Button>
           </div>
           {aiOff && !picker && <p className="text-xs text-muted-foreground">AI plan changes are off. The quick picker uses Stride&apos;s rules only and always works.</p>}
+          {outOfRequests && !picker && <p className="text-xs text-muted-foreground">You&apos;ve used today&apos;s AI requests. The quick picker still works, and the count resets at midnight.</p>}
           {picker && (
             <div className="glass-tile space-y-2 p-3.5">
               <p className="text-sm">Tap a day once for <strong>nothing hard</strong>, twice for <strong>no running</strong>.</p>
@@ -221,7 +225,7 @@ function Result({ request, units, busy, answer, setAnswer, onReply, onApprove, o
           </div>
         </div>
       )}
-      {(s === "proposed" || s === "safety" || s === "applied") && request.changes.length > 0 && (
+      {(s === "proposed" || s === "safety" || s === "applied") && request.changes?.length > 0 && (
         <ul className="divide-y rounded-lg border text-sm" aria-label="Changed days">
           {request.changes.map((c) => (
             <li key={c.date} className="flex flex-wrap items-baseline gap-x-2 px-3 py-2">
@@ -250,7 +254,7 @@ function Result({ request, units, busy, answer, setAnswer, onReply, onApprove, o
           <p className="text-muted-foreground">You can still move or skip a single session from the day&apos;s detail.</p>
         </div>
       )}
-      {s === "out_of_scope" && <p className="text-sm">This tool rearranges or lightens your week. For more training, ask for a coach review below or preview the next block.</p>}
+      {s === "out_of_scope" && <p className="text-sm">This tool rearranges or lightens your week. For more training, open &ldquo;Something about the training isn&apos;t working?&rdquo; below, or preview the next block.</p>}
       {s === "no_change" && <p className="text-sm">{request.explanation || "Your plan already fits that. Nothing needs to change."}</p>}
       {s === "ai_unavailable" && <p className="text-sm">{request.reasons[0]}</p>}
       {s === "stale" && <p className="text-sm">Your plan changed since this was suggested. Ask again for an up-to-date proposal.</p>}
@@ -266,7 +270,7 @@ function Result({ request, units, busy, answer, setAnswer, onReply, onApprove, o
             <Button variant="outline" className="h-10 sm:h-9" disabled={busy} onClick={onDiscard}>Discard</Button>
           </>
         )}
-        {s === "applied" && <Button variant="outline" className="h-10 sm:h-9" disabled={busy} onClick={onUndo}><Undo2 aria-hidden="true" /> Undo</Button>}
+        {s === "applied" && request.undoable !== false && <Button variant="outline" className="h-10 sm:h-9" disabled={busy} onClick={onUndo}><Undo2 aria-hidden="true" /> Undo</Button>}
         {s !== "clarifying" && <Button variant="ghost" className="h-10 sm:h-9" disabled={busy} onClick={onReset}>{s === "proposed" ? "Try different wording" : "New request"}</Button>}
       </div>
     </div>

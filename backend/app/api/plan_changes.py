@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.services import plan_changes
 
@@ -31,7 +32,8 @@ def list_requests(user_id: int, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     return {"requests": plan_changes.history(user_id, db),
             "ai_available": bool(user) and plan_changes.ai_available(user),
-            "remaining_today": plan_changes.remaining_today(user_id, db)}
+            "remaining_today": plan_changes.remaining_today(user_id, db),
+            "daily_limit": settings.openai_plan_change_daily_limit}
 
 
 @router.post("/{user_id}/requests")
