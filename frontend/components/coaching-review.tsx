@@ -9,6 +9,7 @@ import { coachingState } from "@/lib/coaching-state";
 import { useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { DERIVED_FROM_GARMIN } from "@/components/garmin-attribution";
 
 interface Review {
   id: number;
@@ -180,6 +181,7 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
         {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
         <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
       </div>}
+      {review.status === "ready" && <p className="text-[11px] text-muted-foreground">{DERIVED_FROM_GARMIN}</p>}
     </>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {error && configured === null && <Button size="sm" variant="outline" onClick={load}>Retry loading coach</Button>}

@@ -6,6 +6,7 @@ import { useUnits } from "@/components/unit-preferences";
 import { getJson, USER_ID } from "@/lib/api";
 import type { MileageBucket, MileagePeriod } from "@/lib/types";
 import { distanceValueInUnits, unitLabel } from "@/lib/units";
+import { hoursLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const VIEWS: { bucket: MileageBucket; label: string; noun: string }[] = [
@@ -13,6 +14,8 @@ const VIEWS: { bucket: MileageBucket; label: string; noun: string }[] = [
   { bucket: "month", label: "Monthly", noun: "month" },
   { bucket: "year", label: "Yearly", noun: "year" },
 ];
+
+type Metric = "distance" | "time";
 
 function periodLabel(start: string, bucket: MileageBucket, long = false) {
   // Noon local time so a YYYY-MM-DD start doesn't shift a day west of UTC
@@ -33,6 +36,8 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
   const [rows, setRows] = useState<MileagePeriod[] | null>(null);
   const [error, setError] = useState("");
   const [showData, setShowData] = useState(false);
+  const [metric, setMetric] = useState<Metric>("distance");
+  const timeMode = metric === "time";
 
   useEffect(() => {
     let active = true;
@@ -43,13 +48,19 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
   }, [bucket, revision]);
 
   const noun = VIEWS.find((v) => v.bucket === bucket)!.noun;
+  // Time is running (moving) time in hours; distance keeps the athlete's unit. Same buckets either way.
   const formatted = (rows ?? []).map((r) => ({
     ...r,
-    actual: Number(distanceValueInUnits(r.actual, units).toFixed(1)),
-    planned: r.planned == null ? null : Number(distanceValueInUnits(r.planned, units).toFixed(1)),
+    distance: Number(distanceValueInUnits(r.actual, units).toFixed(1)),
+    actual: timeMode ? Number(((r.actual_seconds ?? 0) / 3600).toFixed(1)) : Number(distanceValueInUnits(r.actual, units).toFixed(1)),
+    planned: timeMode
+      ? (r.planned_seconds == null ? null : Number((r.planned_seconds / 3600).toFixed(1)))
+      : (r.planned == null ? null : Number(distanceValueInUnits(r.planned, units).toFixed(1))),
     label: periodLabel(r.period_start, bucket),
     longLabel: periodLabel(r.period_start, bucket, true),
   }));
+  const shownUnit = timeMode ? "h" : unit;
+  const untimed = formatted.reduce((sum, r) => sum + (r.runs_without_time ?? 0), 0);
   const complete = formatted.filter((r) => !r.partial);
   const total = formatted.reduce((sum, r) => sum + r.actual, 0);
   const average = complete.length ? complete.reduce((sum, r) => sum + r.actual, 0) / complete.length : 0;
@@ -60,6 +71,16 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
   return (
     <div className="space-y-3 px-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Show volume as">
+          {(["distance", "time"] as const).map((m) => (
+            <button key={m} type="button" aria-pressed={metric === m} onClick={() => setMetric(m)}
+              className={cn("min-h-9 rounded-md px-3 text-xs font-medium transition-colors",
+                metric === m ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground")}>
+              {m === "distance" ? "Distance" : "Time"}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Group mileage by">
           {VIEWS.map((v) => (
             <button key={v.bucket} type="button" aria-pressed={bucket === v.bucket} onClick={() => setBucket(v.bucket)}
@@ -68,6 +89,7 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
               {v.label}
             </button>
           ))}
+        </div>
         </div>
         {hasPlanned && (
           <p className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -83,31 +105,44 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
         : (
           <>
             <dl className="grid grid-cols-3 gap-2">
-              <div><dt className="text-xs text-muted-foreground">Total shown</dt><dd className="font-mono text-base font-semibold">{total.toFixed(0)} {unit}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Avg per {noun}</dt><dd className="font-mono text-base font-semibold">{average.toFixed(1)} {unit}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Biggest {noun}</dt><dd className="font-mono text-base font-semibold">{peak ? `${peak.actual.toFixed(1)} ${unit}` : "—"}</dd>
+              <div><dt className="text-xs text-muted-foreground">Total shown</dt><dd className="font-mono text-base font-semibold">{total.toFixed(0)} {shownUnit}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Avg per {noun}</dt><dd className="font-mono text-base font-semibold">{average.toFixed(1)} {shownUnit}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Biggest {noun}</dt><dd className="font-mono text-base font-semibold">{peak ? `${peak.actual.toFixed(1)} ${shownUnit}` : "—"}</dd>
                 {peak && <dd className="text-xs text-muted-foreground">{peak.label}</dd>}</div>
             </dl>
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={formatted} margin={{ top: 8, right: 8, bottom: 0, left: -8 }} accessibilityLayer>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} width={44} />
+                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={timeMode} width={44}
+                  tickFormatter={(v) => (timeMode ? `${v} h` : String(v))} />
                 <Tooltip
                   cursor={{ fill: "var(--muted)" }}
                   contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                   labelFormatter={(_label, payload) => {
                     const row = payload?.[0]?.payload as (typeof formatted)[number] | undefined;
-                    return row ? `${row.longLabel}${row.partial ? " (so far)" : ""} · ${row.runs} run${row.runs === 1 ? "" : "s"}` : "";
+                    if (!row) return "";
+                    const head = `${row.longLabel}${row.partial ? " (so far)" : ""} · ${row.runs} run${row.runs === 1 ? "" : "s"}`;
+                    if (!timeMode) return `${head} · ${hoursLabel(row.actual_seconds ?? 0)}`;
+                    const stops = (row.elapsed_seconds ?? 0) - (row.actual_seconds ?? 0) >= 60 ? ` (${hoursLabel(row.elapsed_seconds ?? 0)} elapsed)` : "";
+                    return `${head} · ${row.distance.toFixed(1)} ${unit}${stops}`;
                   }}
-                  formatter={(value, name) => [`${Number(value).toFixed(1)} ${unit}`, name]}
+                  formatter={(value, name, item) => {
+                    const row = item?.payload as (typeof formatted)[number] | undefined;
+                    if (!timeMode || !row) return [`${Number(value).toFixed(1)} ${unit}`, name];
+                    return [hoursLabel(name === "Planned" ? row.planned_seconds ?? 0 : row.actual_seconds ?? 0), name];
+                  }}
                 />
                 <Bar dataKey="actual" name="Recorded" fill="var(--viz-series-1)" radius={[4, 4, 0, 0]} maxBarSize={38} isAnimationActive={false} />
                 {hasPlanned && <Line dataKey="planned" name="Planned" stroke="var(--muted-foreground)" strokeWidth={2} strokeDasharray="4 3"
                   dot={{ r: 2.5, fill: "var(--muted-foreground)", strokeWidth: 0 }} connectNulls={false} isAnimationActive={false} />}
               </ComposedChart>
             </ResponsiveContainer>
-            <p className="text-xs text-muted-foreground">The latest {noun} is still in progress. Periods with no recorded runs show as zero; missing uploads are not proven rest.</p>
+            <p className="text-xs text-muted-foreground">
+              Garmin data. The latest {noun} is still in progress. Periods with no recorded runs show as zero; missing uploads are not proven rest.
+              {timeMode && " Time is moving time from your watch; walks never count, and planned time is estimated from each block's easy pace."}
+              {timeMode && untimed > 0 && ` ${untimed} run${untimed === 1 ? " has" : "s have"} no recorded time and ${untimed === 1 ? "is" : "are"} missing from these hours.`}
+            </p>
             <button type="button" aria-expanded={showData} onClick={() => setShowData(!showData)} className="min-h-10 text-xs font-medium text-primary">
               {showData ? `Hide ${noun}ly totals` : `See ${noun}ly totals`}
             </button>
@@ -116,7 +151,7 @@ export function MileageOverTimeChart({ revision = 0 }: { revision?: number }) {
                 {formatted.map((r) => (
                   <div key={r.period_start}>
                     <dt className="text-xs text-muted-foreground">{r.longLabel}</dt>
-                    <dd className="font-mono text-sm">{r.actual.toFixed(1)} {unit}{hasPlanned && r.planned != null && <span className="text-muted-foreground"> / {r.planned.toFixed(1)} planned</span>}</dd>
+                    <dd className="font-mono text-sm">{timeMode ? hoursLabel(r.actual_seconds ?? 0) : `${r.actual.toFixed(1)} ${unit}`}{hasPlanned && r.planned != null && <span className="text-muted-foreground"> / {timeMode ? hoursLabel(r.planned_seconds ?? 0) : r.planned.toFixed(1)} planned</span>}</dd>
                   </div>
                 ))}
               </dl>

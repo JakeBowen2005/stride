@@ -5,6 +5,8 @@ export const LEGAL = {
   location: "California, United States",
   contactEmail: "jakeeb05@gmail.com",
   effectiveDate: "October 27, 2026",
+  /** Recorded on each account at registration; keep equal to TERMS_VERSION in backend/app/api/auth.py. */
+  termsVersion: "2026-10-27",
   /** Keep in sync with the S3 bucket's lifecycle rule for off-site backups. */
   offsiteBackupDays: 30,
 };

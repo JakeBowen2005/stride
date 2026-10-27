@@ -1,7 +1,7 @@
 """Auditable, cached model advice. Never itself an authority to change training."""
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -58,6 +58,7 @@ class CoachingAttempt(Base):
     number: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)  # tokens × the model's price, for monthly caps
     input_snapshot: Mapped[str] = mapped_column(Text)
     input_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)

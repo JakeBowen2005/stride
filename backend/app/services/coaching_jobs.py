@@ -30,10 +30,9 @@ def enqueue_synced_run(activity, db, ready=False):
         return
     if activity.date.date() < athlete_today()-timedelta(days=REVIEW_WINDOW_DAYS):
         return
-    if settings.accounts_enabled:
-        from app.models.user import User
-        if not db.get(User,activity.user_id).ai_consent:
-            return
+    from app.models.user import User
+    if not db.get(User,activity.user_id).ai_consent:  # every mode, the owner included
+        return
     db.flush()
     version = _evidence_version(activity)
     _enqueue_run_review(activity, version, db, ready)
@@ -152,10 +151,12 @@ def process_one():
         state, error, review_id = 'queued', type(exc).__name__, None
         delay = timedelta(minutes=5)
         if isinstance(exc, HTTPException) and exc.status_code==429:
-            error = 'Daily AI limit reached; waiting for the allowance to reset'
+            monthly = 'month' in str(exc.detail)
+            error = ('Monthly' if monthly else 'Daily') + ' AI limit reached; waiting for the allowance to reset'
             quota_wait = True
-            # The check costs nothing; hourly retries pick up the athlete's midnight reset or a raised limit
-            delay = timedelta(hours=1)
+            # Hourly retries pick up the athlete's midnight reset or a raised limit; a monthly cap
+            # resets on the 1st, so check far less often (each retry rebuilds the review context).
+            delay = timedelta(hours=12 if monthly else 1)
         logger.warning('Automatic review deferred (%s)', type(exc).__name__)
     with SessionLocal() as db:
         _begin_schedule_write(db)

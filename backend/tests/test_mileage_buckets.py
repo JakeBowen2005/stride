@@ -127,3 +127,41 @@ def test_aerobic_efficiency_scales_runs_to_one_heart_rate_and_skips_hills():
 def test_aerobic_efficiency_without_heart_rate_is_empty():
     data = client.get("/api/analysis/1/aerobic-efficiency").json()
     assert data["weeks"] == [] and data["change_sec_per_mile"] is None
+
+
+def test_running_time_moving_elapsed_walks_and_missing_durations():
+    monday = _monday(today())
+    db = SessionLocal()
+    db.add(Activity(user_id=1, source="garmin", external_id="t1", name="Run", date=datetime.combine(monday, datetime.min.time()),
+                    distance_meters=5 * MI, duration_seconds=2400, elapsed_seconds=2700))
+    db.add(Activity(user_id=1, source="garmin", external_id="t2", name="Run", date=datetime.combine(monday, datetime.min.time()),
+                    distance_meters=3 * MI, duration_seconds=1500, elapsed_seconds=None))  # legacy row: elapsed = moving
+    db.add(Activity(user_id=1, source="manual", external_id="t3", name="Run", date=datetime.combine(monday, datetime.min.time()),
+                    distance_meters=2 * MI, duration_seconds=0))
+    db.add(Activity(user_id=1, source="garmin", external_id="w", name="Walk", workout_type="walk",
+                    date=datetime.combine(monday, datetime.min.time()), distance_meters=2 * MI, duration_seconds=2000))
+    db.commit()
+    db.close()
+    row = client.get("/api/analysis/1/mileage?bucket=week&count=1&include=walks").json()[0]
+    assert row["actual"] == 10.0 and row["runs"] == 3
+    assert row["actual_seconds"] == 3900 and row["elapsed_seconds"] == 4200
+    assert row["runs_without_time"] == 1 and row["walk_seconds"] == 2000
+    assert "walk_seconds" not in client.get("/api/analysis/1/mileage?bucket=week&count=1").json()[0]
+
+
+def test_planned_time_uses_the_blocks_frozen_easy_pace():
+    import json
+    monday = _monday(today())
+    db = SessionLocal()
+    plan = Plan(user_id=1, start_date=monday.isoformat(), end_date=(monday + timedelta(days=6)).isoformat(),
+                athlete_snapshot=json.dumps({"easy_pace_seconds": 600}))
+    db.add(plan)
+    db.flush()
+    db.add(PlannedWorkout(plan_id=plan.id, date=monday.isoformat(), day_name="monday", week_number=1,
+                          type="easy", title="Easy", distance_miles=6))
+    db.add(PlannedWorkout(plan_id=plan.id, date=(monday + timedelta(days=1)).isoformat(), day_name="tuesday", week_number=1,
+                          type="rest", title="Rest", distance_miles=0))
+    db.commit()
+    db.close()
+    row = client.get("/api/analysis/1/mileage?bucket=week&count=1").json()[0]
+    assert row["planned"] == 6.0 and row["planned_seconds"] == 3600

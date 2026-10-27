@@ -66,7 +66,7 @@ def fresh_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday"))
+    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday", ai_consent=True))
     db.add(Goal(user_id=1, goal_type="race", race_distance="5k", target_time_seconds=1020, active=True))
     db.commit()
     db.close()

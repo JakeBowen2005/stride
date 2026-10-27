@@ -86,11 +86,14 @@ def get_weekly_mileage(user_id: int, weeks: int = Query(default=52), db: Session
 
 @router.get("/{user_id}/mileage")
 def get_mileage(user_id: int, bucket: Literal["week", "month", "year"] = "week",
-                count: int | None = Query(default=None, ge=1, le=104), db: Session = Depends(get_db)):
-    """Recorded vs planned miles per week, month or year, with empty periods filled in."""
+                count: int | None = Query(default=None, ge=1, le=104), include: str = Query(default="", max_length=40),
+                db: Session = Depends(get_db)):
+    """Recorded vs planned miles and running time per week, month or year, with empty periods filled in.
+
+    ``include=walks`` adds ``walk_seconds`` (walks are never part of running volume)."""
     if not db.get(User, user_id):
         raise HTTPException(404, "Athlete not found")
-    return compute_mileage(user_id, db, bucket, count)
+    return compute_mileage(user_id, db, bucket, count, include_walks="walks" in include.split(","))
 
 
 # --- Activities endpoints for frontend ---
@@ -242,6 +245,7 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "id": a.id,
         "external_id": a.external_id,
         "source": a.source,
+        "device_name": a.device_name,
         "date": a.date.isoformat() if a.date else None,
         "type": a.workout_type or "easy",
         "title": a.name or "Run",

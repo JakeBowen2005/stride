@@ -1,6 +1,12 @@
 # Plain-language plan changes (design)
 
-> Status: design only, Oct 26 2026. No application code has changed yet.
+> Status: phases 0–1 implemented Oct 27 2026 (`core/request_ops.py`, `services/plan_changes.py`,
+> `services/plan_change_ai.py`, `api/plan_changes.py`, `components/plan-change-request.tsx`).
+> Open questions in §6 were defaulted to the doc's recommendations: reduce/rearrange only, no
+> rest-day override, the later workout of the week is dropped first, a 14-day window, the old
+> "Ask coach" review kept under a disclosure, a separate 10/day cap, gpt-5.4-mini
+> (`OPENAI_PLAN_CHANGE_MODEL` to switch), clarify at most twice, undo until a changed day is run.
+> Not built yet: the eval set (§5 Phase 1) and phases 2–3.
 
 Jake's idea: the athlete writes what's coming up in their own words, for example *"It's Halloween
 weekend. I'm going out Friday and Saturday night and I don't want to do my long run hungover.

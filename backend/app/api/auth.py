@@ -12,6 +12,8 @@ from app.models.account import Account, AccountSession, AuthThrottle
 from app.models.user import User
 from app.services.accounts import COOKIE, PASSWORDS, DUMMY_HASH, digest, issue_session, session_user, utcnow
 
+TERMS_VERSION = '2026-10-27'  # bump with frontend/lib/legal.ts LEGAL.termsVersion when /terms changes
+
 router = APIRouter(prefix='/api/auth', tags=['accounts'])
 
 
@@ -30,6 +32,7 @@ class Registration(Credentials):
     invite_code: str = Field(min_length=1,max_length=256)
     timezone: str = 'America/Los_Angeles'
     ai_consent: bool = False
+    accept_terms: bool = False  # Garmin agreement §5.3: every athlete accepts the Terms of Service
 
 
 def throttle(request, email, db):
@@ -66,6 +69,8 @@ def register(data: Registration, request: Request, response: Response, db: Sessi
     throttle(request,email,db)
     if not settings.signup_invite_code or not secrets.compare_digest(data.invite_code, settings.signup_invite_code):
         raise HTTPException(403,'A valid invitation is required.')
+    if not data.accept_terms:
+        raise HTTPException(422,'Accept the Terms of Service to create an account.')
     try:
         ZoneInfo(data.timezone)
     except (ZoneInfoNotFoundError,ValueError):
@@ -73,7 +78,8 @@ def register(data: Registration, request: Request, response: Response, db: Sessi
     try:
         user = User(name=data.name.strip(), timezone=data.timezone, ai_consent=data.ai_consent,days_per_week=3,rest_days='monday,wednesday,friday,sunday',long_run_day='saturday')
         db.add(user); db.flush()
-        db.add(Account(user_id=user.id,email=email,password_hash=PASSWORDS.hash(data.password)))
+        db.add(Account(user_id=user.id,email=email,password_hash=PASSWORDS.hash(data.password),role='athlete',
+                       created_at=utcnow(),terms_accepted_at=utcnow(),terms_version=TERMS_VERSION))
         db.flush()
         set_session(response,user.id,db)
     except IntegrityError:
@@ -152,7 +158,10 @@ def export(request:Request,db:Session=Depends(get_db)):
     from starlette.responses import StreamingResponse
     uid=authenticated(request,db)
     def stream():
-        yield '{"format":"stride-export-v1","binary_encoding":"base64","tables":{'
+        # Garmin brand guidelines: exports of device-sourced data carry attribution.
+        yield ('{"format":"stride-export-v1","binary_encoding":"base64","attribution":'
+               '"Activity and health data from Garmin devices via Garmin Connect; see activities.device_name for the device.",'
+               '"tables":{')
         first_table=True
         for table,condition in owned_tables(uid):
             if table.name in {'accounts','account_sessions','provider_credentials'}:continue

@@ -26,6 +26,7 @@ MIN_EASY_FLOOR = 2.0  # used only when the budget can't support 3-mile easy days
 MAX_EASY = 10.0  # easy-day cap at normal volume; scales up for high-mileage weeks
 MAX_EASY_SHARE = 0.18  # ...to 18% of the week (e.g. 13.5 mi at 75 mpw)
 MIN_LONG_SHARE = 0.20  # long run won't be cut below 20% of the week
+LONG_RUN_SPACING_DAYS = 5  # a Stride heuristic: two long runs need most of a week between them
 
 
 def _round_half(d: float) -> float:
@@ -255,4 +256,11 @@ def validate_plan(
             if prev_hard and not (prev is not None and prev.get("b2b") and d.get("b2b")):
                 problems.append({"code": "hard_after_hard", "date": d["date"],
                                  "message": f"Hard day {d['date']} directly follows another hard day"})
+    # Long runs need most of a week between them (ultra back-to-back weekends excepted).
+    longs = [d for d in all_days if d["type"] == "long_run" and d.get("distance_miles", 0) > 0 and not d.get("b2b")]
+    for a, b in zip(longs, longs[1:]):
+        gap = (date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days
+        if gap < LONG_RUN_SPACING_DAYS and (a.get("prescribed", True) or b.get("prescribed", True)):
+            problems.append({"code": "long_run_spacing", "date": b["date"],
+                             "message": f"Long runs on {a['date']} and {b['date']} are only {gap} days apart; keep at least {LONG_RUN_SPACING_DAYS}."})
     return problems

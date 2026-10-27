@@ -21,7 +21,7 @@ import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SYNC_EVENT } from "@/components/garmin-sync";
-import { formatDateLong, formatDateShort } from "@/lib/format";
+import { formatDateLong, formatDateShort, hoursLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExecutedWorkout, PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
@@ -106,6 +106,13 @@ interface ApiPlan {
     reasons: string[];
     recent_week_miles?: number | null;
     planning_anchor?: number | null;
+    /** docs/aerobic-hours.md phase 2: recorded for review, never applied to the plan */
+    shadow_hours?: {
+      hours_baseline: number;
+      sustainable_hours: number;
+      weeks: { week_number: number; planned_minutes: number; hours_budget: number | null }[];
+      notes: string[];
+    } | null;
   } | null;
   assessment?: { decision: string | null; reasons: string[] } | null;
   outlook?: Outlook | null;
@@ -409,6 +416,10 @@ export default function PlanPage() {
             aiConfigured={aiConfigured}
             busy={generating}
             nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
+            days={allDays}
+            today={today}
+            units={units}
+            onPlanChanged={() => fetchPlan()}
             onAskCoach={(concern) => {
               setCoachRequest({ concern, nonce: Date.now() });
               setCoachOpen(true);
@@ -455,6 +466,24 @@ export default function PlanPage() {
             sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} />
         </div>
       </div>
+
+      {plan.load?.shadow_hours && (
+        <details className="glass rounded-[22px] px-4 py-3 text-sm">
+          <summary className="cursor-pointer">
+            <span className="stat-label">Running time</span>{" "}
+            <span className="text-muted-foreground">
+              {plan.load.shadow_hours.weeks.map((w) => `W${w.week_number} ≈ ${hoursLabel(w.planned_minutes * 60)}`).join(" · ")}
+              {" · "}recent {hoursLabel(plan.load.shadow_hours.hours_baseline * 3600)}/week
+            </span>
+          </summary>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>Only you (the owner) see this. Time check in shadow mode: Stride records where a weekly hours budget or the longest-run guard would limit this block, but doesn&apos;t apply them yet.</p>
+            {plan.load.shadow_hours.notes.length ? <ul className="list-disc pl-4">{plan.load.shadow_hours.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+              : <p>Nothing in this block would be limited.</p>}
+            {plan.load.shadow_hours.sustainable_hours > 0 && <p>Highest weekly time you&apos;ve held for 6 straight weeks (last 2 years): {hoursLabel(plan.load.shadow_hours.sustainable_hours * 3600)}.</p>}
+          </div>
+        </details>
+      )}
 
       <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
         <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />

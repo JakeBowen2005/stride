@@ -35,5 +35,5 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Everything except the login flow, the public privacy policy and about page, the Render
   // health check, Next internals and install assets (icon and manifest load before sign-in).
-  matcher: ["/((?!login|auth|privacy|about|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
+  matcher: ["/((?!login|auth|privacy|terms|about|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
 };
