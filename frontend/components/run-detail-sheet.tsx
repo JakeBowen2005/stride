@@ -289,7 +289,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               </div>
             )}
 
-            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}`} activityId={activity.id} />}
+            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}`} activityId={activity.id} hasComment={!!activity.notes || commentSaves > 0} />}
           </div>
 
           {activity.splits.length > 0 && (

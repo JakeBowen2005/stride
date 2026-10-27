@@ -36,6 +36,8 @@ export interface PlanDayLite {
     walks?: ActivityLine[];
     /** App feel already stored on the run itself */
     feel_rating?: number | null;
+    /** The main run's own comment */
+    notes?: string | null;
     /** The rating entered on the Garmin watch after the run (Stride's 1-10 scales) */
     watch_feel?: number | null;
     watch_effort?: number | null;
@@ -54,13 +56,14 @@ export interface PlanDayLite {
 const RUN_TITLE: Record<string, string> = { easy: "Easy run", long_run: "Long run", recovery: "Recovery run", race: "Race", workout: "Run" };
 
 /** Separate recordings stay separate; the total never becomes a workout or coach target. */
-function ActualRun({ day, onOpenActivity }: { day: PlanDayLite; onOpenActivity?: (id: number) => void }) {
+function ActualRun({ day, onOpenActivity, selected, setSelected }: {
+  day: PlanDayLite; onOpenActivity?: (id: number) => void; selected: string; setSelected: (key: string) => void;
+}) {
   const units = useUnits();
   const unit = unitLabel(units);
   const distance = (miles: number) => distanceInUnits(miles, units);
   const actual = day.actual!;
   const workout = actual.workout;
-  const [selected, setSelected] = useState("primary");
   const activities = [
     { key: "primary", id: actual.activity_id, kind: "Run", title: actual.session?.title ?? workout?.title ?? RUN_TITLE[day.type] ?? "Run", ...actual },
     ...(actual.other_runs ?? []).map((a) => ({ ...a, key: `run-${a.id}`, kind: "Run", title: a.name ?? "Additional run" })),
@@ -169,8 +172,8 @@ export function TodayCard({
   planStale: boolean;
   /** Feedback can change upcoming days and the plan — let the page reload its data */
   onFeedbackSaved?: () => void;
-  /** The coach's read on today's run, shown inline under it */
-  coach?: React.ReactNode;
+  /** The coach's read on the selected run, shown inline under it */
+  coach?: (activityId: number, hasComment: boolean) => React.ReactNode;
   /** Recovery signals are down: suggest easing a hard day before it's run */
   recoveryCaution?: boolean;
   onOpenActivity?: (id: number) => void;
@@ -184,6 +187,12 @@ export function TodayCard({
   const [open, setOpen] = useState(hardToday && !done);
   const [feedback, setFeedback] = useState(today?.feedback ?? null);
   const offPlan = !!today?.actual?.workout?.off_plan;
+  // The run tab in view (Run 1 / Run 2 / walk / day total) decides which comment and review show.
+  const [selected, setSelected] = useState("primary");
+  const [savedNotes, setSavedNotes] = useState<Record<number, string>>({});
+  const extra = today?.actual?.other_runs?.find((a) => `run-${a.id}` === selected) ?? null;
+  const walkSelected = selected.startsWith("walk-");
+  const primaryNotes = feedback?.feel_notes ?? today?.actual?.notes ?? null;
 
   const details = today && open && (
     <div className="mt-3 space-y-3 rounded-2xl bg-[var(--glass-inner)] p-3.5 text-sm">
@@ -194,7 +203,23 @@ export function TodayCard({
     </div>
   );
 
-  const feedbackBlocks = <>
+  const extraNotes = extra ? savedNotes[extra.id] ?? extra.notes ?? null : null;
+  // A second run of the day gets its own comment, saved to that recording (never the main run's).
+  const extraBlock = extra && (
+    <div className="glass-tile p-4">
+      {extraNotes
+        ? <details className="group"><summary className="min-h-8 text-sm text-muted-foreground transition-colors hover:text-foreground">Edit your comment on this run</summary>
+            <div className="mt-3"><FeedbackForm key={`extra-${extra.id}-edit`} compact activityId={extra.id} date={today!.date} initial={{ notes: extraNotes }}
+              watch={{ feel: extra.watch_feel, effort: extra.watch_effort }}
+              onSubmitted={(fb) => { setSavedNotes((m) => ({ ...m, [extra.id]: fb.feel_notes ?? "" })); onFeedbackSaved?.(); }} /></div></details>
+        : <><p className="mb-2 text-sm font-bold">How did this run go?</p>
+            <FeedbackForm key={`extra-${extra.id}`} compact activityId={extra.id} date={today!.date}
+              watch={{ feel: extra.watch_feel, effort: extra.watch_effort }}
+              onSubmitted={(fb) => { setSavedNotes((m) => ({ ...m, [extra.id]: fb.feel_notes ?? "" })); onFeedbackSaved?.(); }} /></>}
+    </div>
+  );
+
+  const feedbackBlocks = extra ? extraBlock : walkSelected ? null : <>
     {done && today && today.type !== "rest" && !feedback?.feel_notes && (
       <div className="glass-tile p-4">
         <p className="mb-2 text-sm font-bold">How did it go?</p>
@@ -223,7 +248,12 @@ export function TodayCard({
       <p key={`${c.change}-${c.date}`} className="px-1 text-xs text-muted-foreground">{c.reason}</p>
     ))}
   </>;
-  const coachBlock = coach && <section className="glass-tile space-y-3 p-4" aria-label="Coach analysis"><h3 className="text-[13px] font-bold">Coach analysis · main run</h3>{coach}</section>;
+  const coachRunId = extra ? extra.id : today?.actual?.activity_id;
+  const coachBlock = coach && coachRunId != null && !walkSelected && (
+    <section className="glass-tile space-y-3 p-4" aria-label="Coach analysis">
+      <h3 className="text-[13px] font-bold">Coach analysis · {extra ? "this run" : (today?.actual?.other_runs?.length ? "main run" : "today's run")}</h3>
+      {coach(coachRunId, !!(extra ? extraNotes : primaryNotes))}
+    </section>);
   // A finished run gets the wireframe's two columns on wide screens: the run, then comment + coach.
   const split = done;
 
@@ -241,7 +271,7 @@ export function TodayCard({
           <p className="py-2 text-sm text-muted-foreground">No plan for today yet.</p>
         ) : done ? (
           <>
-            <ActualRun day={today} onOpenActivity={onOpenActivity} />
+            <ActualRun day={today} onOpenActivity={onOpenActivity} selected={selected} setSelected={setSelected} />
             {today.type !== "rest" && (
               <div className="glass-tile space-y-1.5 px-4 py-3">
                 <h3 className="stat-label">Training context · main run</h3>

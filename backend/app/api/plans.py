@@ -1577,7 +1577,9 @@ def _activity_line(a: Activity) -> dict:
     miles = (a.distance_meters or 0) / 1609.34
     return {"id": a.id, "name": a.name, "distance_miles": round(miles, 2),
             "avg_pace": _format_pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
-            "duration_seconds": a.duration_seconds, "average_heartrate": a.average_heartrate}
+            "duration_seconds": a.duration_seconds, "average_heartrate": a.average_heartrate,
+            # Each recording has its own comment and watch rating (a second run is not the first)
+            "notes": a.feel_notes, "watch_feel": a.watch_feel, "watch_effort": a.watch_effort}
 
 
 def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] | None = None) -> dict:
@@ -1595,6 +1597,7 @@ def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] |
         "average_heartrate": primary.average_heartrate,
         "description": primary.description,
         "feel_rating": primary.feel_rating,
+        "notes": primary.feel_notes,
         # The watch's post-run rating, on Stride's 1-10 scales: prefills app feedback
         "watch_feel": primary.watch_feel,
         "watch_effort": primary.watch_effort,

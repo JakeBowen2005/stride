@@ -37,7 +37,7 @@ test('stale advice is explicit even without suggestions or after a prior accepte
     assert.match(coachingState({ stale: true, status: 'ready', suggestions: [], applied_candidate_id }, null), /Outdated advice/);
   }
   assert.match(coachingState({ stale: false, status: 'ready', suggestions: ['choice'], applied_candidate_id: null }, null), /awaiting your approval/);
-  assert.match(coachingState(null, 'queued'), /synced.*queued/);
+  assert.match(coachingState(null, 'queued'), /saved.*queued/);
 });
 test('Home uses backend primary identity and never chooses a later walk or shakeout', () => {
   const { primaryRunId } = load('../lib/activity-selection.ts');
