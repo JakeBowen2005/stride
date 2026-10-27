@@ -126,8 +126,8 @@ def _prior_hard(plan: Plan, db) -> set[str]:
     return {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
 
 
-def fingerprint(plan: Plan, user: User, db) -> str:
-    days, first, last = window(plan, db)
+def fingerprint(plan: Plan, user: User, db, days: list[dict] | None = None) -> str:
+    days = days if days is not None else window(plan, db)[0]
     data = {'today': athlete_today().isoformat(), 'plan': plan.id, 'rest': sorted(_rest_days(plan, user)),
             'limits': user.day_time_budgets,
             'days': [{k: d.get(k) for k in ('date', 'type', 'title', 'distance_miles', 'editable')} for d in days]}
@@ -343,7 +343,7 @@ def create(user_id: int, text: str, db, *, constraints: list[dict] | None = None
     if not text and not constraints:
         raise HTTPException(422, 'Tell me what is coming up, or pick days in the quick picker.')
     ctx = context(plan, user, db)
-    print_ = fingerprint(plan, user, db)
+    print_ = fingerprint(plan, user, db, ctx['days'])
     if answer_to:
         row = db.get(PlanChangeRequest, answer_to)
         if not row or row.user_id != user_id or row.status != 'clarifying':
@@ -497,7 +497,8 @@ def apply(user_id: int, request_id: int, db) -> dict:
     if row.status not in {'proposed', 'safety'}:
         raise HTTPException(409, 'This proposal can no longer be applied.')
     user, plan = _active(user_id, db)
-    if plan.id != row.plan_id or fingerprint(plan, user, db) != row.plan_fingerprint:
+    ctx = context(plan, user, db)
+    if plan.id != row.plan_id or fingerprint(plan, user, db, ctx['days']) != row.plan_fingerprint:
         row.status = 'stale'
         db.commit()
         raise HTTPException(409, 'Your plan changed since this was suggested. Ask again for an up-to-date proposal.')
@@ -505,7 +506,6 @@ def apply(user_id: int, request_id: int, db) -> dict:
     ops = proposal.get('ops') or []
     if not ops:
         raise HTTPException(409, 'Nothing to apply.')
-    ctx = context(plan, user, db)
     # Re-run the full validation under the write lock: the diff approved is exactly what is saved.
     after, reasons = evaluate(plan, ctx, ops, proposal.get('constraints', []), db, reduce_only=row.safety != 'none')
     if reasons:

@@ -140,3 +140,23 @@ See [automatic reviews and adaptive choices](docs/adaptive-sessions-and-demos.md
 ## Coaching trust and cloud operations
 
 See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity identity, reversible classification, partial-work evidence, execution-aware block assessment, stale-advice handling and the shared completed-calendar-week workload definition. [Deployment recovery](docs/deployment-recovery.md) covers pre-migration backups, verified restores, scheduled snapshots and optional encrypted offsite export. Settings exposes operational status, and health/readiness have separate endpoints. Existing cookies require sign-in again after the expiring-session upgrade.
+
+
+## Plain-language plan changes, running hours, multi-user prep (Oct 2026)
+
+- **Plan changes** (`docs/plain-language-plan-changes.md`): `plan_change_requests` stores each request,
+  its proposal, rejections, before/after row snapshots and a plan fingerprint. The AI returns only
+  constraints and move/swap/shorten/easy/skip ops (`plan_change_ai.PlanChangeProposal`); Stride applies
+  them in `read_only_trial` and runs `_validate_schedule` plus `request_ops.request_violations` (volume
+  never rises, no added workouts, long runs ≥5 days apart, reduce-only in taper/race week and when sick or
+  hurt, the request's own constraints). One retry, then the brute-force solver; the quick picker is
+  solver-only and costs nothing. Approve re-validates under `_begin_schedule_write`; undo restores
+  snapshots only when nothing changed since. Long-run spacing now lives in `validate_plan` for every plan.
+- **Running hours** (`docs/aerobic-hours.md`): `/analysis/{id}/mileage` returns moving, elapsed and
+  planned seconds; `services/aerobic_hours.shadow` records hours budgets and a longest-session guard on
+  each new block (`load.shadow_hours`) without enforcing them.
+- **AI spend**: `services/ai_budget` prices recorded tokens per model and enforces monthly caps
+  (`OPENAI_MONTHLY_BUDGET_USD`, per athlete and owner) on top of the daily attempt limits. AI consent is
+  required in every mode, the owner included.
+- **Garmin attribution**: `activities.device_name`, "Garmin <device>" on run views, a derived-data line
+  on AI reviews, and an attribution field in the export. `/terms` acceptance is recorded at registration.

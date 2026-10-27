@@ -1,6 +1,9 @@
 # Multi-user Stride: design
 
-Status: proposal, Oct 26 2026. Docs only: no application code changes with this document.
+Status: proposal, Oct 26 2026. Oct 27 2026: roadmap items 1–4, AI consent in every mode (5), the
+monthly dollar budgets (9) and `accounts.role` (10, partly) are implemented; see `docs/security.md`.
+Turning on account mode in Render, the entity decision, invitations, export-zip import, the
+Garmin Business transport and the PostgreSQL cutover are still open.
 Scope: going from one athlete (Jake, Personal API key) to a small invited group, each with
 their own Garmin account. It also reviews the Garmin Business (Starter) application draft.
 

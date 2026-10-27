@@ -1,6 +1,10 @@
 # Aerobic hours: evidence, protocol and the hours chart
 
-> Status: proposal (October 2026). Nothing in this document is implemented yet.
+> Status: phases 1–2 implemented Oct 27 2026. Running time is on History (Distance | Time), under
+> Today's mileage strip and in the mileage API; shadow budgets (R1–R4, R7 display) are recorded on
+> each new block's `load.shadow_hours` and shown on the Plan page, **not enforced**. Planned time
+> uses each block's frozen easy pace instead of a stored `estimated_minutes` column. Phases 3–5
+> wait on Jake's answers in §6 and 4–6 weeks of shadow data.
 > It answers two notes from Jake:
 > "Total number of hours of running / all activity is a good metric / chart to have up there;
 > we can use that in determining future volume too," and
