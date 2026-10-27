@@ -3,6 +3,7 @@ import math
 from datetime import datetime, timedelta
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity, PersonalRecord, is_walk, runs_only
@@ -10,6 +11,11 @@ from app.models.user import User
 
 
 def analyze_athlete(user_id: int, db: Session) -> dict:
+    from app.services.history_cache import cached
+    return cached(user_id, 'baseline', f'baseline-v1:{datetime.now().date()}', db, lambda: _analyze_athlete(user_id, db), persist=db.info.get('history_cache_write', False))
+
+
+def _analyze_athlete(user_id: int, db: Session) -> dict:
     """Analyze all of an athlete's running data to determine baseline fitness."""
     activities = (
         db.query(Activity)
@@ -455,13 +461,159 @@ def compute_weekly_mileage(user_id: int, db: Session, weeks: int = 52) -> list[d
     )
 
     weekly: dict[str, float] = {}
+    seconds: dict[str, float] = {}
     for act in activities:
         if act.date:
             week_start = act.date - timedelta(days=act.date.weekday())
             key = week_start.strftime("%Y-%m-%d")
             weekly[key] = weekly.get(key, 0) + act.distance_meters / 1609.34
+            seconds[key] = seconds.get(key, 0) + max(0, act.duration_seconds or 0)  # moving time
 
     return [
-        {"week_start": k, "actual": round(v, 1)}
+        {"week_start": k, "actual": round(v, 1), "seconds": round(seconds.get(k, 0))}
         for k, v in sorted(weekly.items())
     ]
+
+
+MILEAGE_BUCKETS = {"week": 16, "month": 12, "year": 10}
+
+
+def _bucket_start(day, bucket: str):
+    if bucket == "week":
+        return day - timedelta(days=day.weekday())
+    if bucket == "month":
+        return day.replace(day=1)
+    return day.replace(month=1, day=1)
+
+
+def _next_bucket(start, bucket: str):
+    if bucket == "week":
+        return start + timedelta(weeks=1)
+    if bucket == "month":
+        return start.replace(year=start.year + start.month // 12, month=start.month % 12 + 1)
+    return start.replace(year=start.year + 1)
+
+
+def compute_mileage(user_id: int, db: Session, bucket: str = "week", count: int | None = None,
+                    include_walks: bool = False) -> list[dict]:
+    """Recorded and planned volume per week, month or year, oldest first, in miles and running time.
+
+    Every bucket in the span is returned, so a break shows as 0 instead of vanishing.
+    Planned volume comes from approved blocks only; None means no block covered that period.
+    Running time is moving time (``duration_seconds``); elapsed time is tooltip context. Planned
+    time is estimated from each block's frozen easy pace, so it doesn't shift when paces
+    recalibrate (docs/aerobic-hours.md §4.1). Walks never count; ``include_walks`` reports them apart.
+    """
+    from app.athlete_clock import today
+    from app.models.plan import Plan, PlannedWorkout
+
+    count = count or MILEAGE_BUCKETS[bucket]
+    current = _bucket_start(today(), bucket)
+    if bucket == "year":
+        first = db.query(func.min(Activity.date)).filter(Activity.user_id == user_id, runs_only()).scalar()
+        start = _bucket_start(first.date(), bucket) if first else current
+        start = max(start, current.replace(year=current.year - count + 1))
+    else:
+        start = current
+        for _ in range(count - 1):
+            start = _bucket_start(start - timedelta(days=1), bucket)
+
+    rows = []
+    cursor = start
+    while cursor <= current:
+        rows.append({"period_start": cursor.isoformat(), "actual": 0.0, "runs": 0, "planned": None,
+                     "partial": cursor == current, "actual_seconds": 0.0, "elapsed_seconds": 0.0,
+                     "runs_without_time": 0, "planned_seconds": None}
+                    | ({"walk_seconds": 0.0} if include_walks else {}))
+        cursor = _next_bucket(cursor, bucket)
+    by_start = {r["period_start"]: r for r in rows}
+
+    activities = (
+        db.query(Activity.date, Activity.distance_meters, Activity.duration_seconds, Activity.elapsed_seconds)
+        .filter(Activity.user_id == user_id, Activity.date >= datetime.combine(start, datetime.min.time()), runs_only())
+        .all()
+    )
+    for when, meters, moving, elapsed in activities:
+        row = by_start.get(_bucket_start(when.date(), bucket).isoformat())
+        if row:
+            row["actual"] += (meters or 0) / 1609.34
+            row["runs"] += 1
+            if moving and moving > 0:
+                row["actual_seconds"] += moving
+                row["elapsed_seconds"] += elapsed if elapsed and elapsed >= moving else moving  # legacy rows: moving
+            else:
+                row["runs_without_time"] += 1  # counted, so the hours bar never silently under-reports
+    if include_walks:
+        walks = (db.query(Activity.date, Activity.duration_seconds)
+                 .filter(Activity.user_id == user_id, Activity.date >= datetime.combine(start, datetime.min.time()),
+                         Activity.workout_type == "walk").all())
+        for when, moving in walks:
+            row = by_start.get(_bucket_start(when.date(), bucket).isoformat())
+            if row:
+                row["walk_seconds"] += moving or 0
+
+    # A later approved block replaces an earlier one's days; drafts never count.
+    plan_for_day: dict[str, int] = {}
+    plans = (db.query(Plan.id, Plan.start_date, Plan.end_date, Plan.athlete_snapshot)
+             .filter(Plan.user_id == user_id, Plan.preview_state.is_(None), Plan.end_date >= start.isoformat())
+             .order_by(Plan.id).all())
+    easy_for_plan = {p[0]: (json.loads(p[3] or "{}").get("easy_pace_seconds") or 600) for p in plans}
+    for plan_id, first_day, last_day, _ in plans:
+        day = max(datetime.fromisoformat(first_day).date(), start)
+        while day.isoformat() <= last_day:
+            plan_for_day[day.isoformat()] = plan_id
+            day += timedelta(days=1)
+    if plan_for_day:
+        from app.core.time_budget import estimated_minutes
+        workouts = (db.query(PlannedWorkout.plan_id, PlannedWorkout.date, PlannedWorkout.distance_miles,
+                             PlannedWorkout.type, PlannedWorkout.prescription)
+                    .filter(PlannedWorkout.plan_id.in_(set(plan_for_day.values())), PlannedWorkout.moved_to.is_(None))
+                    .all())
+        for day in plan_for_day:
+            row = by_start.get(_bucket_start(datetime.fromisoformat(day).date(), bucket).isoformat())
+            if row and row["planned"] is None:
+                row["planned"] = 0.0
+                row["planned_seconds"] = 0.0
+        for plan_id, day, miles, kind, prescription in workouts:
+            if plan_for_day.get(day) != plan_id:
+                continue
+            row = by_start.get(_bucket_start(datetime.fromisoformat(day).date(), bucket).isoformat())
+            if row:
+                row["planned"] += miles or 0
+                if kind != "rest" and miles:
+                    row["planned_seconds"] += 60 * estimated_minutes(
+                        {"prescription": prescription, "distance_miles": miles}, easy_for_plan[plan_id])
+
+    for row in rows:
+        row["actual"] = round(row["actual"], 1)
+        if row["planned"] is not None:
+            row["planned"] = round(row["planned"], 1)
+            row["planned_seconds"] = round(row["planned_seconds"])
+        for key in ("actual_seconds", "elapsed_seconds", "walk_seconds"):
+            if key in row:
+                row[key] = round(row[key])
+    return rows
+
+
+def starter_analysis(user) -> dict | None:
+    """Baseline for an athlete with no recorded runs, from what they told us at onboarding.
+
+    Stride used to refuse to plan without activities. A real beginner has none, so the
+    first block comes from their stated starting point instead (fail safe: no workouts,
+    short sessions, run/walk when they can't yet run 20 minutes continuously). Returns
+    None when onboarding hasn't captured a starting point either.
+    """
+    if user.continuous_run_minutes is None and user.current_weekly_mileage is None:
+        return None
+    easy = 690.0  # 11:30/mi: a budgeting estimate only; sessions are prescribed by time/effort
+    if user.pr_5k:
+        easy = (user.pr_5k / 3.10686) * 1.6
+    pace = f"{int(easy // 60)}:{int(easy % 60):02d}"
+    reported = float(user.current_weekly_mileage or 0)
+    return {
+        "starter": True,
+        "overview": {"experience_level": user.experience_level or "beginner", "total_runs": 0},
+        "current_fitness": {"weekly_mileage_4w_avg": reported, "peak_weekly_mileage": float(user.peak_weekly_mileage or reported)},
+        "paces": {"easy_pace": pace, "recent_easy_pace": pace},
+        "injury_risk": {"assessment": "UNKNOWN — no recorded runs yet; starting conservatively"},
+    }

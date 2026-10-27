@@ -1,7 +1,7 @@
 """Auditable, cached model advice. Never itself an authority to change training."""
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -26,6 +26,8 @@ class CoachingReview(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     applied_candidate_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     policy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    input_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     athlete_concern: Mapped[str | None] = mapped_column(Text, nullable=True)  # "what isn't working", from Plan options
 
 
@@ -43,3 +45,25 @@ class CoachingJob(Base):
     review_id: Mapped[int | None] = mapped_column(ForeignKey('coaching_reviews.id'), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Set on block jobs: refresh this plan's coach perspective (activity_id = the run that triggered it)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey('plans.id'), nullable=True)
+
+
+class CoachingAttempt(Base):
+    """Each provider attempt retains its own inputs, including retries with new notes."""
+    __tablename__ = 'coaching_attempts'
+    __table_args__ = (UniqueConstraint('review_id', 'number'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey('coaching_reviews.id', ondelete='CASCADE'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)  # tokens × the model's price, for monthly caps
+    input_snapshot: Mapped[str] = mapped_column(Text)
+    input_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    policy_version: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(30), default='pending')
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)

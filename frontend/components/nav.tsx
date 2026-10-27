@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, History, Settings, Sun, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarDays, History, LogOut, Settings, Sun } from "lucide-react";
 import { GarminSync } from "@/components/garmin-sync";
 import { cn } from "@/lib/utils";
 
@@ -14,72 +15,75 @@ const links = [
 ];
 
 const isActive = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+// Sign-in and public pages (privacy policy, about) show only the wordmark: no app nav or Garmin status.
+const isAuthPage = (pathname: string) => pathname.startsWith("/login") || pathname.startsWith("/auth")
+  || pathname === "/privacy" || pathname === "/about";
 
 function Wordmark({ className }: { className?: string }) {
-  return (
-    <Link href="/" className={cn("flex items-center gap-1.5 font-heading text-lg font-black italic tracking-tight", className)}>
-      <Zap className="size-4 fill-[#34d399] text-[#34d399]" aria-hidden="true" /> STRIDE
-    </Link>
-  );
+  return <Link href="/" className={cn("wordmark rounded-full text-[21px] leading-none", className)}>Stride</Link>;
 }
 
-/** Desktop: fixed dark sidebar. Below 1024px: dark top bar (+ bottom tabs on phones). */
+/** The bar gains a stronger frosted background once the page scrolls under it. */
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return scrolled;
+}
+
+/** One sticky top bar: wordmark, a centered pill switcher (tablets and up), Garmin status and sign out. */
 export function Nav() {
   const pathname = usePathname();
-  if (pathname.startsWith("/login")) return <header className="bg-[var(--ink)] px-4 py-3 text-white"><Wordmark /></header>;
+  const scrolled = useScrolled();
+  if (isAuthPage(pathname)) return <header className="px-4 pt-5 sm:px-0"><Wordmark /></header>;
   return (
-    <>
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-[184px] flex-col bg-[var(--ink)] px-3 py-4 text-white lg:flex">
-        <Wordmark className="px-2 text-white" />
-        <nav className="mt-6 space-y-1" aria-label="Main">
+    <header className={cn("sticky top-0 z-50 -mx-0 transition-[padding] duration-200 sm:top-3 sm:pt-4", scrolled && "sm:pt-0")}>
+      <div className={cn("flex h-14 items-center justify-between gap-3 px-4 transition-all duration-200 sm:h-16 sm:rounded-full sm:border sm:px-3 sm:pl-5",
+        scrolled ? "glass-strong border-b shadow-[var(--glass-shadow)] sm:border-[var(--glass-border)]" : "border-transparent bg-transparent")}>
+        <Wordmark className="shrink-0" />
+        <nav className="glass-tile hidden items-center gap-1 rounded-full p-1 sm:flex" aria-label="Main">
           {links.map((link) => {
             const active = isActive(pathname, link.href);
             return (
               <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}
-                className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[#34d399]",
-                  active ? "bg-white text-[#1f1f1f]" : "text-[#d4d4cf] hover:bg-white/10 hover:text-white")}>
-                <link.icon className="size-4" aria-hidden="true" /> {link.label}
+                className={cn("rounded-full px-4 py-2 text-[13px] transition-colors lg:px-6",
+                  active ? "bg-primary font-bold text-primary-foreground shadow-sm" : "font-medium text-muted-foreground hover:bg-[var(--row-hover)] hover:text-foreground")}>
+                {link.label}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto border-t border-white/10 px-2 pt-3">
-          <GarminSync variant="sidebar" autoSync={false} />
-          <form action="/auth/logout" method="post" className="mt-3"><button className="min-h-9 text-xs text-[#d4d4cf] underline underline-offset-2">Sign out</button></form>
+        <div className="flex min-w-0 items-center justify-end gap-1 sm:w-[clamp(9rem,22vw,17rem)]">
+          <GarminSync variant="bar" />
+          <form action="/auth/logout" method="post" className="max-sm:hidden">
+            <button type="submit" aria-label="Sign out" title="Sign out"
+              className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--row-hover)] hover:text-foreground">
+              <LogOut className="size-4" aria-hidden />
+            </button>
+          </form>
         </div>
-      </aside>
-      <header className="sticky top-0 z-50 bg-[var(--ink)] text-white lg:hidden">
-        <div className="flex h-12 items-center justify-between px-4">
-          <Wordmark className="text-white" />
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Main">
-            {links.map((link) => {
-              const active = isActive(pathname, link.href);
-              return (
-                <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}
-                  className={cn("rounded-md px-3 py-1 text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#34d399]", active ? "bg-white text-[#1f1f1f]" : "text-[#d4d4cf] hover:text-white")}>
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
-      </header>
-    </>
+      </div>
+    </header>
   );
 }
 
+/** Phones: a floating glass tab bar above the home indicator. */
 export function MobileNav() {
   const pathname = usePathname();
-  if (pathname.startsWith("/login")) return null;
+  if (isAuthPage(pathname)) return null;
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--ink)] pb-[env(safe-area-inset-bottom)] sm:hidden" aria-label="Main">
-      <div className="flex h-14 items-stretch">
+    <nav className="fixed inset-x-3 bottom-[calc(.75rem+env(safe-area-inset-bottom))] z-50 sm:hidden" aria-label="Main">
+      <div className="glass-strong flex h-16 items-stretch gap-1 rounded-full p-1.5 shadow-[var(--glass-shadow)]">
         {links.map((link) => {
           const active = isActive(pathname, link.href);
           return (
             <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}
-              className={cn("flex flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#34d399]",
-                active ? "text-white" : "text-[#a8a8a2]")}>
+              className={cn("flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] font-semibold transition-colors focus-visible:outline-offset-[-3px]",
+                active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
               <link.icon className="size-5" aria-hidden="true" />
               {link.label}
             </Link>

@@ -22,17 +22,26 @@ class User(Base):
     units: Mapped[str] = mapped_column(String(10), default="miles")  # "miles" or "km"
     workout_format: Mapped[str] = mapped_column(String(10), default="distance")  # "distance" or "time"
 
+    timezone: Mapped[str | None] = mapped_column(String(80))
+    ai_consent: Mapped[bool | None] = mapped_column(Boolean, default=False)
+
     # Running background
     years_running: Mapped[float | None] = mapped_column(Float)
     current_weekly_mileage: Mapped[float | None] = mapped_column(Float)
     peak_weekly_mileage: Mapped[float | None] = mapped_column(Float)
     experience_level: Mapped[str | None] = mapped_column(String(20))  # beginner, intermediate, advanced, expert
+    # Starting point for someone with no running history: longest continuous run right now,
+    # and the Monday it was last set (run/walk progress counts only weeks after it)
+    continuous_run_minutes: Mapped[int | None] = mapped_column(Integer)
+    continuous_run_set_on: Mapped[str | None] = mapped_column(String(10))  # beginner, intermediate, advanced, expert
 
     # PRs (stored in seconds)
     pr_5k: Mapped[float | None] = mapped_column(Float)
     pr_10k: Mapped[float | None] = mapped_column(Float)
     pr_half: Mapped[float | None] = mapped_column(Float)
     pr_marathon: Mapped[float | None] = mapped_column(Float)
+
+    day_time_budgets: Mapped[str | None] = mapped_column(Text)
 
     # Schedule preferences
     days_per_week: Mapped[int] = mapped_column(Integer, default=6)
@@ -61,6 +70,9 @@ class Goal(Base):
     race_date: Mapped[str | None] = mapped_column(String(20))  # ISO date
     terrain: Mapped[str | None] = mapped_column(String(20))  # road, trail, mountain (ultras)
     elevation_gain_ft: Mapped[float | None] = mapped_column(Float)  # total course climbing
+
+    intent: Mapped[str | None] = mapped_column(String(20))  # performance or completion
+    decision: Mapped[str | None] = mapped_column(Text)
 
     # Mileage goal fields
     target_weekly_mileage: Mapped[float | None] = mapped_column(Float)

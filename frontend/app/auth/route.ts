@@ -10,6 +10,19 @@ function redirectTo(path: string) {
 }
 
 export async function POST(request: NextRequest) {
+  if (process.env.STRIDE_ACCOUNTS_ENABLED === "true") {
+    const form = await request.formData();
+    const origin = request.headers.get("origin");
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    if (origin && new URL(origin).host !== host) return new NextResponse("Invalid origin",{status:403});
+    const upstream = await fetch(`${process.env.BACKEND_URL || "http://127.0.0.1:8000"}/api/auth/login`, {
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:form.get("email"),password:form.get("password")})});
+    if (!upstream.ok) return redirectTo("/login?error=1");
+    const response = redirectTo("/");
+    const cookie = upstream.headers.get("set-cookie");
+    if(cookie) response.headers.set("set-cookie",cookie);
+    return response;
+  }
   const password = process.env.STRIDE_PASSWORD;
   // Last forwarded address is the peer added by the trusted reverse proxy.
   // The global bucket also bounds attempts if this header is spoofed.

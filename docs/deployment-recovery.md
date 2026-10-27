@@ -1,8 +1,11 @@
-# Single-athlete deployment and recovery
+# Deployment and recovery
 
-Stride still uses one Render container, one SQLite database and one persistent
-disk. Multi-user authentication, a managed queue and Postgres are not prerequisites
-for this personal app. The operational guarantees below are bounded to that setup.
+The default deployment uses one Render container, SQLite and a persistent disk.
+Invite-only accounts, durable workers and PostgreSQL migration support are now
+available; see the [deployment settings and cutover commands](../README.md#worker-migrations-and-storage-deployment)
+and [invite beta release record](invite-beta-release.md). The snapshot/restore
+workflow below applies to SQLite. Managed PostgreSQL needs its own verified
+backup and point-in-time recovery configuration.
 
 ## Backups before startup changes and while running
 
@@ -27,13 +30,14 @@ Settings are environment variables (defaults shown):
 | --- | --- | --- |
 | `STRIDE_BACKUP_DIR` | database directory + `/backups` | Must be on persistent disk; Blueprint uses `/var/data/backups`. |
 | `STRIDE_BACKUP_INTERVAL_SECONDS` | `21600` | Interval; minimum 60 seconds. |
-| `STRIDE_BACKUP_KEEP` | `28` | Number of verified local snapshots retained, including startup snapshots. |
+| `STRIDE_BACKUP_KEEP` | `28` (Render: `7`) | Maximum verified local snapshots, including startup snapshots. |
+| `STRIDE_BACKUP_MAX_BYTES` | `536870912` | Local snapshot byte budget (512 MiB); the latest verified snapshot is preserved. |
 | `STRIDE_BACKUP_S3_BUCKET` | unset | Enables optional off-disk export. |
 | `STRIDE_BACKUP_S3_PREFIX` | `stride` | Object-key prefix. |
 | `STRIDE_BACKUP_S3_KMS_KEY_ID` | unset | Optional KMS key; otherwise S3 AES256 encryption. |
 
-Retention is a count, not a promise of seven days: frequent deploys create extra
-snapshots and shorten the time covered by 28 files. Monitor disk space and choose
+Retention is bounded by both count and bytes, not a promise of seven days:
+frequent deploys create extra snapshots and shorten the time covered. Monitor disk space and choose
 retention for the real database size. Backup timing depends on the app remaining
 running; a suspended or unavailable service cannot create snapshots.
 

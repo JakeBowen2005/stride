@@ -1,4 +1,5 @@
 "use client";
+import { FitImport } from "@/components/fit-import";
 
 import { useEffect, useState } from "react";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
@@ -41,14 +42,16 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
 
   // Step 1: About you
-  const [age, setAge] = useState("21");
+  const [age, setAge] = useState("");
   const [units, setUnits] = useState<"miles" | "kilometers">("miles");
   const [workoutFormat, setWorkoutFormat] = useState<"distance" | "time">("distance");
 
   // Step 2: Running background
-  const [yearsRunning, setYearsRunning] = useState("2");
-  const [currentMileage, setCurrentMileage] = useState([42]);
-  const [peakMileage, setPeakMileage] = useState([65]);
+  const [yearsRunning, setYearsRunning] = useState("0");
+  const [currentMileage, setCurrentMileage] = useState([0]);
+  // Longest non-stop run right now: the starting point when there's no Garmin history
+  const [continuousMinutes, setContinuousMinutes] = useState<number | null>(null);
+  const [peakMileage, setPeakMileage] = useState([0]);
 
   // Step 3: Race history
   const [prs, setPrs] = useState<PREntry[]>([
@@ -71,7 +74,7 @@ export default function OnboardingPage() {
 
   // Step 6: Garmin
   const garmin = useGarminStatus();
-  const garminConnected = !!garmin?.tokens_present;
+  const garminConnected = !!garmin?.api_key_present;
 
   function next() {
     if (step < TOTAL_STEPS - 1) setStep(step + 1);
@@ -88,7 +91,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     getJson<{
       age: number | null; units: string; workout_format?: string; years_running: number | null;
-      current_weekly_mileage: number | null; peak_weekly_mileage: number | null;
+      current_weekly_mileage: number | null; peak_weekly_mileage: number | null; continuous_run_minutes?: number | null;
       days_per_week: number; rest_days: string | null; long_run_day?: string | null;
     }>(`/users/${USER_ID}`, { allowNotFound: true }).then((u) => {
       if (!u) return;
@@ -96,8 +99,9 @@ export default function OnboardingPage() {
       setUnits(u.units === "km" ? "kilometers" : "miles");
       if (u.workout_format === "time" || u.workout_format === "distance") setWorkoutFormat(u.workout_format);
       if (u.years_running != null) setYearsRunning(String(u.years_running));
-      if (u.current_weekly_mileage) setCurrentMileage([u.current_weekly_mileage]);
+      if (u.current_weekly_mileage) setCurrentMileage([Math.round(u.current_weekly_mileage)]);
       if (u.peak_weekly_mileage) setPeakMileage([u.peak_weekly_mileage]);
+      if (u.continuous_run_minutes != null) setContinuousMinutes(u.continuous_run_minutes);
       if (u.days_per_week) setDaysPerWeek([u.days_per_week]);
       if (u.rest_days) setRestDays(u.rest_days.split(",").map((d) => PICKER_DAYS.indexOf(d.trim())).filter((i) => i >= 0));
       if (u.long_run_day) setLongRunDay([PICKER_DAYS.indexOf(u.long_run_day)].filter((i) => i >= 0));
@@ -133,6 +137,7 @@ export default function OnboardingPage() {
         years_running: Number(yearsRunning) || 0,
         current_weekly_mileage: currentMileage[0],
         peak_weekly_mileage: peakMileage[0],
+        ...(continuousMinutes != null ? { continuous_run_minutes: continuousMinutes } : {}),
         days_per_week: daysPerWeek[0],
         rest_days: restDays.map((i) => PICKER_DAYS[i]),
         long_run_day: PICKER_DAYS[longRunDay[0] ?? 6],
@@ -179,7 +184,7 @@ export default function OnboardingPage() {
         onBack={back}
       >
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <h2 className="text-4xl font-bold tracking-tight">STRIDE</h2>
+          <h2 className="wordmark text-5xl">Stride</h2>
           <p className="mt-3 max-w-xs text-muted-foreground">
             Your AI running coach. Simple workouts, specific to your goals, backed by data.
           </p>
@@ -294,6 +299,34 @@ export default function OnboardingPage() {
             </div>
           </div>
           <div className="space-y-2">
+            <Label>How long can you run without stopping right now?</Label>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              {[
+                { v: 0, l: "Not yet" },
+                { v: 2, l: "2–4 min" },
+                { v: 5, l: "5–9 min" },
+                { v: 12, l: "10–19 min" },
+                { v: 20, l: "20–30 min" },
+                { v: 45, l: "30+ min" },
+              ].map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  aria-pressed={continuousMinutes === o.v}
+                  onClick={() => setContinuousMinutes(o.v)}
+                  className={`h-11 rounded-full text-xs font-semibold transition-colors ${
+                    continuousMinutes === o.v ? "bg-primary text-primary-foreground" : "bg-[var(--glass-inner)] hover:bg-[var(--row-hover)]"
+                  }`}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New to running? Under 20 minutes starts with run/walk sessions that grow each week.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label>
               Peak weekly mileage ever:{" "}
               <span className="font-mono font-semibold">{peakMileage[0]} mi</span>
@@ -379,7 +412,7 @@ export default function OnboardingPage() {
           <GoalCards selected={goalType} onChange={setGoalType} />
 
           {goalType === "race" && (
-            <div className="space-y-4 rounded-md border p-4">
+            <div className="glass-tile space-y-4 p-4">
               <div className="space-y-2">
                 <Label>Distance</Label>
                 <Select
@@ -439,7 +472,7 @@ export default function OnboardingPage() {
           )}
 
           {goalType === "mileage" && (
-            <div className="space-y-2 rounded-md border p-4">
+            <div className="glass-tile space-y-2 p-4">
               <Label>
                 Target weekly mileage:{" "}
                 <span className="font-mono font-semibold">
@@ -465,11 +498,12 @@ export default function OnboardingPage() {
       <OnboardingLayout
         step={step}
         totalSteps={TOTAL_STEPS}
-        title="Connect Garmin"
-        subtitle="We'll pull your run history from Garmin Connect to understand your fitness level."
+        title="Bring in your history"
+        subtitle="Import original FIT files, use your owner Garmin connection, or begin with your current ability."
         onNext={next}
         onBack={back}
       >
+        <FitImport />
         <div className="flex flex-col items-center gap-4 py-8">
           {garminConnected ? (
             <div className="text-center">
@@ -482,19 +516,13 @@ export default function OnboardingPage() {
             </div>
           ) : (
             <>
-              <div className="w-full max-w-sm space-y-2 rounded-md bg-secondary/40 p-4 text-sm">
-                <p className="font-medium">On your computer, run:</p>
-                <pre className="overflow-x-auto rounded bg-background p-2 text-xs">
-                  cd backend{"\n"}venv/bin/python garmin_login.py
-                </pre>
-                <p className="text-muted-foreground">Sign in with your Garmin account there, then reload this page.</p>
+              <div className="glass-tile w-full max-w-sm space-y-2 p-4 text-sm">
+                <p className="font-medium">Garmin connection</p><p>Separate athlete connections await Business API approval. You can import original FIT files or continue without recorded history.</p>
+                <p className="text-muted-foreground">The owner connection is managed in Settings. No Garmin password is collected by Stride.</p>
               </div>
-              <button
-                className="text-sm text-muted-foreground underline underline-offset-2"
-                onClick={next}
-              >
-                Skip — I&apos;ll enter data manually
-              </button>
+              <Button className="h-11 w-full max-w-sm" onClick={next}>
+                Continue: I&apos;ll connect later or log runs myself
+              </Button>
             </>
           )}
         </div>
@@ -516,12 +544,12 @@ export default function OnboardingPage() {
     >
       <div className="space-y-3 text-sm">
         {saveError && (
-          <p role="alert" className="rounded-md bg-destructive/10 p-2 text-destructive">
+          <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-destructive">
             {saveError}. Your answers are still here; tap Try again.
           </p>
         )}
         {readiness && !readiness.ready && (
-          <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          <div className="space-y-2 rounded-2xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] p-3">
             <p className="font-medium">This goal looks like a stretch right now:</p>
             <ul className="list-disc space-y-1 pl-5">
               {readiness.reasons.map((r) => (
@@ -559,7 +587,7 @@ export default function OnboardingPage() {
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between rounded px-2 py-1.5 odd:bg-secondary/30">
+    <div className="glass-tile flex items-center justify-between rounded-xl px-3 py-2">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value}</span>
     </div>

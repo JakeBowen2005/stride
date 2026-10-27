@@ -20,7 +20,7 @@ export interface AthletePreferences {
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const inputClass = "mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm";
+const inputClass = "mt-1 block w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 py-2 text-sm";
 
 export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences; onSaved: (user: AthletePreferences) => void }) {
   const [editing, setEditing] = useState(false);
@@ -62,7 +62,7 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
 
   return <div className="space-y-4">
     <div className="flex items-center justify-between">
-      <h2 className="text-sm font-medium">Profile & training preferences</h2>
+      <h2 className="text-[13px] font-bold">Profile & training preferences</h2>
       {!editing && <Button variant="outline" size="sm" onClick={() => { setDraft(user); setError(""); setEditing(true); }}>Edit preferences</Button>}
     </div>
     {saved === "saved" && <p role="status" className="text-sm text-muted-foreground">Saved.</p>}
@@ -86,6 +86,6 @@ export function ProfilePreferences({ user, onSaved }: { user: AthletePreferences
       ["Training experience", user.experience_level === "expert" ? "Expert / professional" : user.experience_level ? title(user.experience_level) : "Estimated from history"],
       ["Workout format", user.workout_format === "time" ? "Time-based" : "Distance-based"], ["Days per week", user.days_per_week],
       ["Rest days", (user.rest_days || "").split(",").filter(Boolean).map(title).join(", ") || "None"], ["Long run day", title(user.long_run_day || "saturday")],
-    ].map(([label, value]) => <div className="flex justify-between gap-4" key={label}><dt className="text-muted-foreground">{label}</dt><dd>{value}</dd></div>)}</dl>}
+    ].map(([label, value]) => <div className="glass-tile flex justify-between gap-4 rounded-xl px-3.5 py-2.5" key={label}><dt className="text-muted-foreground">{label}</dt><dd className="text-right font-semibold">{value}</dd></div>)}</dl>}
   </div>;
 }

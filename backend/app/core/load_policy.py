@@ -50,6 +50,8 @@ class LoadPlan:
     recent_week_miles: float | None = None
     planning_anchor: float | None = None
     training_level: float | None = None
+    developmental: bool = False
+    after_down_week: bool = False  # the last completed week was a down week
 
     def to_dict(self) -> dict:
         return {
@@ -62,7 +64,7 @@ class LoadPlan:
             "recent_week_miles": self.recent_week_miles,
             "planning_anchor": self.planning_anchor,
             "training_level": self.training_level,
-        }
+        } | ({"developmental": True} if self.developmental else {})
 
 
 def _finite(x) -> float:
@@ -86,6 +88,16 @@ def ramp_rate(baseline: float, peak: float, experience: str, goal_type: str) -> 
     if experience == "intermediate":
         return RATE_INTERMEDIATE
     return RATE_BEGINNER
+
+
+# One lever at a time: a long run whose race-pace segment is new, or this many miles
+# longer than any recent one, is the week's progression, so that week's volume holds.
+RACE_PACE_STEP_MILES = 3.0
+
+
+def race_pace_step(race_pace_miles: float, recent_race_pace_miles: float) -> bool:
+    """Does this long run introduce race-pace work, or grow it materially?"""
+    return race_pace_miles > 0 and race_pace_miles >= _finite(recent_race_pace_miles) + RACE_PACE_STEP_MILES
 
 
 LEVEL_CAP = 1.35  # the training level never runs more than 35% ahead of the 4-week average
@@ -116,6 +128,21 @@ def training_level(baseline: float, completed_weeks: list[float] | None) -> tupl
         loaded = loaded[:-1]
     level = sum(loaded) / len(loaded) if loaded else baseline
     return round(min(max(baseline, level), baseline * LEVEL_CAP), 1), down[-1]
+
+
+def latest_week_is_spike(completed_weeks: list[float] | None, race_weeks: list[bool] | None = None) -> bool:
+    """Is the newest completed week a spike: far above the week before and above the recent high?
+
+    Weeks containing a race are left out: race mileage is an event, not a training level,
+    so a race week is never the spike and never the comparison for one.
+    """
+    weeks = [_finite(w) for w in (completed_weeks or [])][-4:]
+    flags = list(race_weeks or [])[-len(weeks):] if weeks else []
+    flags = [False] * (len(weeks) - len(flags)) + [bool(f) for f in flags]
+    if len(weeks) < 4 or flags[-1]:
+        return False
+    history = [w for w, race in zip(weeks, flags) if not race]
+    return len(history) >= 2 and history[-1] > history[-2] * SPIKE_RATIO and history[-1] > max(history[:-1])
 
 
 def default_destination(goal_type: str, target_weekly_mileage: float | None) -> float | None:
@@ -161,6 +188,9 @@ def plan_load(
     deload_week: int | None = None,  # 0-based week index to deload, if a deload is due
     reported_mileage: float | None = None,  # athlete's own estimate when history is missing
     completed_weeks: list[float] | None = None,  # oldest -> newest, full calendar weeks incl zero
+    developmental: bool = False,
+    previous_block: dict | None = None,  # last block's stored load: weekly_budgets + mode
+    race_weeks: list[bool] | None = None,  # aligned with completed_weeks: True where the week held a race
 ) -> LoadPlan:
     baseline = round(_finite(baseline), 1)
     peak = _finite(peak)
@@ -171,13 +201,22 @@ def plan_load(
     if baseline < MIN_HISTORY_MILES:
         reported = _finite(reported_mileage)
         start = max(reported, START_MILES_NO_HISTORY) if reported else START_MILES_NO_HISTORY
+        if developmental:
+            start = baseline if baseline > 0 else min(reported or 3.0, 6.0)
         if destination:
             start = min(start, destination)
+        starting_budgets = [round(start, 1)] * num_weeks
+        if developmental and baseline > 0 and assessment not in {'hold', 'reduce', 'recovery'}:
+            starting_budgets = [round(min(start * 1.1 ** min(w + 1, 2), destination or float('inf')), 1)
+                                for w in range(num_weeks)]
+        elif developmental and assessment in {'reduce', 'recovery'}:
+            factor = REDUCE_FACTOR if assessment == 'reduce' else RECOVERY_FACTOR
+            starting_budgets = [round(start * factor, 1)] * num_weeks
         reasons.append(
             f"Not enough recent running to measure a baseline ({baseline:g} mi/week over 4 weeks); "
             f"starting at {start:g} mi/week."
         )
-        return LoadPlan(baseline, destination, "start", [round(start, 1)] * num_weeks, rate, reasons)
+        return LoadPlan(baseline, destination, "start", starting_budgets, rate, reasons, developmental=developmental)
 
     mode = "build"
     level, after_down_week = training_level(baseline, completed_weeks)
@@ -188,6 +227,28 @@ def plan_load(
     recent = _finite(completed_weeks[-1]) if completed_weeks else None
     anchor = baseline
     recent_build = False
+    if developmental and goal_type != 'comeback':
+        # Follow a repeatable recent level rather than repeatedly averaging away
+        # earned growth. Spikes and interrupted weeks retain the conservative anchor.
+        history = [_finite(w) for w in (completed_weeks or [])][-4:]
+        if len(history) == 4 and all(history):
+            candidate = max(history[:-1]) if after_down_week else history[-1]
+            supported = sum(w >= candidate * .8 for w in history) >= 2
+            spike = not after_down_week and latest_week_is_spike(history, race_weeks)
+            if supported and not spike:
+                level = min(candidate, baseline * LEVEL_CAP)
+        anchor = level
+        # Weekly steps, not a 10% allowance spread across an entire block.
+        rate = min(rate, .10)
+        budgets = [level * (1 + rate) ** min(w + (0 if after_down_week else 1), 2) for w in range(num_weeks)]
+        if latest_week_is_spike(history, race_weeks):
+            # Right after a spike, one step is the most the block may build;
+            # compounding a second week on top of an unabsorbed jump is not fail-safe.
+            budgets = [min(b, level * (1 + rate)) for b in budgets]
+    elif latest_week_is_spike(completed_weeks, race_weeks) and budgets:
+        # The same guard for experienced runners: one growth step after a jump, then hold.
+        budgets = [min(b, budgets[0]) for b in budgets]
+        reasons.append("Last week jumped well above the weeks before it: one step of growth this block, then hold.")
     # For an experienced mileage builder, a repeatable recent high is evidence
     # that the rolling average can lag current training. Do not chase one spike.
     history = (completed_weeks or [])[-4:]
@@ -202,7 +263,8 @@ def plan_load(
         recent_build = True
     reasons.append(f"Baseline {baseline:g} mi/week (4-week average of completed runs).")
     if level > baseline and not recent_build:
-        reasons.append(f"Training level {level:g} mi/week (your last two full-volume weeks; down weeks don't reset it).")
+        reasons.append(f"Training level {level:g} mi/week (repeatable recent completed volume; down weeks don't reset it)." if developmental
+                       else f"Training level {level:g} mi/week (your last two full-volume weeks; down weeks don't reset it).")
 
     if recent_build:
         reasons.append(f"Last full week {recent:g} mi, supported by another comparable recent week. "
@@ -219,6 +281,20 @@ def plan_load(
              "reduce": "Last block's assessment says ease off: volume reduced ~15%.",
              "recovery": "Recovery block: volume reduced ~30%."}[assessment]
         )
+        prior = [_finite(b) for b in (previous_block or {}).get("weekly_budgets") or [] if _finite(b) > 0]
+        if prior:
+            # Anchor to what the last block PLANNED, not the 4-week average: that average
+            # already contains the skipped runs, so steps would compound block after block
+            # (75% of 75% of ...). Missed runs aren't made up, but they don't shrink every run.
+            planned = sum(prior) / len(prior)
+            again = assessment == "reduce" and (previous_block or {}).get("mode") == "reduce"
+            floor = planned * ({"hold": 1.0, "reduce": 1.0 if again else REDUCE_FACTOR,
+                                "recovery": RECOVERY_FACTOR}[assessment])
+            if budgets[0] < floor:
+                budgets = [min(planned, floor)] * num_weeks
+            if again:
+                reasons.append("Second interrupted block in a row: holding last block's volume instead of shrinking "
+                               "every run again. If fewer run days fit your life right now, lower them in Settings.")
 
     if destination is not None:
         if level > destination * 1.05:
@@ -238,6 +314,8 @@ def plan_load(
 
     if deload_week is not None and 0 <= deload_week < num_weeks:
         budgets[deload_week] = level * DELOAD_FACTOR
+        if developmental:
+            budgets[deload_week] = min(budgets[deload_week], baseline * .9)
         # The week after a deload returns to the training level rather than jumping ahead
         for w in range(deload_week + 1, num_weeks):
             budgets[w] = min(budgets[w], level)
@@ -245,5 +323,7 @@ def plan_load(
         reasons.append(f"Deload in week {deload_week + 1}: ~{1 - DELOAD_FACTOR:.0%} less volume to absorb training.")
 
     if mode == "build" and not recent_build:
-        reasons.insert(1, f"Building up to {rate:.0%} over the block ({budgets[0]:.0f} → {budgets[-1]:.0f} mi/week).")
-    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor, level)
+        reasons.insert(1, f"Building by at most {rate:.0%} per week ({budgets[0]:.1f} → {budgets[-1]:.1f} mi/week), subject to workout and recovery holds." if developmental
+                       else f"Building up to {rate:.0%} over the block ({budgets[0]:.0f} → {budgets[-1]:.0f} mi/week).")
+    return LoadPlan(baseline, destination, mode, [round(b, 1) for b in budgets], rate, reasons, recent, anchor, level,
+                    developmental, after_down_week)

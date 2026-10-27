@@ -79,6 +79,10 @@ class PlannedWorkout(Base):
     feel_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-10
     feel_notes: Mapped[str | None] = mapped_column(Text, nullable=True)  # user's free-text notes
     pace_assessment: Mapped[str | None] = mapped_column(String(20), nullable=True)  # above, on_target, below, skipped
+    # "How hard was it?" (session effort, 1-10) — separate from feel, which is how you felt afterward
+    effort_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Athlete-reported completion (JSON: status/reps/minutes, source="self_reported"); never measured evidence
+    reported_completion: Mapped[str | None] = mapped_column(Text, nullable=True)
     swapped: Mapped[bool] = mapped_column(Boolean, default=False)
     swap_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_workout_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # what they did if swapped

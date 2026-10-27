@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.activity import Activity, PersonalRecord, activity_classification, is_walk
 from app.models.user import User
-from app.services.analyzer import analyze_athlete, detect_prs, compute_weekly_mileage, classify_activities
+from app.services.analyzer import analyze_athlete, detect_prs, compute_mileage, compute_weekly_mileage, classify_activities
 from app.services.pace_calibrator import calibrate_paces
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -24,7 +25,11 @@ def get_baseline(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    db.info['history_cache_write'] = True
+    from app.api.plans import _begin_schedule_write
+    _begin_schedule_write(db)
     analysis = analyze_athlete(user_id, db)
+    db.commit()
     return analysis
 
 
@@ -79,19 +84,36 @@ def get_weekly_mileage(user_id: int, weeks: int = Query(default=52), db: Session
     return compute_weekly_mileage(user_id, db, weeks)
 
 
+@router.get("/{user_id}/mileage")
+def get_mileage(user_id: int, bucket: Literal["week", "month", "year"] = "week",
+                count: int | None = Query(default=None, ge=1, le=104), include: str = Query(default="", max_length=40),
+                db: Session = Depends(get_db)):
+    """Recorded vs planned miles and running time per week, month or year, with empty periods filled in.
+
+    ``include=walks`` adds ``walk_seconds`` (walks are never part of running volume)."""
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Athlete not found")
+    return compute_mileage(user_id, db, bucket, count, include_walks="walks" in include.split(","))
+
+
 # --- Activities endpoints for frontend ---
 
 @router.get("/{user_id}/activities")
 def get_activities_list(
     user_id: int,
     type: str | None = None,
-    limit: int = Query(default=100),
-    offset: int = Query(default=0),
+    limit: int = Query(default=100,ge=1,le=200),
+    offset: int = Query(default=0,ge=0),
+    before_date: datetime | None = None,
+    before_id: int | None = Query(default=None,ge=1),
     db: Session = Depends(get_db),
 ):
     """Get activities for the history tab."""
     query = db.query(Activity).filter(Activity.user_id == user_id)
 
+    if before_date is not None:
+        from sqlalchemy import or_,and_
+        query=query.filter(or_(Activity.date<before_date,and_(Activity.date==before_date,Activity.id<before_id))) if before_id else query.filter(Activity.date<before_date)
     if type and type != "all":
         if type == "workouts":
             query = query.filter(Activity.workout_type.in_(["tempo", "intervals", "threshold", "fartlek", "hill_repeats", "time_trial", "race", "workout"]))
@@ -101,7 +123,7 @@ def get_activities_list(
             query = query.filter(Activity.workout_type.in_(["easy", "recovery", None]))
 
     activities = (
-        query.order_by(Activity.date.desc())
+        query.order_by(Activity.date.desc(),Activity.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -148,6 +170,51 @@ def submit_review(user_id: int, activity_id: int, data: ReviewData, db: Session 
     return {"message": "Review saved", "activity_id": activity_id}
 
 
+from app.api.plans import FeedbackRequest
+
+
+@router.post("/{user_id}/activities/{activity_id}/feedback")
+def activity_feedback(user_id: int, activity_id: int, data: FeedbackRequest, db: Session = Depends(get_db)):
+    """An answer belongs to one recording, including doubles and previous blocks.
+
+    Only the primary recording of an active prescribed session may apply the
+    existing exactly-once day adjustments. Historical/off-plan answers remain
+    evidence for the next assessment, never retroactive progression credit.
+    """
+    from app.api.plans import _begin_schedule_write, _get_activities_for_date, _work_evidence_activity, submit_feedback
+    from app.models.plan import Plan, PlannedWorkout
+    from app.services.coaching_jobs import enqueue_synced_run, release_synced_jobs
+    from app.api.plans import require_comment
+    require_comment(data)
+    from app.services.garmin import refresh_watch_rating
+    refresh_watch_rating(user_id, db.query(Activity).filter_by(user_id=user_id, id=activity_id).first(), db)
+    _begin_schedule_write(db)
+    activity = db.query(Activity).filter_by(user_id=user_id, id=activity_id).first()
+    if activity is None:
+        raise HTTPException(404, "Activity not found")
+    day = activity.date.date().isoformat()
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    pw = db.query(PlannedWorkout).filter_by(plan_id=plan.id, date=day).first() if plan else None
+    primary = _work_evidence_activity(_get_activities_for_date(day, user_id, db))
+    result = {}
+    if pw and pw.type != 'rest' and primary and primary.id == activity.id:
+        result = submit_feedback(user_id, day, data, db)
+    activity.feel_notes = data.feel_notes
+    # Comment-only answers keep any earlier app rating; feel/effort otherwise come from the watch
+    if data.feel_rating is not None:
+        activity.feel_rating = data.feel_rating
+    if data.effort_rating is not None:
+        activity.effort_rating = data.effort_rating
+    if data.completion is not None:
+        activity.reported_completion = data.completion
+    enqueue_synced_run(activity, db, ready=True)
+    db.commit()
+    release_synced_jobs(user_id, db)
+    return {**result, 'activity_id': activity.id, 'feel_rating': activity.feel_rating,
+            'effort_rating': activity.effort_rating, 'reported_completion': {'status':activity.reported_completion,'source':'self_reported'} if activity.reported_completion else None,
+            'coach_response': result.get('coach_response', 'Feedback saved for your next training assessment.')}
+
+
 QUALITY_TYPES = {"workout", "intervals", "threshold", "tempo", "fartlek"}
 
 
@@ -157,7 +224,7 @@ def _session(a: Activity, splits: list, easy_pace: float | None) -> dict | None:
         return None
     from app.core.session_match import session_title
     from app.services.lap_analyzer import analyze_laps
-    found = analyze_laps(splits, easy_pace)
+    found = analyze_laps(splits, easy_pace, a.feel_notes)
     return {"title": session_title(found), "category": found["category"]} if found else None
 
 
@@ -178,6 +245,7 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "id": a.id,
         "external_id": a.external_id,
         "source": a.source,
+        "device_name": a.device_name,
         "date": a.date.isoformat() if a.date else None,
         "type": a.workout_type or "easy",
         "title": a.name or "Run",
@@ -192,6 +260,9 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "splits": splits,
         "session": _session(a, splits, easy_pace),
         "feel_rating": a.feel_rating,
+        "effort_rating": a.effort_rating, "reported_completion": a.reported_completion,
+        "watch_feel": a.watch_feel, "watch_effort": a.watch_effort,
+        "watch_feel_label": a.watch_feel_label, "watch_effort_label": a.watch_effort_label,
         "notes": a.feel_notes,
         "coach_analysis": None,  # Stored reviews use /api/coaching so freshness is explicit
         "suffer_score": a.suffer_score,
@@ -287,9 +358,85 @@ def operations(user_id: int, db: Session = Depends(get_db)):
         info = json.loads((Path(folder) / 'status.json').read_text()) if folder else {}
     except (OSError, ValueError, TypeError):
         info = {}
-    return {'queue': {'queued': counts.get('queued',0)+counts.get('waiting_sync',0), 'running':counts.get('running',0),
+    from app.models.coaching import CoachingAttempt,CoachingReview
+    from app.athlete_clock import day_start_utc
+    day=day_start_utc()
+    usage=db.query(func.count(CoachingAttempt.id),func.coalesce(func.sum(CoachingAttempt.input_tokens),0),
+        func.coalesce(func.sum(CoachingAttempt.output_tokens),0),func.avg(CoachingAttempt.latency_ms)).join(CoachingReview,CoachingReview.id==CoachingAttempt.review_id).filter(CoachingReview.user_id==user_id,CoachingAttempt.created_at>=day).one()
+    return {'ai_usage':{'attempts_today':usage[0],'input_tokens_today':usage[1],'output_tokens_today':usage[2],
+                       'mean_latency_ms':round(usage[3]) if usage[3] is not None else None,'daily_review_limit':settings.openai_coach_daily_limit},
+            'queue': {'queued': counts.get('queued',0)+counts.get('waiting_sync',0), 'running':counts.get('running',0),
                       'failed':counts.get('failed',0), 'oldest_queued_at':oldest.isoformat() if oldest else None},
             'backup': {'configured': bool(info.get('last_local_success')), 'offsite_configured':bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET')),
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
                        'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
-                       'last_error_type':info.get('last_error_type')}, 'app': {'policy_version':VERSION}}
+                       'last_error_type':info.get('last_error_type'), 'storage':info.get('storage')}, 'app': {'policy_version':VERSION}}
+
+
+@router.get("/{user_id}/history")
+def get_history(user_id: int, db: Session = Depends(get_db)):
+    from app.services.history_facts import historical_profile
+    from app.services.history_cache import revision
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Athlete not found")
+    from app.api.plans import _begin_schedule_write
+    _begin_schedule_write(db)
+    result = historical_profile(user_id, db)
+    result['revision'] = revision(user_id, db)
+    db.commit()
+    return result
+
+
+@router.post('/{user_id}/history/reparse-fits')
+def reparse_history(user_id: int, force: bool = False, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    from app.services.history_evidence import reparse_fits
+    if not db.get(User, user_id):
+        raise HTTPException(404, 'Athlete not found')
+    _begin_schedule_write(db)
+    return reparse_fits(user_id, db, limit=limit, force=force)
+
+
+from fastapi import Request
+
+
+@router.post('/{user_id}/import-fit')
+async def upload_fit(user_id:int,request:Request,db:Session=Depends(get_db)):
+    from app.services.fit_import import MAX_BYTES,import_fit
+    if int(request.headers.get('content-length') or 0)>MAX_BYTES:
+        raise HTTPException(413,'FIT file exceeds 10 MiB.')
+    body=bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body)>MAX_BYTES:
+            raise HTTPException(413,'FIT file exceeds 10 MiB.')
+    try:
+        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(import_fit,user_id,bytes(body),db)
+    except ValueError as exc:
+        db.rollback();raise HTTPException(422,str(exc))
+    except Exception:
+        db.rollback();raise HTTPException(422,'Unable to import this FIT file. Check it is an original running activity.')
+
+
+@router.get('/{user_id}/aerobic-efficiency')
+def aerobic_efficiency_trend(user_id:int,weeks:int=Query(default=26,ge=4,le=104),db:Session=Depends(get_db)):
+    from app.services.longitudinal import aerobic_efficiency
+    if not db.get(User,user_id):raise HTTPException(404,'Athlete not found')
+    return aerobic_efficiency(user_id,db,weeks)
+
+
+@router.get('/{user_id}/trends')
+def training_trends(user_id:int,db:Session=Depends(get_db)):
+    from app.api.plans import _begin_schedule_write
+    from app.athlete_clock import today
+    from app.services.history_cache import fresh
+    from app.services.longitudinal import VERSION, analyze
+    if not db.get(User,user_id):raise HTTPException(404,'Athlete not found')
+    hit=fresh(user_id,VERSION,today().isoformat(),db)
+    if hit is not None:
+        return hit  # a page view shouldn't take the database writer lock
+    _begin_schedule_write(db)
+    result=analyze(user_id,db)
+    db.commit()
+    return result

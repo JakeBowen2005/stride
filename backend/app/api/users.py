@@ -1,4 +1,6 @@
+from app.athlete_clock import today as athlete_today
 import json
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Literal
@@ -63,6 +65,9 @@ class ProfileUpdate(BaseModel):
     """Onboarding / settings update for an existing athlete. Every field optional:
     only provided fields change, so re-running setup is safe and repeatable."""
     name: str | None = None
+    timezone: str | None = None
+    ai_consent: bool | None = None
+    day_time_budgets: dict[str,int] | None = None
     age: int | None = Field(default=None, ge=10, le=100)
     units: Literal["miles", "km"] | None = None
     workout_format: Literal["distance", "time"] | None = None
@@ -70,6 +75,7 @@ class ProfileUpdate(BaseModel):
     years_running: float | None = Field(default=None, ge=0, le=80)
     current_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
     peak_weekly_mileage: float | None = Field(default=None, ge=0, le=250)
+    continuous_run_minutes: int | None = Field(default=None, ge=0, le=600)  # longest non-stop run right now
     days_per_week: int | None = Field(default=None, ge=1, le=7)
     rest_days: list[str] | None = None  # day names, e.g. ["friday"]
     long_run_day: str | None = None
@@ -89,6 +95,17 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     fields = data.model_dump(exclude_unset=True)
+    if 'timezone' in fields:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(fields['timezone'])
+        except (TypeError, ValueError, ZoneInfoNotFoundError):
+            raise HTTPException(422, 'Choose a valid IANA timezone.')
+    if 'day_time_budgets' in fields:
+        limits=fields['day_time_budgets'] or {}
+        if any(k not in DAY_NAMES or v!=0 and not 15<=v<=720 for k,v in limits.items()):
+            raise HTTPException(422,'Use valid weekdays and 15–720 available minutes (or 0 for unavailable).')
+        fields['day_time_budgets']=json.dumps(limits)
     # Validate the merged schedule: PATCH-like requests must not bypass constraints.
     required = {'units', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
     if any(key in required and value is None for key, value in fields.items()):
@@ -105,6 +122,9 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
         raise HTTPException(422, "Long run day can't also be a rest day.")
     if days > 7 - len(rest):
         raise HTTPException(422, f"{days} run days don't fit with {len(rest)} rest days.")
+    limits=json.loads(fields.get('day_time_budgets',user.day_time_budgets) or '{}')
+    if limits.get(long_day)==0 or days>len([d for d in DAY_NAMES if d not in rest and limits.get(d)!=0]):
+        raise HTTPException(422,'Run days and long-run day must fit the available weekdays.')
     # Preserve the approved block's original rules before changing preferences.
     # Legacy blocks acquire the previously saved rules once, never the new rules.
     if {'rest_days', 'days_per_week', 'long_run_day'} & fields.keys():
@@ -121,6 +141,9 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
     if 'long_run_day' in fields:
         fields['long_run_day'] = long_day
     mapping = {"pr_5k_seconds": "pr_5k", "pr_10k_seconds": "pr_10k", "pr_half_seconds": "pr_half", "pr_marathon_seconds": "pr_marathon"}
+    if 'continuous_run_minutes' in fields:
+        # Run/walk progress counts from here; earlier weeks are already in the stated ability
+        user.continuous_run_set_on = (athlete_today() - timedelta(days=athlete_today().weekday())).isoformat()
     for key, value in fields.items():
         if key == "rest_days":
             value = ",".join(d.lower() for d in value)
@@ -192,7 +215,10 @@ def set_goal(user_id: int, data: GoalData, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(goal)
 
-    return {"goal_id": goal.id, "message": "Goal set successfully", "readiness": readiness}
+    from app.api.plans import _outlook
+    # Preparation gaps are flagged when the goal is set, then reassessed every block
+    return {"goal_id": goal.id, "message": "Goal set successfully", "readiness": readiness,
+            "outlook": _outlook(user_id, None, db)}
 
 
 @router.post("/{user_id}/goal/check")
@@ -245,6 +271,8 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     return {
         "id": user.id,
         "name": user.name,
+        "day_time_budgets": json.loads(user.day_time_budgets or "{}"),
+        "timezone": user.timezone, "today": athlete_today().isoformat(), "ai_consent": bool(user.ai_consent),
         "age": user.age,
         "units": user.units,
         "years_running": user.years_running,
@@ -260,6 +288,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "workout_format": user.workout_format,
         "garmin_connected": _garmin_connected(user_id, db),
         "experience_level": user.experience_level,
+        "continuous_run_minutes": user.continuous_run_minutes,
     }
 
 
@@ -376,13 +405,47 @@ def highlight_workouts(user_id: int, data: WorkoutHighlights, db: Session = Depe
 
 def _garmin_connected(user_id: int, db: Session) -> bool:
     from app.models.garmin import GarminConnection
-    from app.services.garmin import has_tokens
+    from app.services.provider_connections import configured
 
     conn = db.query(GarminConnection).filter(GarminConnection.user_id == user_id).first()
-    return bool(conn and conn.connected and has_tokens())
+    return bool(conn and conn.connected and configured(user_id,db))
 
 
 def _seconds_to_pace(seconds_per_unit: float) -> str:
     minutes = int(seconds_per_unit // 60)
     secs = int(seconds_per_unit % 60)
     return f"{minutes}:{secs:02d}"
+
+
+class GoalDecision(BaseModel):
+    goal_id: int
+    choice: Literal['completion', 'later_race', 'shorter']
+    race_date: date | None = None
+    race_distance: str | None = None
+
+
+@router.post('/{user_id}/goal/decision')
+def decide_goal(user_id: int, data: GoalDecision, db: Session = Depends(get_db)):
+    from app.api.plans import _begin_schedule_write, _outlook
+    _begin_schedule_write(db)
+    goal = db.query(Goal).filter_by(user_id=user_id, active=True).first()
+    if not goal or goal.id != data.goal_id:
+        raise HTTPException(409, 'The goal changed. Refresh before deciding.')
+    if goal.goal_type != 'race':
+        raise HTTPException(422, 'Choose a race goal first.')
+    before = {'race_date': goal.race_date, 'distance': goal.race_distance, 'target_time': goal.target_time_seconds}
+    if data.choice == 'completion':
+        goal.intent, goal.target_time_seconds = 'completion', None
+    elif data.choice == 'later_race':
+        if not data.race_date or data.race_date <= athlete_today() or (goal.race_date and data.race_date <= date.fromisoformat(goal.race_date)):
+            raise HTTPException(422, 'Choose a later race date.')
+        goal.race_date = data.race_date.isoformat()
+    else:
+        ordered = ['5k', '10k', 'half', 'marathon', '50k', '50mi', '100k', '100mi']
+        if data.race_distance not in ordered or goal.race_distance not in ordered or ordered.index(data.race_distance) >= ordered.index(goal.race_distance):
+            raise HTTPException(422, 'Choose a shorter distance.')
+        goal.race_distance, goal.target_time_seconds = data.race_distance, None
+    goal.decision = json.dumps({'choice': data.choice, 'at': athlete_today().isoformat(), 'before': before})
+    goal.description = f"{goal.race_distance} on {goal.race_date or 'a date to choose'}" + (' · completion goal' if goal.intent == 'completion' else '')
+    db.commit()
+    return {'outlook': _outlook(user_id, None, db), 'message': 'Goal decision saved. Preview a revised block before approving changes.'}
