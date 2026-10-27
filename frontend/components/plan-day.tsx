@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { KindPill } from "@/components/cockpit/pill";
 import { StructureBar } from "@/components/cockpit/structure-bar";
-import { sessionKind } from "@/lib/workout-style";
+import { ranDay } from "@/lib/workout-style";
 import { SessionControls } from "@/components/session-controls";
 import { FeedbackForm } from "@/components/feedback-form";
 import { AlsoToday } from "@/components/home/today-card";
@@ -30,6 +30,8 @@ interface PlanDayProps {
   onPlanChanged?: () => void;
   readOnly?: boolean;
   sessionAction?: "move";
+  /** The run's numbers are shown alongside (Plan day sheet): skip the duplicate metrics grid */
+  hideRunStats?: boolean;
 }
 
 function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units }) {
@@ -72,7 +74,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, hideRunStats, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -86,18 +88,29 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
   // Once run, a quality day is titled by what the laps show was actually run; the planned
   // session stays visible underneath. Garmin's auto-names ("Fullerton Running") say little.
   const executed = workout.actual?.workout ?? null;
-  const displayTitle = executed?.title ?? workout.title;
+  const ran = ranDay(workout);
+  const displayTitle = ran.title;
   const actualLine = hasActual
-    ? [executed?.off_plan ? `instead of ${workout.title}` : !executed && actualWasWorkout ? actualWorkoutTitle : null,
+    ? [ran.offPlan ? [ran.swapNote, `instead of ${workout.title}`].filter(Boolean).join(", ") : !executed && actualWasWorkout ? actualWorkoutTitle : null,
        workout.actual?.avg_pace ? `${paceInUnits(workout.actual.avg_pace, units)}/${unit}` : null]
         .filter(Boolean)
         .join(" · ")
     : null;
-  const kind = executed ? sessionKind("workout", executed.title, executed.category) : sessionKind(workout.type, workout.title, workout.prescription?.category);
+  const kind = ran.kind;
   const repHr = executed?.reps.map((r) => r.average_hr).filter((h): h is number => h != null) ?? [];
   const [localFeedback, setLocalFeedback] = useState<DayFeedback | null>(workout.feedback || null);
+  // Two runs in a day: tabs show each recording with its own numbers and comment, plus the day total.
+  const otherRuns = workout.actual?.other_runs ?? [];
+  const [runTab, setRunTab] = useState<"primary" | "total" | number>("primary");
+  const extraRun = typeof runTab === "number" ? otherRuns.find((r) => r.id === runTab) ?? null : null;
+  const [extraNotes, setExtraNotes] = useState<Record<number, string>>({});
+  const [editingExtra, setEditingExtra] = useState(false);
   const hasFeedback = !!localFeedback;
-  const showFeedbackForm = !readOnly && hasActual && !hasFeedback && workout.type !== "rest";
+  const [editing, setEditing] = useState(false);
+  // Past/today days without a recording still take feedback: watchless runners log the run by hand
+  const isPastOrToday = workout.date <= new Date().toLocaleDateString("en-CA");
+  const showFeedbackForm = !readOnly && !hasFeedback && workout.type !== "rest"
+    && (hasActual || (isPastOrToday && isPrescribed && !["skipped", "moved"].includes(workout.session_status ?? "")));
 
   return (
     <div
@@ -105,9 +118,8 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
       className={cn(
         "transition-colors",
         // Pinned inside the inspector panel: that panel is already the card.
-        pinned ? "p-1" : "rounded-md border bg-card p-3 cursor-pointer hover:border-primary/30 hover:bg-secondary/50",
-        !pinned && isToday && "border-primary bg-primary/5",
-        !pinned && hasActual && "bg-secondary/30",
+        pinned ? "p-1" : "glass-tile lift cursor-pointer border border-transparent p-3.5",
+        !pinned && isToday && "border-[var(--foreground)]",
         !isPrescribed && !hasActual && "opacity-40",
         workout.skipped && "opacity-50"
       )}
@@ -172,7 +184,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
       </div>
 
       {expanded && (
-        <div className="mt-3 space-y-2 border-t pt-3 text-sm">
+        <div className="mt-3 space-y-2 border-t border-[var(--glass-border)] pt-3 text-sm">
           {/* Completed day: show Actual first, then Planned below for comparison */}
           {hasActual && workout.actual && (
             <>
@@ -185,37 +197,78 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                   )}
                 </div>
 
-                {/* Actual metrics grid */}
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Distance</span>
-                    <span className="font-mono">{formatDistance(workout.actual.distance_miles)} {unit}</span>
+                {otherRuns.length > 0 && (
+                  <div className="flex gap-1 rounded-[16px] bg-[var(--glass-inner)] p-1" role="group" aria-label="Runs this day">
+                    {(["primary", ...otherRuns.map((r) => r.id), "total"] as const).map((key, i) => {
+                      const active = runTab === key;
+                      const miles = key === "primary" ? workout.actual!.distance_miles : key === "total"
+                        ? workout.actual!.total_distance_miles ?? 0 : otherRuns.find((r) => r.id === key)!.distance_miles;
+                      return <button key={String(key)} type="button" aria-pressed={active}
+                        onClick={(e) => { e.stopPropagation(); setRunTab(key); setEditingExtra(false); }}
+                        className={cn("min-h-11 flex-1 rounded-[12px] px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--row-hover)]",
+                          active && "bg-primary text-primary-foreground hover:bg-primary")}>
+                        <span className="block font-semibold">{key === "total" ? "Day total" : `Run ${i + 1}`}</span>
+                        <span className={cn("num block", active ? "text-primary-foreground/85" : "text-muted-foreground")}>{formatDistance(miles)} {unit}</span>
+                      </button>;
+                    })}
                   </div>
-                  {workout.actual.avg_pace && (
+                )}
+
+                {/* Actual metrics grid: the selected run, or the whole day */}
+                {!(hideRunStats && runTab === "primary") && (() => {
+                  const a = workout.actual!;
+                  const shown = runTab === "total"
+                    ? { distance_miles: a.total_distance_miles ?? a.distance_miles, avg_pace: null, average_heartrate: null,
+                        duration_seconds: a.duration_seconds + otherRuns.reduce((sum, r) => sum + (r.duration_seconds || 0), 0) }
+                    : extraRun ?? a;
+                  return <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Pace</span>
-                      <span className="font-mono">{paceInUnits(workout.actual.avg_pace, units)}/{unit}</span>
+                      <span className="text-muted-foreground">Distance</span>
+                      <span className="font-mono">{formatDistance(shown.distance_miles)} {unit}</span>
                     </div>
-                  )}
-                  {workout.actual.average_heartrate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">HR</span>
-                      <span className="font-mono">{Math.round(workout.actual.average_heartrate)} bpm</span>
-                    </div>
-                  )}
-                  {workout.actual.duration_seconds > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Time</span>
-                      <span className="font-mono">{secondsToTime(workout.actual.duration_seconds)}</span>
-                    </div>
-                  )}
-                </div>
+                    {shown.avg_pace && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Pace</span>
+                        <span className="font-mono">{paceInUnits(shown.avg_pace, units)}/{unit}</span>
+                      </div>
+                    )}
+                    {shown.average_heartrate && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">HR</span>
+                        <span className="font-mono">{Math.round(shown.average_heartrate)} bpm</span>
+                      </div>
+                    )}
+                    {shown.duration_seconds > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Time</span>
+                        <span className="font-mono">{secondsToTime(shown.duration_seconds)}</span>
+                      </div>
+                    )}
+                  </div>;
+                })()}
+
+                {extraRun && (() => {
+                  const notes = extraNotes[extraRun.id] ?? extraRun.notes ?? null;
+                  return <div className="space-y-2 border-t pt-2">
+                    {notes && !editingExtra && <>
+                      <p className="text-xs text-muted-foreground italic">&ldquo;{notes}&rdquo;</p>
+                      {!readOnly && <button type="button" onClick={(e) => { e.stopPropagation(); setEditingExtra(true); }}
+                        className="text-xs text-muted-foreground underline underline-offset-2">Edit your comment on this run</button>}
+                    </>}
+                    {!readOnly && (!notes || editingExtra) && <FeedbackForm key={`extra-${extraRun.id}`} activityId={extraRun.id} date={workout.date}
+                      initial={notes ? { notes } : undefined} watch={{ feel: extraRun.watch_feel, effort: extraRun.watch_effort }}
+                      onSubmitted={(fb) => { setExtraNotes((m) => ({ ...m, [extraRun.id]: fb.feel_notes ?? "" })); setEditingExtra(false); onPlanChanged?.(); }} />}
+                  </div>;
+                })()}
 
                 {/* What the laps show; else the activity's own notes / lap summary */}
-                {executed && executed.reps.length > 1 ? (
+                {runTab !== "primary" ? null : executed && executed.reps.length > 1 ? (
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">{executed.title}: </span>
-                    <span className="num">{executed.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}/{unit}</span>
+                    {/* Short reps read as rep times (1:34), the way runners record them; longer reps as pace */}
+                    {executed.reps.every((r) => r.distance_m < 1000)
+                      ? <span className="num">{executed.reps.map((r) => secondsToTime(r.duration_s)).join(" · ")}</span>
+                      : <span className="num">{executed.reps.map((r) => paceInUnits(secondsToPace(r.pace_sec_per_mile), units)).join(" · ")}/{unit}</span>}
                     {repHr.length > 1 && <span className="num"> · HR {repHr[0]}→{repHr[repHr.length - 1]}</span>}
                     {executed.recovery_seconds ? <span> · {secondsToTime(executed.recovery_seconds)} recovery</span> : null}
                   </p>
@@ -227,7 +280,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
 
 
                 {/* Other runs and walks that day: listed with their own numbers, never blended in */}
-                <AlsoToday runs={workout.actual.other_runs} walks={workout.actual.walks} />
+                <AlsoToday walks={workout.actual.walks} />
 
                 {/* Feel rating from activity (only if no feedback submitted yet) */}
                 {!hasFeedback && workout.actual.feel_rating && (
@@ -293,22 +346,27 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
           )}
 
           {/* Existing feedback display */}
-          {hasFeedback && localFeedback && (
+          {hasFeedback && localFeedback && runTab === "primary" && (
             <div className="border-t pt-3 space-y-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Feedback</span>
               <div className="flex flex-wrap gap-2 text-xs">
-                {localFeedback.feel_rating && (
-                  <span className="rounded bg-secondary px-2 py-0.5 font-mono">
-                    Feel: {localFeedback.feel_rating}/10
+                {(localFeedback.feel_rating ?? workout.actual?.watch_feel) != null && (
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-mono">
+                    Feel: {localFeedback.feel_rating ?? workout.actual?.watch_feel}/10{localFeedback.feel_rating == null ? " (watch)" : ""}
+                  </span>
+                )}
+                {(localFeedback.effort_rating ?? workout.actual?.watch_effort) != null && (
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-mono">
+                    Effort: {localFeedback.effort_rating ?? workout.actual?.watch_effort}/10{localFeedback.effort_rating == null ? " (watch)" : ""}
                   </span>
                 )}
                 {localFeedback.pace_assessment && (
-                  <span className="rounded bg-secondary px-2 py-0.5">
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5">
                     Pace: {PACE_LABELS[localFeedback.pace_assessment] ?? localFeedback.pace_assessment}
                   </span>
                 )}
                 {localFeedback.swapped && (
-                  <span className="rounded bg-yellow-500/15 text-yellow-600 px-2 py-0.5">
+                  <span className="rounded-full bg-[var(--warn-tint)] px-2 py-0.5 text-[var(--warn)]">
                     Swapped{localFeedback.actual_workout_type ? ` to ${localFeedback.actual_workout_type.replace("_", " ")}` : ""}
                   </span>
                 )}
@@ -317,6 +375,12 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 <p className="text-xs text-muted-foreground italic">
                   &ldquo;{localFeedback.feel_notes}&rdquo;
                 </p>
+              )}
+              {!readOnly && !editing && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+                  className="text-xs text-muted-foreground underline underline-offset-2">
+                  {localFeedback.feel_notes ? "Edit your comment" : "Add a comment"}
+                </button>
               )}
               {localFeedback.swap_reason && (
                 <p className="text-xs text-muted-foreground italic">
@@ -345,12 +409,16 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <SessionControls workout={workout} onChanged={onPlanChanged} initialAction={sessionAction} />
           )}
           {/* Feedback form for completed days without feedback */}
-          {showFeedbackForm && expanded && (
+          {(showFeedbackForm || (editing && !readOnly)) && expanded && runTab === "primary" && (
             <div className="border-t pt-3">
               <FeedbackForm
                 date={workout.date}
+                initial={editing && localFeedback ? { notes: localFeedback.feel_notes } : workout.actual?.notes ? { notes: workout.actual.notes } : undefined}
+                watch={{ feel: workout.actual?.watch_feel, effort: workout.actual?.watch_effort }}
+                hasRecording={hasActual}
                 onSubmitted={(fb) => {
                   setLocalFeedback(fb);
+                  setEditing(false);
                   // Re-fetch plan to reflect any adjustments from feedback
                   onPlanChanged?.();
                 }}

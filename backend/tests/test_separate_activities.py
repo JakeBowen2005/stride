@@ -90,5 +90,5 @@ def test_walks_stay_out_of_weekly_mileage_and_feedback():
     seed(walk)
     weeks = client.get("/api/analysis/1/weekly-mileage?weeks=1").json()
     assert round(weeks[-1]["actual"], 1) == 7.0
-    r = client.post(f"/api/plans/1/feedback/{date.today()}", json={"feel_rating": 8})
+    r = client.post(f"/api/plans/1/feedback/{date.today()}", json={"feel_notes": "Test run notes.", "feel_rating": 8})
     assert r.status_code == 200 and r.json()["evaluation"]["decision"] == "off_plan"

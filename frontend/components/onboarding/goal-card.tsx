@@ -45,16 +45,17 @@ export function GoalCards({ selected, onChange }: GoalCardProps) {
         <Card
           key={goal.type}
           className={cn(
-            "cursor-pointer transition-colors hover:bg-secondary/50",
-            selected === goal.type && "border-foreground bg-secondary/50"
+            "lift cursor-pointer bg-[var(--glass-inner)] shadow-none hover:bg-[var(--row-hover)]",
+            selected === goal.type && "border-[var(--ring)] ring-2 ring-[var(--ring)]"
           )}
           onClick={() => onChange(goal.type)}
           role="button"
+          aria-pressed={selected === goal.type}
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && onChange(goal.type)}
         >
-          <CardContent className="pt-4">
-            <h3 className="font-medium">{goal.title}</h3>
+          <CardContent className="pt-0">
+            <h3 className="font-bold">{goal.title}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {goal.description}
             </p>

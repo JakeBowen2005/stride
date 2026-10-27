@@ -12,12 +12,10 @@ services:
     disk:
       name: stride-data
       mountPath: /var/data
-      sizeGB: 1
+      sizeGB: 5
     envVars:
       - key: DATABASE_URL
         value: sqlite:////var/data/stride.db
-      - key: GARMIN_TOKENSTORE
-        value: /var/data/.garmin
       # Critical: plan logic uses date.today(), so the container must be on Jake's clock.
       - key: TZ
         value: America/Los_Angeles
@@ -28,10 +26,12 @@ services:
       - key: STRIDE_BACKUP_INTERVAL_SECONDS
         value: "21600"
       - key: STRIDE_BACKUP_KEEP
-        value: "28"
+        value: "7"
+      - key: STRIDE_BACKUP_MAX_BYTES
+        value: "536870912"
       - key: STRIDE_PASSWORD
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: GARMIN_TOKENS_JSON
+      - key: GARMIN_API_KEY
         sync: false

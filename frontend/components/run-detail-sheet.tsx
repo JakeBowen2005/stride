@@ -1,5 +1,8 @@
 "use client";
 
+import { FeedbackForm } from "@/components/feedback-form";
+import { GarminAttribution } from "@/components/garmin-attribution";
+
 import { useState } from "react";
 import { apiUrl, USER_ID } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -22,6 +25,7 @@ import {
   secondsToTime,
 } from "@/lib/format";
 import type { Activity } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface RunDetailSheetProps {
   activity: Activity | null;
@@ -103,33 +107,12 @@ function parseWorkoutDetails(desc: string): { type: string; details: string[] } 
 }
 
 export function RunDetailSheet({ activity, open, onClose, onClassificationChanged }: RunDetailSheetProps) {
-  const units = useUnits();
-  const unit = unitLabel(units);
-  const [savingKind, setSavingKind] = useState(false);
-  const [kindError, setKindError] = useState<string | null>(null);
-  async function correctKind(kind: "run" | "walk" | "auto") {
-    if (!activity) return;
-    setSavingKind(true); setKindError(null);
-    try {
-      const response = await fetch(apiUrl(`/analysis/${USER_ID}/activities/${activity.id}/kind`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save activity type");
-      onClassificationChanged?.();
-      onClose();
-    } catch (error) { setKindError(error instanceof Error ? error.message : "Could not save activity type"); }
-    finally { setSavingKind(false); }
-  }
   if (!activity) return null;
-
-  const workoutAnalysis = activity.description
-    ? parseWorkoutDetails(activity.description)
-    : null;
-
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl data-[side=right]:lg:max-w-4xl">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
+        <SheetHeader className="sm:px-6 sm:pt-6">
+          <SheetTitle className="flex flex-wrap items-center gap-2 pr-10 text-2xl font-light tracking-tight">
             {activity.title}
             {isHardWorkout(activity.type) && (
               <Badge variant="default" className="text-xs">
@@ -141,12 +124,53 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
             {formatDateLong(activity.date)}
           </p>
         </SheetHeader>
+        <RunDetailBody activity={activity} onChanged={onClassificationChanged} onKindChanged={onClose} />
+      </SheetContent>
+    </Sheet>
+  );
+}
 
-        {/* Wide screens: numbers and laps on the left, notes and coaching on the right.
+/**
+ * One run's numbers, laps, notes and review. Shared by the run sheet (Today, History) and the
+ * Plan day sheet, which passes the plan comparison as `aside` and handles feedback itself.
+ */
+export function RunDetailBody({ activity, onChanged, onKindChanged, aside, showFeedback = true, className }: {
+  activity: Activity;
+  onChanged?: () => void;
+  onKindChanged?: () => void;
+  /** Shown first in the right-hand column (e.g. planned vs ran) */
+  aside?: React.ReactNode;
+  /** The run sheet's own comment form; the Plan day sheet uses its day feedback instead */
+  showFeedback?: boolean;
+  className?: string;
+}) {
+  const units = useUnits();
+  const unit = unitLabel(units);
+  const [savingKind, setSavingKind] = useState(false);
+  const [commentSaves, setCommentSaves] = useState(0);
+  const [kindError, setKindError] = useState<string | null>(null);
+  async function correctKind(kind: "run" | "walk" | "auto") {
+    if (!activity) return;
+    setSavingKind(true); setKindError(null);
+    try {
+      const response = await fetch(apiUrl(`/analysis/${USER_ID}/activities/${activity.id}/kind`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save activity type");
+      onChanged?.();
+      onKindChanged?.();
+    } catch (error) { setKindError(error instanceof Error ? error.message : "Could not save activity type"); }
+    finally { setSavingKind(false); }
+  }
+  const workoutAnalysis = activity.description
+    ? parseWorkoutDetails(activity.description)
+    : null;
+
+  return (
+        <>{/* Wide screens: numbers and laps on the left, notes and coaching on the right.
             Phones keep a single column in the same reading order. */}
-        <div className="grid gap-x-8 gap-y-4 px-4 pb-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start">
+        <div className={cn("grid gap-x-6 gap-y-4 px-4 pb-6 sm:px-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start", className)}>
           <div className="min-w-0 space-y-4 lg:col-start-1">
-            {activity.classification && <section className="space-y-2 rounded-md border p-3 text-sm" aria-label="Activity classification">
+            {activity.classification && <section className="glass-tile space-y-2 p-3.5 text-sm" aria-label="Activity classification">
               <p className="font-medium">{activity.classification.kind === "walk" ? "Walk · excluded from running mileage" : "Run · included in running mileage"}{activity.classification.override ? " · corrected by you" : ""}</p>
               <p className="text-xs text-muted-foreground">{activity.classification.reason}</p>
               {activity.classification.needs_review && <p role="status" className="text-xs">Please confirm this activity. Slow pace alone cannot distinguish a walk from trail running or run/walk training.</p>}
@@ -159,35 +183,34 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               {kindError && <p role="alert" className="text-xs text-destructive">{kindError}</p>}
             </section>}
 
-            {/* Metrics grid */}
-            <div className="grid grid-cols-3 gap-x-4 gap-y-3 rounded-md border px-2 py-3 text-center">
+            {/* Distance is the hero number; the rest are glass tiles */}
+            <div className="flex items-end gap-2">
+              <span className="hero-num text-[clamp(4rem,12vw,6.5rem)]">{distanceInUnits(activity.distance_miles, units)}</span>
+              <span className="pb-2 text-xl text-muted-foreground">{unit}</span>
+            </div>
+            <GarminAttribution source={activity.source} device={activity.device_name} className="-mt-3 text-xs text-muted-foreground" />
+            <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 [&>div]:rounded-2xl [&>div]:bg-[var(--glass-inner)] [&>div]:px-3 [&>div]:py-2.5 [&>div>div:last-child]:text-xs [&>div>div:last-child]:text-muted-foreground">
               <div>
-                <div className="font-mono text-lg font-semibold">
-                  {distanceInUnits(activity.distance_miles, units)}
-                </div>
-                <div className="text-xs text-muted-foreground">{unit}</div>
-              </div>
-              <div>
-                <div className="font-mono text-lg font-semibold">
+                <div className="font-mono text-xl font-semibold">
                   {paceInUnits(activity.avg_pace.replace(/\/mi$/, ""), units)}/{unit}
                 </div>
                 <div className="text-xs text-muted-foreground">avg pace</div>
               </div>
               <div>
-                <div className="font-mono text-lg font-semibold">
+                <div className="font-mono text-xl font-semibold">
                   {secondsToTime(activity.duration_seconds)}
                 </div>
                 <div className="text-xs text-muted-foreground">time</div>
               </div>
               {activity.avg_heart_rate != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">{activity.avg_heart_rate}</div>
+                  <div className="font-mono text-base font-semibold">{activity.avg_heart_rate}</div>
                   <div className="text-xs text-muted-foreground">avg HR</div>
                 </div>
               )}
               {activity.elevation_gain_ft != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">
+                  <div className="font-mono text-base font-semibold">
                     {units === "km" ? `${Math.round(activity.elevation_gain_ft / 3.281)} m` : `${activity.elevation_gain_ft} ft`}
                   </div>
                   <div className="text-xs text-muted-foreground">elevation</div>
@@ -195,39 +218,47 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
               )}
               {activity.cadence != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">{activity.cadence}</div>
+                  <div className="font-mono text-base font-semibold">{activity.cadence}</div>
                   <div className="text-xs text-muted-foreground">cadence</div>
                 </div>
               )}
               {/* Garmin metrics */}
               {activity.aerobic_training_effect != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">
-                    {activity.aerobic_training_effect.toFixed(1)} / {(activity.anaerobic_training_effect ?? 0).toFixed(1)}
+                  {/* Garmin's two scores (0-5): aerobic base vs. anaerobic/speed stimulus */}
+                  <div className="font-mono text-base font-semibold" title="Garmin training effect, 0 to 5">
+                    {activity.aerobic_training_effect.toFixed(1)} · {(activity.anaerobic_training_effect ?? 0).toFixed(1)}
                   </div>
-                  <div className="text-xs text-muted-foreground">training effect</div>
+                  <div className="text-xs text-muted-foreground">aerobic · anaerobic effect</div>
                 </div>
               )}
               {activity.vo2max != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">{Math.round(activity.vo2max)}</div>
+                  <div className="font-mono text-base font-semibold">{Math.round(activity.vo2max)}</div>
                   <div className="text-xs text-muted-foreground">VO2max</div>
                 </div>
               )}
               {activity.avg_ground_contact_time != null && (
                 <div>
-                  <div className="font-mono text-sm font-medium">{Math.round(activity.avg_ground_contact_time)} ms</div>
+                  <div className="font-mono text-base font-semibold">{Math.round(activity.avg_ground_contact_time)} ms</div>
                   <div className="text-xs text-muted-foreground">ground contact</div>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="min-w-0 space-y-4 border-t pt-4 empty:hidden lg:col-start-2 lg:border-t-0 lg:pt-0 lg:row-span-2 lg:row-start-1 [&>*+*]:border-t [&>*+*]:pt-4">
+          <div className="min-w-0 space-y-3 empty:hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 [&>*]:rounded-[20px] [&>*]:bg-[var(--glass-inner)] [&>*]:p-4">
+            {aside}
+            {showFeedback && <section aria-label="Your run feedback">
+              <h4 className="text-[13px] font-bold">Your run feedback</h4>
+              <FeedbackForm key={`${activity.id}-${activity.notes ?? ""}`} activityId={activity.id} date={activity.date.slice(0,10)}
+                watch={{ feel: activity.watch_feel, effort: activity.watch_effort }} initial={{ notes: activity.notes }}
+                onSubmitted={() => { setCommentSaves((n) => n + 1); onChanged?.(); }} />
+            </section>}
             {/* Notes / Garmin lap summary */}
             {activity.description && (
               <div>
-                <h4 className="text-sm font-medium">Notes</h4>
+                <h4 className="text-[13px] font-bold">Notes</h4>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
                   {activity.description}
                 </p>
@@ -237,7 +268,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
             {/* Workout Analysis */}
             {workoutAnalysis && (
               <div>
-                <h4 className="text-sm font-medium flex items-center gap-2">
+                <h4 className="flex items-center gap-2 text-[13px] font-bold">
                   Workout Analysis
                   <Badge variant="secondary" className="text-[10px]">
                     {workoutAnalysis.type}
@@ -247,7 +278,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
                   {workoutAnalysis.details.map((detail, i) => (
                     <div
                       key={i}
-                      className="rounded bg-secondary/50 px-2 py-1.5 text-sm font-mono"
+                      className="rounded-xl bg-secondary px-3 py-2 font-mono text-sm"
                     >
                       {detail}
                     </div>
@@ -258,7 +289,7 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
 
             {activity.feel_rating && (
               <div>
-                <h4 className="text-sm font-medium">How it felt</h4>
+                <h4 className="text-[13px] font-bold">How it felt</h4>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="font-mono text-lg font-semibold">
                     {activity.feel_rating}/10
@@ -274,23 +305,21 @@ export function RunDetailSheet({ activity, open, onClose, onClassificationChange
 
             {activity.coach_analysis && (
               <div>
-                <h4 className="text-sm font-medium">Coach Analysis</h4>
+                <h4 className="text-[13px] font-bold">Coach Analysis</h4>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                   {activity.coach_analysis}
                 </p>
               </div>
             )}
 
-            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}`} activityId={activity.id} />}
+            {activity.type !== "walk" && <CoachingReview key={`coach-${activity.id}-${commentSaves}-${activity.notes ?? ""}`} activityId={activity.id} hasComment={!!activity.notes || commentSaves > 0} />}
           </div>
 
           {activity.splits.length > 0 && (
-            <div className="min-w-0 border-t pt-4 lg:col-start-1 lg:border-t-0 lg:pt-0">
+            <div className="min-w-0 lg:col-start-1">
               <SplitsTable splits={activity.splits} />
             </div>
           )}
-        </div>
-      </SheetContent>
-    </Sheet>
+        </div></>
   );
 }

@@ -109,18 +109,16 @@ Distances supported (Phase 2+): 800m, Mile
 
 ## Data Integration
 
-### Garmin Connect (primary and only sync source; Strava code was removed Oct 2026)
-- Official Garmin Activity API is enterprise-only and paused for new applicants, so Stride uses
-  the `garminconnect` Python library (logs in as the user). One-time login: `backend/garmin_login.py`,
-  which saves tokens to `backend/.garmin/` (never commit; the password is never stored)
-- No webhooks for personal use, so the backend polls every `GARMIN_POLL_MINUTES` (default 10) and the
-  frontend triggers a sync when the app is opened/foregrounded
-- Pull all running activity types (running, trail, treadmill, track, ultra); ignore everything else
-- Laps are stored as splits; `services/lap_analyzer.py` turns laps into workout text
-  ("6x800 (3:02, ...)") so the pace calibrator and workout evaluator work without hand-written notes
+### Garmin Connect (primary and only sync source; Strava removed Oct 2026)
+- Official **Garmin Connect Personal API** (Oct 2026): `GARMIN_API_KEY` in `backend/.env` (never commit)
+  is exchanged for a 24h bearer token (`services/garmin_api.py`). Replaced the unofficial `garminconnect` lib
+- Pull-only (no webhooks): sync on app open + background `poll_due` check every `GARMIN_POLL_MINUTES`
+  (default 15, hourly in quiet hours). Incremental = one date-windowed request for runs only
+- Laps come from the activity FIT file (no `/splits` endpoint); `services/lap_analyzer.py` turns laps into
+  workout text ("6x800 (3:02, ...)") so the pace calibrator and workout evaluator work without hand-written notes
+- Not exposed: training readiness/status, VO2max, race predictions, activity notes
 - Legacy Strava-imported rows (`source="strava"`) are matched by start time + distance and upgraded in place
-- Data fields: distance, duration, pace, laps, HR, cadence, elevation, training effect, VO2max,
-  ground contact time, vertical oscillation, training load
+- Wellness: daily summaries, sleep and HRV via range endpoints (3 requests per refresh)
 
 ### Manual Entry
 - For users without a watch
@@ -129,10 +127,19 @@ Distances supported (Phase 2+): 800m, Mile
 ## Post-Run Analysis
 
 After each run syncs:
-1. **Prompt user**: "How did that feel?" — 1-10 scale + optional free text
-2. **LLM analyzes**: Did they hit target pace? HR drift? How does subjective feel compare to objective data?
-3. **Feedback**: Coach-like response grounded in data ("Your tempo splits were consistent and right on target. HR stayed in zone — solid workout.")
-4. **Plan adjustment**: If workout was too hard/easy, or user feels fatigued, adjust upcoming days. Can add rest day, reduce intensity, or modify next workout.
+1. **Feel and effort come from the watch**: Garmin's post-run prompt (`directWorkoutFeel`,
+   `directWorkoutRpe`) is the true rating. The app never asks for a 1-10 rating.
+2. **The athlete adds a comment** (required) describing how it went. Runs from the last 7 days
+   without a comment are listed on Today.
+3. **Saving the comment starts the AI review** of that run (`coaching_jobs`, `ready=True`). Saving first
+   re-reads the watch rating from Garmin (`garmin.refresh_watch_rating`), and the job is queued only after
+   the day's feedback decisions are committed, so the review is never born stale. No paid
+   review runs on a synced run nobody has described yet; a later Garmin change to a commented run
+   (laps, watch rating) re-queues it after that sync.
+4. **The review sees everything**: the comment, the watch rating, measured laps/reps/recovery,
+   Garmin metrics (training effect/load, cadence, form), the plan and recent training.
+5. **Plan adjustment**: deterministic rules use the watch rating (e.g. a low feel downgrades the
+   next hard day); the AI explains the decision, it doesn't make it.
 
 ## Weekly Summary
 
@@ -334,7 +341,6 @@ npm run dev  # runs on port 3000
 
 # Everything at once (prod build, LAN-accessible for phone) — prints phone URL
 ./start.sh        # or ./start.sh dev
-# One-time Garmin login
-cd backend && venv/bin/python garmin_login.py
+# Garmin: put a Personal API key in backend/.env as GARMIN_API_KEY
 docker build -t stride . && docker run -p 10000:10000 -v /tmp/stride-data:/var/data -e STRIDE_PASSWORD=x stride  # Render image; see README "Deploying to Render"
 ```

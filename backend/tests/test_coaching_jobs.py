@@ -12,7 +12,7 @@ def seed(monkeypatch,age=0):
     monkeypatch.setattr(settings,'openai_auto_reviews',True)
     monkeypatch.setattr(settings,'openai_api_key','test-provider-key')
     with SessionLocal() as db:
-        a=Activity(user_id=1,source='garmin',external_id='new-run',date=datetime.now()-timedelta(days=age),distance_meters=8000,duration_seconds=2700)
+        a=Activity(user_id=1,source='garmin',external_id='new-run',date=datetime.now()-timedelta(days=age),distance_meters=8000,duration_seconds=2700,feel_notes='Felt smooth.')
         db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db);db.commit();return a.id
 
 
@@ -21,10 +21,10 @@ def test_enqueue_is_transactional_recent_only_and_idempotent(monkeypatch):
     with SessionLocal() as db:
         coaching_jobs.enqueue_synced_run(db.get(Activity,act),db);db.commit()
         assert db.query(CoachingJob).count()==1 and db.query(CoachingJob).one().status=='waiting_sync'
-        old=Activity(user_id=1,source='garmin',date=datetime.now()-timedelta(days=100),distance_meters=8000,duration_seconds=2700)
+        old=Activity(user_id=1,source='garmin',date=datetime.now()-timedelta(days=100),distance_meters=8000,duration_seconds=2700,feel_notes='Old run.')
         db.add(old);db.flush();coaching_jobs.enqueue_synced_run(old,db);db.commit()
         assert db.query(CoachingJob).count()==1
-        new=Activity(user_id=1,source='garmin',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        new=Activity(user_id=1,source='garmin',date=datetime.now(),distance_meters=8000,duration_seconds=2700,feel_notes='New run.')
         db.add(new);db.flush();coaching_jobs.enqueue_synced_run(new,db);db.rollback()
         assert db.query(CoachingJob).count()==1
 
@@ -76,7 +76,20 @@ def test_concurrent_workers_claim_one_job(monkeypatch):
     assert calls==[act]
 
 
-def test_garmin_store_enqueues_new_and_merged_recent_runs(monkeypatch):
+def test_synced_runs_wait_for_the_athletes_comment(monkeypatch):
+    """No paid review of a run nobody has described: the comment starts it, immediately."""
+    monkeypatch.setattr(settings,'openai_auto_reviews',True)
+    with SessionLocal() as db:
+        a=Activity(user_id=1,source='garmin',external_id='silent',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db);db.commit()
+        assert db.query(CoachingJob).count()==0
+        a.feel_notes='Legs heavy early, smooth after mile two.'
+        coaching_jobs.enqueue_synced_run(a,db,ready=True);db.commit()
+        job=db.query(CoachingJob).one()
+        assert job.status=='queued'  # no wait for another sync
+
+
+def test_garmin_store_enqueues_new_and_merged_recent_runs_once_commented(monkeypatch):
     from app.services.garmin import _store_activity
     from types import SimpleNamespace
     monkeypatch.setattr(settings,'openai_auto_reviews',True)
@@ -84,10 +97,13 @@ def test_garmin_store_enqueues_new_and_merged_recent_runs(monkeypatch):
     with SessionLocal() as db:
         parsed={'source':'garmin','external_id':'fresh-1','date':datetime.now(),'distance_meters':8000,'duration_seconds':2700,'name':'New run'}
         assert _store_activity(fake,1,{},parsed,db,570)=='new'
+        db.commit();assert db.query(CoachingJob).count()==0  # synced, not yet commented
+        db.query(Activity).filter_by(external_id='fresh-1').one().feel_notes='Easy and relaxed.'
+        assert _store_activity(fake,1,{},parsed,db,570)=='updated'
         db.commit();assert db.query(CoachingJob).count()==1
         assert _store_activity(fake,1,{},parsed,db,570)=='updated'
         db.commit();assert db.query(CoachingJob).count()==1
-        legacy=Activity(user_id=1,source='strava',external_id='old',date=datetime.now()-timedelta(hours=2),distance_meters=7000,duration_seconds=2400)
+        legacy=Activity(user_id=1,source='strava',external_id='old',date=datetime.now()-timedelta(hours=2),distance_meters=7000,duration_seconds=2400,feel_notes='Logged by hand.')
         db.add(legacy);db.commit()
         merged={**parsed,'external_id':'fresh-2','date':legacy.date,'distance_meters':7000,'duration_seconds':2400}
         assert _store_activity(fake,1,{},merged,db,570)=='merged'
@@ -117,3 +133,48 @@ def test_quota_wait_is_deferred_without_exhausting_failure_retries(monkeypatch):
     with SessionLocal() as db:
         job=db.query(CoachingJob).one();assert job.status=='queued' and job.attempts==0
         assert job.available_at>datetime.now()+timedelta(minutes=1)
+
+
+def _active_plan(db):
+    import json
+    from datetime import date
+    from app.models.plan import Plan
+    plan=Plan(user_id=1,start_date=date.today().isoformat(),end_date=(date.today()+timedelta(days=13)).isoformat(),
+              is_active=True,load=json.dumps({}))
+    db.add(plan);db.flush();return plan
+
+
+def test_new_run_refreshes_the_coach_perspective_after_its_run_review(monkeypatch):
+    """A synced run alone refreshes the block (no comment needed); a comment refreshes it again,
+    after that run's own review so the block sees the comment and the review."""
+    monkeypatch.setattr(settings,'openai_auto_reviews',True)
+    monkeypatch.setattr(settings,'openai_api_key','test-provider-key')
+    with SessionLocal() as db:
+        plan_id=_active_plan(db).id
+        a=Activity(user_id=1,source='garmin',external_id='block-run',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db);db.commit()
+        block=db.query(CoachingJob).one()
+        assert block.plan_id==plan_id and block.status=='waiting_sync'
+        coaching_jobs.enqueue_synced_run(a,db);db.commit()
+        assert db.query(CoachingJob).count()==1  # same evidence: no second refresh
+        a.feel_notes='Did 2x12min at threshold instead.'
+        coaching_jobs.enqueue_synced_run(a,db,ready=True);db.commit()
+        jobs=db.query(CoachingJob).order_by(CoachingJob.id).all()
+        assert [(j.plan_id,j.status) for j in jobs]==[(plan_id,'superseded'),(None,'queued'),(plan_id,'queued')]
+        act=a.id
+    calls=[]
+    monkeypatch.setattr(coaching,'review_training',lambda user,db,activity_id=None,plan_id=None:calls.append((activity_id,plan_id)) or {'status':'ready','id':None})
+    while coaching_jobs.process_one():pass
+    assert calls==[(act,None),(None,plan_id)]
+
+
+def test_block_refresh_for_a_replaced_plan_is_dropped(monkeypatch):
+    monkeypatch.setattr(settings,'openai_auto_reviews',True)
+    monkeypatch.setattr(settings,'openai_api_key','test-provider-key')
+    with SessionLocal() as db:
+        plan=_active_plan(db)
+        a=Activity(user_id=1,source='garmin',external_id='old-plan-run',date=datetime.now(),distance_meters=8000,duration_seconds=2700)
+        db.add(a);db.flush();coaching_jobs.enqueue_synced_run(a,db,ready=True);plan.is_active=False;db.commit()
+    monkeypatch.setattr(coaching,'review_training',lambda *a,**k:(_ for _ in ()).throw(AssertionError('no review')))
+    while coaching_jobs.process_one():pass
+    with SessionLocal() as db:assert db.query(CoachingJob).one().status=='superseded'

@@ -10,10 +10,11 @@ from app.api.coaching import router as coaching_router
 from app.api.analysis import router as analysis_router
 from app.api.garmin import router as garmin_router, _sync_in_new_session
 from app.api.plans import router as plans_router
+from app.api.plan_changes import router as plan_changes_router
 from app.api.wellness import router as wellness_router
 from app.api.users import router as users_router
 from app.database import Base, add_missing_columns, engine
-from app.services.garmin import GarminNotConnected, has_tokens
+from app.services.garmin import GarminNotConnected, clear_backoff, has_api_key, poll_due
 import app.models  # noqa: F401 — registers all models so create_all picks them up
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -32,11 +33,12 @@ def _protect_existing_database():
                         keep=int(os.environ.get('STRIDE_BACKUP_KEEP', '28')), reason='before-app-migration')
 
 
-_protect_existing_database()
-
-# Create new tables, then add any new columns to existing ones
-Base.metadata.create_all(bind=engine)
-add_missing_columns()
+from app.schema import upgrade, check
+if settings.schema_auto_upgrade:
+    _protect_existing_database()
+    upgrade()
+else:
+    check()
 
 
 def _refresh_lap_summaries():
@@ -68,34 +70,36 @@ _refresh_lap_summaries()
 
 
 async def garmin_auto_sync():
-    """Poll Garmin for new runs. Garmin offers no webhooks for personal use,
-    so polling every few minutes is how new watch uploads appear automatically."""
+    """Check Garmin for new runs. The Personal API is pull-only (no webhooks), but a check
+    is a single date-windowed request, and opening the app also syncs. The loop wakes
+    every minute and only calls Garmin when `poll_due` says the last sync is old enough."""
     await asyncio.sleep(5)  # let the server finish starting
+    if has_api_key():
+        await asyncio.to_thread(clear_backoff, settings.default_user_id)
     while True:
-        if has_tokens():
+        if has_api_key():
             try:
-                result = await asyncio.to_thread(_sync_in_new_session, settings.default_user_id, False)
-                if result.get("new") or result.get("merged"):
-                    logger.info("Garmin auto-sync: %s", result.get("message"))
+                if await asyncio.to_thread(poll_due, settings.default_user_id):
+                    result = await asyncio.to_thread(_sync_in_new_session, settings.default_user_id, False)
+                    if result.get("new") or result.get("merged"):
+                        logger.info("Garmin auto-sync: %s", result.get("message"))
             except GarminNotConnected:
                 pass
             except Exception as e:
                 logger.warning("Garmin auto-sync failed: %s", e)
-        await asyncio.sleep(max(settings.garmin_poll_minutes, 1) * 60)
+        await asyncio.sleep(60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = None
-    if settings.garmin_poll_minutes > 0:
-        task = asyncio.create_task(garmin_auto_sync())
-    from app.services.coaching_jobs import coaching_worker
-    coach_task = asyncio.create_task(coaching_worker()) if settings.openai_auto_reviews else None
+    task=None
+    if settings.embedded_workers and (settings.garmin_poll_minutes>0 or settings.openai_auto_reviews):
+        from app.services.worker import run
+        task=asyncio.create_task(run())
     yield
-    for running in (task, coach_task):
-        if running:
-            running.cancel()
-    await asyncio.gather(*(running for running in (task, coach_task) if running), return_exceptions=True)
+    if task:
+        task.cancel()
+        await asyncio.gather(task,return_exceptions=True)
 
 
 app = FastAPI(title="Stride", description="AI-Powered Running Coach", version="0.2.0", lifespan=lifespan)
@@ -113,6 +117,7 @@ app.include_router(coaching_router)
 app.include_router(analysis_router)
 app.include_router(garmin_router)
 app.include_router(plans_router)
+app.include_router(plan_changes_router)
 app.include_router(users_router)
 app.include_router(wellness_router)
 
@@ -139,3 +144,55 @@ def ready():
     except Exception:
         raise HTTPException(503, "Database unavailable") from None
     return {"status": "ready"}
+
+
+from app.api.auth import router as auth_router
+app.include_router(auth_router)
+
+
+@app.middleware('http')
+async def athlete_identity(request, call_next):
+    """Backend enforcement, including numeric legacy paths and every API router.
+
+    `me` is resolved here for existing route signatures. No identity headers from
+    the browser are trusted. New account-mode API namespaces fail closed.
+    """
+    from starlette.responses import JSONResponse
+    from app.database import SessionLocal
+    from app.services.accounts import session_user
+    path = request.url.path
+    if not path.startswith('/api/'):
+        return await call_next(request)
+    if settings.accounts_enabled and request.method not in {'GET','HEAD','OPTIONS'}:
+        origin=request.headers.get('origin')
+        allowed={x.strip().rstrip('/') for x in settings.allowed_origins.split(',')}
+        allowed.add(str(request.base_url).rstrip('/'))
+        if settings.public_app_url:
+            allowed.add(settings.public_app_url.rstrip('/'))
+        if origin and origin.rstrip('/') not in allowed:
+            return JSONResponse({'detail':'Cross-origin writes are not allowed.'},status_code=403)
+    if path.startswith('/api/auth/'):
+        return await call_next(request)
+    parts=path.split('/')
+    position=4 if len(parts)>4 and parts[2]=='garmin' else 3
+    # Creation of athletes is only through invited registration in account mode.
+    if settings.accounts_enabled:
+        with SessionLocal() as db:
+            uid=session_user(request,db)
+        if uid is None:
+            return JSONResponse({'detail':'Sign in to continue.'},status_code=401)
+        if len(parts)<=position or parts[position] not in {'me',str(uid)}:
+            return JSONResponse({'detail':'This athlete is not available.'},status_code=403)
+    else:
+        uid=settings.default_user_id
+    if len(parts)>position and parts[position]=='me':
+        parts[position]=str(uid)
+        request.scope['path']='/'.join(parts)
+        request.scope['raw_path']=request.scope['path'].encode()
+    from app.athlete_clock import athlete_zone
+    from app.models.user import User
+    with SessionLocal() as db:
+        user=db.get(User,uid)
+        zone=user.timezone if user else None
+    with athlete_zone(zone,uid):
+        return await call_next(request)

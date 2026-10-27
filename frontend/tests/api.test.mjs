@@ -37,3 +37,11 @@ test('a successful empty history remains a valid empty result', async () => {
   const api = client(async () => ({ status: 200, ok: true, json: async () => [] }));
   assert.equal((await api.getJson('/runs')).length, 0);
 });
+
+test('new-athlete baseline stays empty while analysis errors remain failures', () => {
+  const api=client(()=>{throw Error('No request expected');});
+  assert.equal(api.baselineOrEmpty({error:'No activities found'}),null);
+  assert.throws(()=>api.baselineOrEmpty({error:'Analysis failed'}),/Analysis failed/);
+  const baseline={overview:{total_runs:1},current_fitness:{weekly_mileage_4w_avg:0}};
+  assert.equal(api.baselineOrEmpty(baseline),baseline);
+});

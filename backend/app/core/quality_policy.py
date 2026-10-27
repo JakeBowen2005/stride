@@ -8,6 +8,7 @@ import math
 
 from app.core.workout_data import MI, prescription, render, segment
 
+BOOKEND_ROUND_SECONDS = 300  # time-based warmups/cooldowns round to 5 minutes
 
 @dataclass(frozen=True)
 class QualityPolicy:
@@ -162,8 +163,9 @@ def format_bookends(workout, paces, workout_format):
     for key in ('warmup', 'cooldown'):
         spec = data.get(key)
         if spec and spec.get('distance_meters'):
-            seconds = round(spec['distance_meters'] / MI * paces['long_run_pace'])
-            workout[key] = f'{seconds/60:g}min easy'
+            # Simple, not precise: "15min easy", never "16.5min easy".
+            seconds = max(1, round(spec['distance_meters'] / MI * paces['long_run_pace'] / BOOKEND_ROUND_SECONDS)) * BOOKEND_ROUND_SECONDS
+            workout[key] = f'{seconds // 60}min easy'
             data[key] = segment(seconds=seconds)
     return workout
 

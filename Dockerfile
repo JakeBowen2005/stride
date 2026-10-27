@@ -29,6 +29,8 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Coaching code reads <repo>/docs at runtime, so keep the /app/backend + /app/docs layout.
 COPY backend/app backend/app
+COPY backend/alembic.ini backend/alembic.ini
+COPY backend/migrations backend/migrations
 COPY docs docs
 COPY demo demo
 COPY --from=frontend /src/frontend/.next/standalone frontend/

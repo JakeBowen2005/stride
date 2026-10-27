@@ -37,7 +37,7 @@ const DISTANCES = [
 const ULTRAS = new Set(["50k", "50mi", "100k", "100mi"]);
 
 const selectClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-10 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function splitTime(total: number | null) {
   if (!total) return { h: "", m: "", s: "" };
@@ -232,7 +232,7 @@ export function GoalEditor({
       )}
 
       {readiness && !readiness.ready && (
-        <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+        <div className="space-y-2 rounded-2xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] p-3">
           <p className="font-medium">This goal looks like a stretch right now:</p>
           <ul className="list-disc space-y-1 pl-5">
             {readiness.reasons.map((r) => (

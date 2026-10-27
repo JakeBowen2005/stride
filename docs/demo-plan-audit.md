@@ -28,8 +28,8 @@ All six plans pass the invariant matrix (`tests/test_plan_invariants_matrix.py`)
 | beginner-marathon | 15.4 | 16.7 → 11.0 (deload) | none | 5.0 → 3.5 (30-32%) | ✅ |
 | beginner-mileage | 10.8 | 11.6 → 8.5 (deload) | none | 3.0 / 3.0 | ✅, see note 2 |
 | sub17-5k | 46.8 | 49 → 51 (+4%) | tempo; then 6x800+4x200 and 2x15min | 13.5 → 14.5 (28%) | ✅ |
-| sub3-marathon | 60.8 | 60.5 → 67 (+10%) | cruise intervals; 2x18min threshold | 19 easy → 20 with 10 at MP | ✅, see note 3 |
-| trail-100k | 60.5 | 64 → 67.5 (+12%, expert) | run-hike climbs; 3x8min threshold | 22.5; then back-to-back 13 + 23.5 | ✅, see note 4 |
+| sub3-marathon | 60.8 | 60.5 → 63 (held: MP long run introduced) | cruise intervals; 2x18min threshold | 19 easy → 20 with 10 at MP | ✅, decided (call 3) |
+| trail-100k | 60.5 | 64 → 67.5 (+12%, expert) | run-hike climbs; 3x8min threshold | 22.5; then back-to-back 13 + 23.5 | ✅, decided (call 4) |
 
 ## Fixed in this change
 
@@ -40,9 +40,14 @@ All six plans pass the invariant matrix (`tests/test_plan_invariants_matrix.py`)
   The note appears only when it's true. Regression test: `test_low_volume_long_run_is_never_shorter_than_an_easy_day`.
 - **The deload note told beginners to "keep 1 quality workout"** when their plan has none. It now says every run stays easy when there's no workout.
 
-## Judgement calls to decide (not changed)
+## Judgement calls
+
+### Decided (Oct 26 2026)
+
+3. **sub3-marathon week 2 raised mileage 10% and added a 10-mile marathon-pace long run.** Decided: one lever at a time (P4). The week a race-pace long-run segment is introduced, or grows by 3+ miles over anything run in the last four weeks (`load_policy.RACE_PACE_STEP_MILES`), holds volume at the week before; mileage rises the following week. The sub-3 demo's week 2 now holds at 63 mi with the 10 + 10 MP long run, and week 3 builds to 64.5 with the 3x4mi MP block (10 → 12 mi at MP is the same lever's next step, not a new one). Half and marathon goals only; ultras and introductory (developmental) plans are unchanged. Invariant 7 in `tests/plan_invariants.py`; tests in `tests/test_one_lever_and_bookends.py`.
+4. **trail-100k warmups read "16.5min easy".** Decided: time-based warmups and cooldowns round to the nearest 5 minutes, never below 5 (P6, simple). The trail-100K demo now reads "15min easy" (and the light sessions' cooldowns "10min easy"). The rep work and the session's distance are unchanged.
+
+### Still open (not changed)
 
 1. **Deloads at very low volume.** All three beginners deload in week 2 after 4-8 steady weeks (5.5-6 mpw for the first-5K athlete). This follows the principle's cadence, but at 6-8 mpw there's little load to absorb. The goal's minimum mileage (P1 table: 10-15 mpw to finish a 5K) isn't even reached yet. Option: skip or soften deloads while the baseline is below the goal's minimum.
 2. **beginner-mileage week 2 drops from 4 to 3 run days** to keep easy runs at least 2 mi in an 8.1 mi deload. Consistency (P1) argues for keeping frequency and shortening runs instead.
-3. **sub3-marathon week 2 raises mileage 10% and adds a 10-mile marathon-pace long run.** That's race-specific and right for the peak phase (P8, Pfitzinger/Canova), but it bends "never raise mileage and intensity in the same week" (P4). Option: hold volume flat in the week a marathon-pace long run is introduced.
-4. **trail-100k warmups read "16.5min easy".** Time-based warmups should round to 5 minutes (P6, simple): "15min easy".

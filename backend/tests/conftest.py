@@ -5,9 +5,13 @@ import os
 import tempfile
 
 _tmp = tempfile.mkdtemp(prefix="stride-test-")
+os.environ["FIT_BLOB_BUCKET"] = ""
+os.environ["SCHEMA_AUTO_UPGRADE"] = "true"
+os.environ["EMBEDDED_WORKERS"] = "false"
+os.environ["STRIDE_ACCOUNTS_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["GARMIN_POLL_MINUTES"] = "0"
-os.environ["GARMIN_TOKENSTORE"] = os.path.join(_tmp, "garmin")
+os.environ["GARMIN_API_KEY"] = ""  # never call the real Garmin API, regardless of local .env
 os.environ["ANTHROPIC_API_KEY"] = ""  # coach uses template responses
 os.environ["OPENAI_API_KEY"] = ""  # all normal tests are offline, regardless of local .env
 os.environ["OPENAI_AUTO_REVIEWS"] = "false"
@@ -62,7 +66,7 @@ def fresh_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday"))
+    db.add(User(id=1, name="Test Runner", days_per_week=6, rest_days="friday", long_run_day="saturday", ai_consent=True))
     db.add(Goal(user_id=1, goal_type="race", race_distance="5k", target_time_seconds=1020, active=True))
     db.commit()
     db.close()

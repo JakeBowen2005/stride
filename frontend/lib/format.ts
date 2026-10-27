@@ -109,3 +109,10 @@ export function cleanPurpose(purpose: string | null | undefined): string | null 
   const text = purpose.replace(/^[a-z0-9_-]+ [a-z_]+: /, "").trim();
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : null;
 }
+
+/** Running time: 19440 → "5 h 24 min", 1500 → "25 min" */
+export function hoursLabel(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  const h = Math.floor(minutes / 60);
+  return h ? `${h} h ${minutes % 60} min` : `${minutes} min`;
+}
