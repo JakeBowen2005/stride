@@ -75,7 +75,27 @@ def latest(user_id: int, activity_id: int | None = None, plan_id: int | None = N
     if not row:
         return None
     _, _, fingerprint, _ = build_context(user_id, db, activity_id, plan_id, row.athlete_concern)
-    return serialize_review(row, stale=fingerprint != row.context_hash)
+    result = serialize_review(row, stale=fingerprint != row.context_hash)
+    if not activity_id:
+        # A block review is refreshed by the athlete only once a new run has arrived since it.
+        result['new_run_since'] = _run_arrived_since(user_id, row.created_at, db)
+    return result
+
+
+def _run_arrived_since(user_id: int, since, db: Session) -> bool:
+    """A run first recorded (its first source revision) after `since` (a UTC review timestamp)."""
+    from datetime import timezone
+    from sqlalchemy import func
+    from app.models.activity import Activity
+    from app.models.history import ActivitySource, SourceRevision
+    from app.models.activity import runs_only
+    first_seen = (db.query(ActivitySource.activity_id, func.min(SourceRevision.retrieved_at).label('first'))
+                  .join(SourceRevision, SourceRevision.source_id == ActivitySource.id)
+                  .filter(ActivitySource.user_id == user_id).group_by(ActivitySource.activity_id).subquery())
+    return db.query(Activity.id).join(first_seen, first_seen.c.activity_id == Activity.id).filter(
+        Activity.user_id == user_id, runs_only(),
+        # Revisions are stamped in server-local time; reviews in UTC
+        first_seen.c.first > since.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)).first() is not None
 
 
 @router.post('/{user_id}/reviews/{review_id}/accept')

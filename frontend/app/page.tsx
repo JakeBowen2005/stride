@@ -168,10 +168,10 @@ export default function TodayPage() {
                   today={todayPlan}
                   planStale={planStale || !plan}
                   recoveryCaution={(wellness?.signals ?? []).some((s) => s.level !== "good")}
-                  coach={todayRunId ? (
+                  coach={todayRunId ? (activityId, hasComment) => (
                     <CoachingReview
-                      key={`coach-${todayRunId}-${todayPlan?.feedback?.feel_notes ?? ""}-${commentSaves}`}
-                      activityId={todayRunId} onPlanChanged={load} presentation="today" showLabel={false} />
+                      key={`coach-${activityId}-${hasComment}-${commentSaves}`}
+                      activityId={activityId} hasComment={hasComment} onPlanChanged={load} presentation="today" showLabel={false} />
                   ) : undefined}
                 />
                 {activityError && <p role="alert" className="mx-4 mb-3 text-xs text-destructive">{activityError}</p>}

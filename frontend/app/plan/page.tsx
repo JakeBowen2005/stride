@@ -514,7 +514,7 @@ export default function PlanPage() {
       </div>
 
       <Sheet open={isDesktop && inspectorOpen && !!selected} onOpenChange={setInspectorOpen}>
-        <SheetContent className="overflow-y-auto data-[side=right]:sm:max-w-lg">
+        <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl data-[side=right]:lg:max-w-3xl">
           {selected && (
             <>
               <SheetHeader className="pb-0">

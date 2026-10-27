@@ -92,3 +92,36 @@ def test_ai_allowance_resets_at_the_athletes_midnight_and_says_so(monkeypatch):
             raise AssertionError("limit not enforced")
         except Exception as exc:
             assert getattr(exc, "status_code", None) == 429 and "2 of 2 today" in exc.detail and "midnight" in exc.detail
+
+
+def test_each_run_of_the_day_carries_its_own_comment_and_watch_rating():
+    _plan([(0, "easy", "Easy Run + Strides", 5.0)])
+    _easy_run(0, 5)
+    _easy_run(0, 2, ext="second")
+    with SessionLocal() as db:
+        first, second = sorted(db.query(Activity).all(), key=lambda a: -a.distance_meters)
+        first.feel_notes, second.garmin_feel, second.garmin_rpe = "recovered nicely", 50, 10
+        db.commit()
+    day = next(d for w in client.get("/api/plans/1/current").json()["weeks"] for d in w["days"] if d["date"] == TODAY.isoformat())
+    assert day["actual"]["notes"] == "recovered nicely"
+    extra = day["actual"]["other_runs"][0]
+    assert extra["notes"] is None and (extra["watch_feel"], extra["watch_effort"]) == (6, 1)
+
+
+def test_block_review_offers_refresh_only_after_a_new_run_arrives(monkeypatch):
+    from datetime import datetime, timezone
+    from app.models.coaching import CoachingReview
+    from app.services.history_evidence import capture, source_for
+    plan_id = _plan([(0, "easy", "Easy Run", 5.0)])
+    with SessionLocal() as db:
+        db.add(CoachingReview(user_id=1, plan_id=plan_id, context_hash="h", status="ready", model="m", attempts=1,
+                              result='{"summary":"ok","suggestions":[]}', created_at=datetime.now(timezone.utc)))
+        db.commit()
+    latest = lambda: client.get(f"/api/coaching/1/latest?plan_id={plan_id}").json()
+    assert latest()["new_run_since"] is False
+    _easy_run(0, 4, ext="late")
+    with SessionLocal() as db:
+        run = db.query(Activity).filter_by(external_id="late0").one()
+        capture(source_for(run, "garmin", run.external_id, db), "summary", db, payload={"id": 1})
+        db.commit()
+    assert latest()["new_run_since"] is True

@@ -93,10 +93,16 @@ export interface ActivityLine {
   avg_pace: string | null;
   duration_seconds: number;
   average_heartrate: number | null;
+  /** This recording's own comment and watch rating */
+  notes?: string | null;
+  watch_feel?: number | null;
+  watch_effort?: number | null;
 }
 
 export interface ActualRun {
   activity_id?: number;
+  /** The main run's own comment */
+  notes?: string | null;
   workout?: ExecutedWorkout | null;
   session?: RanSession | null;
   distance_miles: number;
