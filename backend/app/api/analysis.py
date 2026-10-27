@@ -245,6 +245,7 @@ def _format_activity(a: Activity, easy_pace: float | None = None) -> dict:
         "id": a.id,
         "external_id": a.external_id,
         "source": a.source,
+        "device_name": a.device_name,
         "date": a.date.isoformat() if a.date else None,
         "type": a.workout_type or "easy",
         "title": a.name or "Run",

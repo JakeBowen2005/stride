@@ -88,6 +88,8 @@ export interface RanSession {
 
 export interface ActivityLine {
   id: number;
+  source?: string | null;
+  device_name?: string | null;
   name: string | null;
   distance_miles: number;
   avg_pace: string | null;
@@ -203,6 +205,8 @@ export interface Activity {
   session?: { title: string; category: ExecutedWorkout["category"] } | null;
   external_id?: string;
   source?: "garmin" | "strava" | "manual";
+  /** Garmin device that recorded it, for "Garmin <device>" attribution (null when unknown). */
+  device_name?: string | null;
   date: string;
   type: WorkoutType;
   title: string;

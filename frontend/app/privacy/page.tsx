@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         <p><strong>Garmin Connect data</strong>, if you connect your Garmin account:</p>
         <ul>
           <li><em>Activities:</em> your runs, including date, distance, duration, pace, heart rate, elevation, cadence, running form metrics, training effect and load, laps from the activity file, and the post-run feel and effort rating from your watch.</li>
-          <li><em>Health:</em> daily summaries, including resting heart rate, sleep (duration, stages, score), heart-rate variability, stress, Body Battery, steps, respiration and Garmin&apos;s training readiness and load figures.</li>
+          <li><em>Health:</em> daily summaries, including resting heart rate, sleep (duration, stages, score), heart-rate variability, stress, Body Battery, steps, pulse oximetry and respiration. Stride doesn&apos;t receive Garmin&apos;s training readiness or training status.</li>
         </ul>
         <p>We read only running activities for training; Stride doesn&apos;t use other sports. We receive data only for the periods Garmin makes available, and only while you stay connected.</p>
         <p><strong>Files you upload.</strong> Activity (.FIT) files you import yourself.</p>
@@ -82,7 +82,7 @@ export default function PrivacyPage() {
               <tr><td><strong>Garmin</strong></td><td>Source of your activity and health data, at your request</td><td>Your Garmin data, and the request for it</td></tr>
               <tr><td><strong>Render</strong> (United States)</td><td>Hosts the app and its database</td><td>Everything stored in Stride</td></tr>
               <tr><td><strong>OpenAI</strong> (only if you opt in)</td><td>Writes coaching explanations</td><td>The training summary described in section 3</td></tr>
-              <tr><td><strong>Amazon Web Services S3</strong> (United States)</td><td>Encrypted backups and stored activity files</td><td>Database backups; .FIT files</td></tr>
+              <tr><td><strong>Amazon Web Services S3</strong> (United States, only when off-site storage is enabled)</td><td>Encrypted backups and stored activity files</td><td>Database backups; .FIT files</td></tr>
             </tbody>
           </table>
         </div>
@@ -98,7 +98,7 @@ export default function PrivacyPage() {
           <li><strong>While your account is open,</strong> we keep your training history, because long-term trends are part of the coaching.</li>
           <li><strong>Temporary analysis caches</strong> are removed after 45 days.</li>
           <li><strong>Server backups</strong> are taken every 6 hours, and only the most recent 7 are kept on the server. Off-site backups are deleted after {LEGAL.offsiteBackupDays} days.</li>
-          <li><strong>When you delete your account,</strong> your training data and Garmin connection are removed from the live system immediately. Copies in backups disappear as those backups expire, within the windows above.</li>
+          <li><strong>When you delete your account,</strong> your training data and stored Garmin credentials are removed from the live system immediately, and Stride stops requesting Garmin data. You can also remove Stride from Garmin Connect&apos;s connected apps. Copies in backups disappear as those backups expire, within the windows above.</li>
         </ul>
       </section>
 
@@ -158,7 +158,7 @@ export default function PrivacyPage() {
 
       <footer className="space-y-2 border-t border-[var(--glass-border)] pt-4 text-xs text-muted-foreground">
         <p>Garmin, Garmin Connect and Body Battery are trademarks of Garmin Ltd. or its subsidiaries. Stride is not affiliated with or endorsed by Garmin.</p>
-        <p><Link className="underline underline-offset-2" href="/about">About Stride</Link></p>
+        <p><Link className="underline underline-offset-2" href="/terms">Terms of Service</Link> · <Link className="underline underline-offset-2" href="/about">About Stride</Link></p>
       </footer>
     </article>
   );

@@ -4,7 +4,7 @@ from alembic.config import Config
 from alembic import command
 from sqlalchemy import inspect, text
 from app.database import engine
-HEAD='0004_plan_change_requests'
+HEAD='0005_multi_user_prep'
 
 
 def upgrade(bind=engine):

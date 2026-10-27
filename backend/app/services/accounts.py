@@ -69,7 +69,8 @@ def main():
             password = getpass.getpass('New account password (at least 12 characters): ')
             if not 12 <= len(password) <= 128:
                 parser.error('Password length must be 12–128 characters.')
-            db.add(Account(user_id=args.user_id,email=args.email.strip().lower(),password_hash=PASSWORDS.hash(password)))
+            db.add(Account(user_id=args.user_id,email=args.email.strip().lower(),password_hash=PASSWORDS.hash(password),
+                           role='owner',created_at=utcnow()))
             db.commit()
             print('Account attached to the existing athlete. Training data was preserved.')
         else:

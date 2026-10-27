@@ -15,12 +15,13 @@ from app.models.plan import PlannedWorkout
 from app.services.coaching import VERSION, build_context, review_training, serialize_review
 
 def consent(user_id: int, db: Session = Depends(get_db)):
-    from app.config import settings
     from app.models.user import User
-    if settings.accounts_enabled:
-        user=db.get(User,user_id)
-        if not user or not user.ai_consent:
-            raise HTTPException(403, 'AI coaching is off. Enable consent in Settings to use it.')
+    # Required in every mode, the owner included (docs/multi-user-design.md §2.6).
+    user=db.get(User,user_id)
+    if not user:
+        raise HTTPException(404, 'Athlete not found')
+    if not user.ai_consent:
+        raise HTTPException(403, 'AI coaching is off. Enable consent in Settings to use it.')
 
 
 router = APIRouter(prefix='/api/coaching', tags=['coaching'])
@@ -45,9 +46,12 @@ def status(user_id: int, db: Session = Depends(get_db)):
         CoachingReview.user_id == user_id, CoachingReview.created_at >= day,
         CoachingReview.model.is_not(None)).scalar()
     from app.models.user import User
-    allowed = not settings.accounts_enabled or bool(db.get(User,user_id).ai_consent)
-    return {'configured': bool(settings.openai_api_key) and allowed, 'model': settings.openai_coach_model,
-            'policy_version': VERSION, 'reviews_today': used, 'daily_limit': settings.openai_coach_daily_limit}
+    user = db.get(User,user_id)
+    allowed = bool(user and user.ai_consent)
+    from app.services import ai_budget
+    return {'configured': bool(settings.openai_api_key) and allowed, 'consent': allowed, 'model': settings.openai_coach_model,
+            'policy_version': VERSION, 'reviews_today': used, 'daily_limit': settings.openai_coach_daily_limit,
+            'usage': ai_budget.usage(user_id, db)}
 
 
 @router.post('/{user_id}/review', dependencies=[Depends(consent)])

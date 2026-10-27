@@ -497,14 +497,15 @@ def _check_ai_budget(user_id,db,configured):
     if used >= settings.openai_coach_daily_limit:
         raise HTTPException(429, f'Daily AI review limit reached ({used} of {settings.openai_coach_daily_limit} today; '
                                  'it resets at midnight). Saved reviews and training rules still work.')
+    from app.services import ai_budget
+    ai_budget.check(user_id, db)
 
 
 def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
-    if settings.accounts_enabled:
-        from app.models.user import User
-        user=db.get(User,user_id)
-        if not user or not user.ai_consent:
-            raise HTTPException(403, 'AI coaching consent is required.')
+    from app.models.user import User
+    user=db.get(User,user_id)
+    if not user or not user.ai_consent:  # every mode, the owner included
+        raise HTTPException(403, 'AI coaching consent is required.')
     from app.api.plans import _begin_schedule_write
     # Reserve before calling OpenAI: concurrent retries reuse the same review;
     # quota checks and reservations share a SQLite write lock.
@@ -582,6 +583,8 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     attempt.latency_ms=round((time.monotonic()-started)*1000)
     attempt.status, attempt.result = status, row.result
     attempt.input_tokens, attempt.output_tokens = row.input_tokens, row.output_tokens
+    from app.services.ai_budget import cost
+    attempt.cost_usd = round(cost(attempt.model, attempt.input_tokens, attempt.output_tokens), 6)
     db.commit()
     try:
         current_hash = build_context(user_id, db, activity_id, plan_id, concern)[2]

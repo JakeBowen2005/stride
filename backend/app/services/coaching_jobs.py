@@ -30,10 +30,9 @@ def enqueue_synced_run(activity, db, ready=False):
         return
     if activity.date.date() < athlete_today()-timedelta(days=REVIEW_WINDOW_DAYS):
         return
-    if settings.accounts_enabled:
-        from app.models.user import User
-        if not db.get(User,activity.user_id).ai_consent:
-            return
+    from app.models.user import User
+    if not db.get(User,activity.user_id).ai_consent:  # every mode, the owner included
+        return
     db.flush()
     version = _evidence_version(activity)
     _enqueue_run_review(activity, version, db, ready)

@@ -46,7 +46,7 @@ export default function AboutPage() {
         <h2 className="text-base font-bold">Your data</h2>
         <p className="text-muted-foreground">
           Stride uses your running and recovery data only to coach you. It is never sold or used for advertising, and you can download or
-          delete it from Settings at any time. See the <Link className="underline underline-offset-2" href="/privacy">privacy policy</Link>.
+          delete it from Settings at any time. See the <Link className="underline underline-offset-2" href="/privacy">privacy policy</Link> and <Link className="underline underline-offset-2" href="/terms">terms of service</Link>.
         </p>
       </section>
 

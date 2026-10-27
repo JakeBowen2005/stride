@@ -66,6 +66,7 @@ class Activity(Base):
     anaerobic_training_effect: Mapped[float | None] = mapped_column(Float)
     training_effect_label: Mapped[str | None] = mapped_column(String(40))
     training_load: Mapped[float | None] = mapped_column(Float)
+    device_name: Mapped[str | None] = mapped_column(String(100), nullable=True)  # for "Garmin <device>" attribution
     vo2max: Mapped[float | None] = mapped_column(Float)
     avg_ground_contact_time: Mapped[float | None] = mapped_column(Float)  # ms
     avg_vertical_oscillation: Mapped[float | None] = mapped_column(Float)  # cm

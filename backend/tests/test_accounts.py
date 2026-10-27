@@ -18,7 +18,7 @@ def accounts(monkeypatch):
 
 
 def register(client,email='one@example.com'):
-    r=client.post('/api/auth/register',json={'name':'Runner','email':email,'password':'a-long-test-password','invite_code':'test-invitation','timezone':'Europe/London'})
+    r=client.post('/api/auth/register',json={'name':'Runner','email':email,'password':'a-long-test-password','invite_code':'test-invitation','timezone':'Europe/London','accept_terms':True})
     assert r.status_code==200,r.text
     return r.json()['user_id']
 
@@ -90,3 +90,15 @@ def test_request_calendar_is_per_athlete_and_ai_consent_is_enforced(accounts):
         assert accounts.put('/api/users/me/profile',json={'timezone':'Asia/Tokyo'}).status_code==200
         assert accounts.get('/api/users/me').json()['today']=='2026-10-24'
         assert accounts.post('/api/coaching/me/review',json={}).status_code==403
+
+
+def test_registration_requires_and_records_terms(accounts):
+    body={'name':'Runner','email':'terms@example.com','password':'a-long-test-password','invite_code':'test-invitation'}
+    assert accounts.post('/api/auth/register',json=body).status_code==422
+    r=accounts.post('/api/auth/register',json=body|{'accept_terms':True})
+    assert r.status_code==200
+    from app.database import SessionLocal
+    from app.models.account import Account
+    with SessionLocal() as db:
+        account=db.get(Account,r.json()['user_id'])
+        assert account.terms_version and account.terms_accepted_at and account.role=='athlete'

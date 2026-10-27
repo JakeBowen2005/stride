@@ -262,6 +262,8 @@ def _check_quota(user_id: int, db) -> None:
                   PlanChangeRequest.created_at >= utc_day, PlanChangeRequest.model.is_not(None)).scalar())
     if shared >= settings.openai_coach_global_daily_limit:
         raise HTTPException(429, 'The app AI budget is reached for today. The quick picker still works.')
+    from app.services import ai_budget
+    ai_budget.check(user_id, db)
 
 
 def remaining_today(user_id: int, db) -> int:
@@ -272,7 +274,7 @@ def remaining_today(user_id: int, db) -> int:
 
 
 def ai_available(user: User) -> bool:
-    return bool(settings.openai_api_key) and bool(user.ai_consent or not settings.accounts_enabled)
+    return bool(settings.openai_api_key) and bool(user.ai_consent)
 
 
 # ---------------------------------------------------------------- the request lifecycle

@@ -1,6 +1,7 @@
 "use client";
 
 import { FeedbackForm } from "@/components/feedback-form";
+import { GarminAttribution } from "@/components/garmin-attribution";
 
 import { useState } from "react";
 import { apiUrl, USER_ID } from "@/lib/api";
@@ -187,6 +188,7 @@ export function RunDetailBody({ activity, onChanged, onKindChanged, aside, showF
               <span className="hero-num text-[clamp(4rem,12vw,6.5rem)]">{distanceInUnits(activity.distance_miles, units)}</span>
               <span className="pb-2 text-xl text-muted-foreground">{unit}</span>
             </div>
+            <GarminAttribution source={activity.source} device={activity.device_name} className="-mt-3 text-xs text-muted-foreground" />
             <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 [&>div]:rounded-2xl [&>div]:bg-[var(--glass-inner)] [&>div]:px-3 [&>div]:py-2.5 [&>div>div:last-child]:text-xs [&>div>div:last-child]:text-muted-foreground">
               <div>
                 <div className="font-mono text-xl font-semibold">

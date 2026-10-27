@@ -10,6 +10,10 @@ class Account(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), primary_key=True)
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(512))
+    role: Mapped[str | None] = mapped_column(String(20), nullable=True, default='athlete')  # owner | athlete
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class AccountSession(Base):

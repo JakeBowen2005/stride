@@ -4,6 +4,7 @@ import { useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, paceInUnits, unitLabel } from "@/lib/units";
 import { useState } from "react";
 import { FeedbackForm } from "@/components/feedback-form";
+import { GarminAttribution } from "@/components/garmin-attribution";
 import Link from "next/link";
 import { CircleCheck, ChevronDown, ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,8 @@ export interface PlanDayLite {
   prescription?: { segments?: { pace_range_sec_per_mile?: { fast: number; slow: number } | null }[] } | null;
   actual?: {
     activity_id?: number;
+    source?: string | null;
+    device_name?: string | null;
     distance_miles: number;
     avg_pace: string | null;
     duration_seconds?: number;
@@ -115,6 +118,7 @@ function ActualRun({ day, onOpenActivity, selected, setSelected }: {
           <dt className="sr-only">{unit === "mi" ? "Miles" : "Kilometers"}</dt>
           <dd className="hero-num text-[clamp(4.5rem,15vw,9rem)]">{distance(activity.distance_miles)}<span className="ml-1 text-[clamp(1.25rem,3vw,1.9rem)] font-normal tracking-normal text-muted-foreground" aria-hidden> {unit}</span></dd>
         </div>
+        <dd><GarminAttribution source={activity.source} device={activity.device_name} className="-mt-3 text-xs text-muted-foreground" /></dd>
         <div className="grid grid-cols-3 border-t border-[var(--glass-border)] pt-4">
           {[
             { label: `Pace /${unit}`, value: activity.avg_pace ? paceInUnits(activity.avg_pace, units) : "—" },

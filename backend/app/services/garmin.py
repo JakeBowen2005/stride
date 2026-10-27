@@ -173,6 +173,7 @@ def parse_activity(raw: dict) -> dict | None:
         "avg_ground_contact_time": raw.get("avgGroundContactTime"),
         "avg_vertical_oscillation": raw.get("avgVerticalOscillation"),
         "calories": raw.get("calories"),
+        "device_name": (str(raw.get("deviceName"))[:100] if raw.get("deviceName") else None),
         "workout_type": "race" if event == "race" else None,
     }
 
@@ -705,7 +706,8 @@ def _refresh_summary(user_id: int, parsed: dict, db: Session, raw: dict) -> bool
     if any(before[key] is not None and getattr(activity, key) != before[key] for key in ('distance_meters', 'duration_seconds', 'elapsed_seconds', 'activity_subtype')):
         source.enrichment_status, source.next_retry_at = 'pending', None
     capture(source, 'summary', db, payload=raw)
-    changed = any(getattr(activity, key) != value for key, value in before.items())
+    # The device label is attribution only; learning it never re-runs a review.
+    changed = any(getattr(activity, key) != value for key, value in before.items() if key != 'device_name')
     if changed:
         from app.services.coaching_jobs import enqueue_synced_run
         enqueue_synced_run(activity, db)

@@ -1607,7 +1607,8 @@ def _activity_line(a: Activity) -> dict:
             "avg_pace": _format_pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
             "duration_seconds": a.duration_seconds, "average_heartrate": a.average_heartrate,
             # Each recording has its own comment and watch rating (a second run is not the first)
-            "notes": a.feel_notes, "watch_feel": a.watch_feel, "watch_effort": a.watch_effort}
+            "notes": a.feel_notes, "watch_feel": a.watch_feel, "watch_effort": a.watch_effort,
+            "source": a.source, "device_name": a.device_name}
 
 
 def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] | None = None) -> dict:
@@ -1632,6 +1633,7 @@ def _build_actual_aggregated(activities: list[Activity], walks: list[Activity] |
         "watch_feel_label": primary.watch_feel_label,
         "watch_effort_label": primary.watch_effort_label,
         "name": primary.name,
+        "source": primary.source, "device_name": primary.device_name,  # Garmin attribution
         "activity_count": len(activities),
         "total_distance_miles": round(sum(a.distance_meters for a in activities) / 1609.34, 2),
         "other_runs": [_activity_line(a) for a in others],
