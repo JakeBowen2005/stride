@@ -10,6 +10,12 @@ if TYPE_CHECKING:  # string relationship targets, for type checkers only
     from app.models.user import User
 
 
+# Garmin Connect's labels for the watch's post-run self-evaluation
+GARMIN_FEEL_LABELS = {0: "Very weak", 25: "Weak", 50: "Normal", 75: "Strong", 100: "Very strong"}
+GARMIN_EFFORT_LABELS = {1: "Very light", 2: "Light", 3: "Light", 4: "Moderate", 5: "Moderate", 6: "Moderate",
+                        7: "Hard", 8: "Hard", 9: "Very hard", 10: "Maximum"}
+
+
 class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
@@ -21,7 +27,7 @@ class Activity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     source: Mapped[str] = mapped_column(String(20))  # "garmin", "manual" ("strava" = legacy imports)
-    external_id: Mapped[str | None] = mapped_column(String(50))  # Garmin activity ID (Strava ID on legacy rows)
+    external_id: Mapped[str | None] = mapped_column(String(100))  # Garmin activity ID (Strava ID on legacy rows)
 
     # Core run data
     name: Mapped[str | None] = mapped_column(String(200))
@@ -60,6 +66,7 @@ class Activity(Base):
     anaerobic_training_effect: Mapped[float | None] = mapped_column(Float)
     training_effect_label: Mapped[str | None] = mapped_column(String(40))
     training_load: Mapped[float | None] = mapped_column(Float)
+    device_name: Mapped[str | None] = mapped_column(String(100), nullable=True)  # for "Garmin <device>" attribution
     vo2max: Mapped[float | None] = mapped_column(Float)
     avg_ground_contact_time: Mapped[float | None] = mapped_column(Float)  # ms
     avg_vertical_oscillation: Mapped[float | None] = mapped_column(Float)  # cm
@@ -67,7 +74,41 @@ class Activity(Base):
 
     # User feedback (post-run)
     feel_rating: Mapped[int | None] = mapped_column(Integer)  # 1-10
+    effort_rating: Mapped[int | None] = mapped_column(Integer)
+    reported_completion: Mapped[str | None] = mapped_column(String(20))
     feel_notes: Mapped[str | None] = mapped_column(Text)  # free text
+    # The watch's own post-run self-evaluation, on Garmin's scales: feel 0/25/50/75/100
+    # (very weak .. very strong) and perceived effort 10-100. Stride app ratings win.
+    garmin_feel: Mapped[int | None] = mapped_column(Integer)
+    garmin_rpe: Mapped[int | None] = mapped_column(Integer)
+    garmin_rating_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    @property
+    def watch_feel(self) -> int | None:
+        """Garmin feel on Stride's 1-10 feel scale (very weak 2 .. very strong 10)."""
+        return None if self.garmin_feel is None else max(1, min(10, round(2 + self.garmin_feel / 12.5)))
+
+    @property
+    def watch_effort(self) -> int | None:
+        """Garmin perceived effort (10-100) on Stride's 1-10 effort scale."""
+        return None if not self.garmin_rpe else max(1, min(10, round(self.garmin_rpe / 10)))
+
+    @property
+    def watch_feel_label(self) -> str | None:
+        """Garmin's own word for the feel answer, as the Connect app shows it."""
+        if self.garmin_feel is None:
+            return None
+        return GARMIN_FEEL_LABELS[min(GARMIN_FEEL_LABELS, key=lambda k: abs(k - self.garmin_feel))]
+
+    @property
+    def watch_effort_label(self) -> str | None:
+        """Garmin's own word for perceived effort ("Light" for 2/10)."""
+        return None if self.watch_effort is None else GARMIN_EFFORT_LABELS[self.watch_effort]
+
+    @property
+    def effective_feel(self) -> int | None:
+        """The athlete's own rating: the app answer when given, else the watch's."""
+        return self.feel_rating if self.feel_rating is not None else self.watch_feel
 
     # Onboarding: user-highlighted workouts
     user_highlighted: Mapped[bool] = mapped_column(Boolean, default=False)  # user flagged as representative of fitness

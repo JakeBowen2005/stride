@@ -136,3 +136,27 @@ def test_local_startup_snapshot_cannot_hide_failed_offsite_export(tmp_path, monk
     monkeypatch.setattr("app.services.backups.upload_s3", lambda *a: "verified/key")
     recovered = backup_once(source, folder, bucket="synthetic")
     assert recovered["last_remote_error_type"] is None and recovered["last_error_type"] is None
+
+
+def test_byte_budget_keeps_latest_verified_snapshot(tmp_path):
+    source = tmp_path / 'source.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE runs(id INTEGER)')
+    folder = tmp_path / 'backups'
+    for _ in range(3):
+        result = backup_once(source, folder, keep=28, max_bytes=source.stat().st_size)
+    assert len(list(folder.glob('stride-*.sqlite3'))) == 1
+    assert verify_database(folder / result['last_backup']) == {'runs': 0}
+    assert result['storage']['database_bytes'] > 0
+
+
+def test_low_space_retains_last_verified_backup(tmp_path, monkeypatch):
+    source = tmp_path / 'source.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE runs(id INTEGER)')
+    folder = tmp_path / 'backups'
+    result = backup_once(source, folder)
+    monkeypatch.setattr('app.services.backups.shutil.disk_usage', lambda _: types.SimpleNamespace(free=1, total=100))
+    with pytest.raises(OSError, match='Insufficient free space'):
+        backup_once(source, folder)
+    assert verify_database(folder / result['last_backup']) == {'runs': 0}

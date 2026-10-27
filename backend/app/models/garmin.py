@@ -19,4 +19,6 @@ class GarminConnection(Base):
     last_new_activity_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_error: Mapped[str | None] = mapped_column(Text)
     full_sync_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    full_repair_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
     backoff_until: Mapped[datetime | None] = mapped_column(DateTime)  # set after a Garmin 429

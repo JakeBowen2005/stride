@@ -132,6 +132,7 @@ def test_additive_migration_protects_preexisting_data_before_reclassification(tm
     source=tmp_path/'legacy.db'
     with sqlite3.connect(engine.url.database) as original, sqlite3.connect(source) as legacy:
         original.backup(legacy)
+        legacy.execute('DROP TABLE IF EXISTS alembic_version')  # simulate a pre-Alembic owner database
         legacy.execute('ALTER TABLE activities DROP COLUMN activity_kind_override')
         legacy.execute('ALTER TABLE coaching_reviews DROP COLUMN policy_version')
         legacy.execute('ALTER TABLE planned_workouts DROP COLUMN feedback_activity_id')

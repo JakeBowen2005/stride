@@ -21,7 +21,7 @@ def main():
     fd, temporary=tempfile.mkstemp(prefix='stride-initializing-',suffix='.db',dir=target.parent)
     os.close(fd)
     staging=Path(temporary)
-    os.environ.update(DATABASE_URL=f'sqlite:///{staging}',GARMIN_POLL_MINUTES='0',GARMIN_TOKENSTORE=str(target.parent/'no-garmin-tokens'),
+    os.environ.update(DATABASE_URL=f'sqlite:///{staging}',GARMIN_POLL_MINUTES='0',GARMIN_API_KEY='',
                       OPENAI_API_KEY='',ANTHROPIC_API_KEY='',OPENAI_AUTO_REVIEWS='false',ATHLETE_PROFILE_DOC='')
     sys.path.insert(0,str(ROOT/'backend'))
     from app.main import app  # noqa: F401 — create schema only in the NEW target

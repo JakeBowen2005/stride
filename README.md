@@ -38,7 +38,7 @@ Key principles:
 ### Backend
 - **FastAPI** — async Python API
 - **SQLAlchemy** — ORM with SQLite (PostgreSQL for production)
-- **Garmin Connect** — `garminconnect` client, background auto-sync loop
+- **Garmin Connect** — official Personal API (key-based), date-windowed sync, FIT laps
 - **Pace Calibrator** — regex-based parser for workout descriptions
 - **Plan Engine** — headroom-based mileage ramp, physiological pace progression
 
@@ -76,8 +76,7 @@ stride/
 │   │       ├── pacing.py        # VDOT pacing, pace calculations
 │   │       └── workouts.py      # Workout library (threshold, intervals, long runs)
 │   ├── requirements.txt
-│   ├── garmin_login.py          # one-time Garmin login (saves tokens to .garmin/)
-│   └── .env                     # OPENAI_API_KEY etc. (not committed)
+│   └── .env                     # OPENAI_API_KEY, GARMIN_API_KEY etc. (not committed)
 ├── frontend/
 │   ├── app/
 │   │   ├── page.tsx             # Dashboard (today page)
@@ -138,9 +137,9 @@ stride/
 ## Setup (run it on your computer + phone)
 
 ```bash
-# 1. One-time: connect Garmin (type your Garmin login + MFA code in the terminal)
+# 1. One-time: install, then put your Garmin Personal API key in backend/.env as GARMIN_API_KEY=...
+#    (create it at https://connect.garmin.com/app/settings/personalApiToken)
 cd backend && python3 -m venv venv && venv/bin/pip install -r requirements.txt
-venv/bin/python garmin_login.py
 
 # 2. Start everything (backend + frontend), prints the phone URL
 cd .. && ./start.sh
@@ -152,18 +151,23 @@ cd .. && ./start.sh
 - **AI coach:** add `OPENAI_API_KEY=...` to `backend/.env` (without it, the coach uses template responses). See `docs/ai-call-inventory.md` for exactly what each review sends.
 
 ### How Garmin sync works
-Garmin's official API is enterprise-only (and closed to new applicants), so Stride uses the
-[`garminconnect`](https://github.com/cyberjunky/python-garminconnect) library, which talks to Garmin Connect as you.
-`garmin_login.py` saves session tokens to `backend/.garmin/` (git-ignored). Your password is never stored.
-The backend polls Garmin every `GARMIN_POLL_MINUTES` (default 10). The first sync imports your full history.
-If Garmin ever expires the session, re-run `garmin_login.py`.
+Stride uses Garmin's official **Connect Personal API** (opened Oct 2026). `GARMIN_API_KEY` in
+`backend/.env` is exchanged for a 24-hour bearer token, held in memory only. The API is pull-only
+(no webhooks), so Stride syncs when the app opens and checks in the background every
+`GARMIN_POLL_MINUTES` (default 15, hourly during `GARMIN_QUIET_HOURS`, default `22-5`); any sync
+resets that clock. A check is one request for runs since the newest stored run, with Garmin filtering
+non-runs. Only a new run costs more: one FIT download for its laps. Wellness uses three range requests.
+The first sync imports your full history. Keys last 30 days to a year. When Garmin rejects the key,
+Settings says so; create a new key and update `GARMIN_API_KEY`.
+Not available from the Personal API: training readiness, training status, VO2max, Garmin race
+predictions and activity notes. Those cards hide themselves.
 
 ## Deploying to Render
 
 One always-on Render **Starter** web service (~$7/mo) runs both processes from the root
 `Dockerfile`: FastAPI on `127.0.0.1:8000` (private) and the Next.js standalone server on
-`$PORT` (public, password-gated). SQLite and the Garmin tokens live on a 1 GB persistent disk at
-`/var/data`. The Garmin poller runs in-process every 10 minutes. Config is in `render.yaml`;
+`$PORT` (public, password-gated). SQLite lives on a 1 GB persistent disk at
+`/var/data`. The Garmin poller runs in-process (every 15 minutes, hourly overnight). Config is in `render.yaml`;
 the entrypoint is `deploy/start.sh`.
 
 ### One-time cut-over
@@ -172,7 +176,7 @@ the entrypoint is `deploy/start.sh`.
    Enter the `sync: false` secrets when prompted:
    - `STRIDE_PASSWORD`: the app password (if it's empty, every page returns 503 instead of going public)
    - `OPENAI_API_KEY`: the AI coach key (optional; without it the coach uses templates)
-   - `GARMIN_TOKENS_JSON`: the contents of `backend/.garmin/garmin_tokens.json` (see step 3)
+   - `GARMIN_API_KEY`: your Garmin Connect Personal API key
 
    Apply. The first deploy starts with an empty database on the disk.
 2. **Copy your data.** Stop `./start.sh` locally so the DB isn't being written, then take a
@@ -186,21 +190,24 @@ the entrypoint is `deploy/start.sh`.
    `stride-upload.db` into place as `stride.db` *before* the backend opens it, and keeps the empty
    first-boot DB as `stride.db.before-import-<time>`. Don't overwrite `stride.db` directly while the
    service is running. Delete `/tmp/stride-upload.db` afterwards: it is your personal health data.
-3. **Garmin tokens.** `GARMIN_TOKENS_JSON` is written once to
-   `/var/data/.garmin/garmin_tokens.json` (mode 600) on boot, but only if that file doesn't exist.
-   After that the disk copy wins, because garminconnect refreshes it. To re-bootstrap, run
-   `backend/garmin_login.py` locally, update the secret, delete the file over SSH, and restart.
-   You can clear the env var once the file exists.
+3. **Garmin.** Nothing to bootstrap: the key is an env var, and tokens are exchanged in memory.
+   On the Render service's **Environment** page, set `GARMIN_API_KEY` to your
+   Garmin Personal API key and **save and redeploy**. `backend/.env` stays on your
+   Mac; Git pushes and database uploads do not transfer its secrets. Older
+   `GARMIN_TOKENS_JSON` and `GARMIN_TOKENSTORE` settings do not configure the
+   current Personal API client. After deploying, Settings must report a key
+   present, and a manual sync must finish with a new successful check time.
+   If you previously disconnected in Stride, use **Reconnect Garmin using server
+   key** in Settings to explicitly re-enable it. Reconnecting clears the old
+   authentication retry delay and queues a new sync; it does not expose the key.
 4. **Check it.** Open the `.onrender.com` URL and sign in. Settings should show Garmin connected,
-   and a run should appear within ~10 minutes of a watch upload. Run `date` in the Render shell; it
+   and a run should appear when you open the app (or within ~15 minutes) after a watch upload. Run `date` in the Render shell; it
    should print Pacific time (`TZ=America/Los_Angeles`; plan logic uses `date.today()`).
 
 ### Risks to watch
 
-- **Garmin may challenge datacenter IPs.** The tokens were minted on your home network. If Garmin
-  flags logins or refreshes from Render's IPs, sync fails with an auth error in the logs and you
-  have to re-run `garmin_login.py` and re-bootstrap the tokens. If it keeps happening, sync from
-  home and treat Render as read-mostly.
+- **Garmin key expiry.** Personal API keys expire (30 days to 1 year). Garmin emails a reminder;
+  rotate `GARMIN_API_KEY` in the Render dashboard and restart.
 - **Memory.** Starter has 512 MB. Node is capped with `NODE_OPTIONS=--max-old-space-size=192`.
   Watch the Metrics tab. If the service sits above ~450 MB, split the frontend into its own service
   (or move it to Vercel) and point `BACKEND_URL` at the backend. Note that `BACKEND_URL` is baked in
@@ -224,3 +231,102 @@ MVP functional, now on Garmin:
 - Lap-based workout detection feeding pace calibration and the progression ladders
 - 2-week plan generation with calibrated paces, feedback loop, Claude Haiku coach
 - Installable on phone (Add to Home Screen) via `./start.sh`
+
+### Storage budget and recovery
+
+The Render blueprint now allocates 5 GB, retains seven local snapshots, and caps
+snapshot retention at 512 MiB (`STRIDE_BACKUP_MAX_BYTES`). Existing Render disks
+must be resized in the dashboard; a blueprint edit does not prove the live disk
+was resized. Backups reserve space for verification and preserve the latest
+snapshot when space is insufficient. Operations reports capacity warnings.
+Configure the existing encrypted S3 export for off-disk recovery, and verify a
+restore with `python -m app.services.backups --restore BACKUP --destination NEW_DB`.
+No setting alone proves an offsite backup or a successful recovery.
+
+### Invite-only athlete accounts
+
+Account mode is opt-in: set `STRIDE_ACCOUNTS_ENABLED=true` for both frontend and
+backend, `STRIDE_SIGNUP_INVITE_CODE` on the backend, and `STRIDE_PUBLIC_URL` to the
+public HTTPS origin. Cookies are Secure by default. Only isolated localhost
+previews should set `STRIDE_COOKIE_SECURE=false`. Do not expose the backend on a
+public interface. `/auth/register` creates a separate athlete; it never claims
+an existing athlete's history. API ownership is checked on the backend even when
+someone requests a numeric athlete URL.
+
+Before switching an existing owner to account mode, attach an account locally:
+`cd backend && venv/bin/python -m app.services.accounts bootstrap --user-id 1 --email YOUR_EMAIL`.
+The command prompts for a password; do not put it in shell arguments. Operator
+recovery uses `python -m app.services.accounts recovery --user-id ID`; give the
+single-use 30-minute token privately to the athlete, who uses `/auth/reset`.
+Email delivery/verification is intentionally not provisioned; registration is
+invite-only. Public registration remains a separate deployment decision.
+
+Athletes can change AI consent and timezone, export their own history, or erase
+their live account in Settings. Consent is off by default. Erasure does not erase
+already-created offsite backups immediately: the operator must define retention
+and let those encrypted backups expire. Never enable a shared owner Garmin key
+for additional athletes. Garmin multi-user integration still requires Garmin's
+approval and the appropriate historical-data entitlement.
+
+### Worker, migrations, and storage deployment
+
+The container runs `python -m app.schema` once before starting the web process,
+then starts `python -m app.services.worker` separately. Web replicas use
+`SCHEMA_AUTO_UPGRADE=false` and `EMBEDDED_WORKERS=false`. Local development still
+supports embedded work. Sync jobs persist per athlete, use leases/retries, and
+resume after a worker restart; PostgreSQL claims use row locks with `SKIP LOCKED`.
+A schema version marker plus missing columns is treated as drift, not silently
+repaired. Future changes require a new Alembic revision; do not edit the frozen
+baseline manifest after release. Existing source/data migrations remain separate.
+
+For a larger deployment use a managed PostgreSQL URL (`postgresql+psycopg://…`),
+with the provider's encrypted backups and point-in-time recovery enabled. A
+PostgreSQL CI service exercises migrations, snapshot transfer, sequence repair,
+and concurrent job claims. Cutover procedure:
+
+1. Stop writes; create and restore-verify a SQLite snapshot using the backup CLI.
+2. Upgrade a **copy** of that snapshot with the new schema.
+3. Run `python -m app.services.database_transfer --source-snapshot COPY --destination-url EMPTY_POSTGRES_URL` in a private operator shell. It reads the snapshot without modifying it, checks counts, and repairs PostgreSQL sequences. The destination must contain no athlete data.
+4. Verify login, history, plan, source evidence and backups in staging; then change `DATABASE_URL`. Keep the original database and verified backups for rollback. Never run two writable deployments against separate copies during cutover.
+
+`FIT_BLOB_BUCKET` optionally stores new FIT evidence in private S3 objects,
+content-addressed under each athlete. Original inline evidence remains readable.
+Configure the bucket's block-public-access, encryption, least-privilege IAM, and
+version/lifecycle policy. Database backups alone do not back up external objects.
+Exports stream original evidence; account erasure queues idempotent object
+removal. Failed SQL transactions may leave unreferenced objects; retain objects
+until a separately verified reference/lifecycle cleanup rather than deleting
+unreferenced data during ingestion.
+
+`STRIDE_PROVIDER_ENCRYPTION_KEYS` accepts comma-separated Fernet keys (newest first)
+for stored owner credentials. Keep keys in a secret manager, separate from database
+backups. Rotate by adding the new key while retaining previous keys until stored
+credentials are re-encrypted. Generate with `Fernet.generate_key()` from the
+`cryptography` library. No provider secret is returned in APIs or exports. The
+existing environment owner key remains supported in owner mode only. Separate
+athletes cannot reuse it; live Business transport remains disabled pending Garmin
+approval and its integration contract. Original FIT uploads work without Garmin.
+
+### Daily availability and coaching expectations
+
+Settings accepts a maximum duration for each weekday, including bookends and
+recoveries. Blank means no daily limit; use rest-day settings for unavailable
+days. Preview a revised block to apply changes. A full quality dose moves to a
+roomier safe easy day before its work is shortened. Paces are never increased to
+force a fit; shortened main work cannot earn full-dose progression. Run/walk
+sessions retain their walk recoveries. Race-day time is a separate event exception.
+
+The plan states the remaining run frequency, priority sessions, estimated time,
+and what earns progression versus holding/reducing. The outlook exposes conflicts
+between finite availability and the goal. History shows cached 4/8/12-week trends,
+quality evidence, approximate matched easy-run comparisons, and long-run follow-up,
+with missing data and uncertainty kept explicit. Older runs use cursor pagination.
+
+AI remains optional and cannot directly approve plan changes. Set
+`OPENAI_COACH_GLOBAL_DAILY_LIMIT` (default 100 reviews across the app) alongside
+the existing per-athlete limit. Operations reports token use and attempt latency;
+provider billing remains the authoritative monetary cost. The offline review
+rubric and grader are in `docs/evaluation/`; ungraded prose is never reported as
+coach-approved. No hosted eval service or additional agent system is required.
+
+See [the invite beta release record](docs/invite-beta-release.md) for the five PRs, validation and deployment prerequisites.

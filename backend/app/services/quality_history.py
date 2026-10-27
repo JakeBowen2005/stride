@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Completed quality/recovery evidence for staging. Preview count never earns promotion."""
 import json
 
@@ -12,7 +13,7 @@ from app.models.plan import Plan, PlannedWorkout
 
 
 def quality_history(user_id, db, today=None):
-    today = today or date.today()
+    today = today or athlete_today()
     cutoff = today - timedelta(days=56)
     calendar_monday = today - timedelta(days=today.weekday())
     acts = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
@@ -40,11 +41,12 @@ def quality_history(user_id, db, today=None):
     hard_by_week = {}
     failures = set()
     latest_long = None
+    development_dates = set()
     for day, row in latest.items():
         activities = by_date.get(day, [])
         if not activities or row.swapped or row.session_status == 'skipped' or row.moved_to is not None:
             continue
-        feels = [a.feel_rating for a in activities if a.feel_rating is not None]
+        feels = [a.effective_feel for a in activities if a.effective_feel is not None]
         if row.feel_rating is not None:
             feels.append(row.feel_rating)
         feel = min(feels) if feels else None
@@ -58,6 +60,12 @@ def quality_history(user_id, db, today=None):
             continue
         execution = execution_from_activities(activities, spec) if spec else None
         category = (spec or {}).get('category')
+        if category == 'development':
+            development_dates.add(day)
+            from app.core.workout_evaluator import evaluate_workout
+            checked = evaluate_workout(None, None, None, 'workout', None, row.title, feel, spec, execution)
+            if checked.decision == 'regress' or (feel is not None and feel <= 4):
+                failures.add(day)
         if category in {'threshold','intervals'} and execution:
             from app.core.workout_evaluator import evaluate_workout
             checked = evaluate_workout(None,None,None,'workout',None,row.title,feel,spec,execution)
@@ -87,7 +95,7 @@ def quality_history(user_id, db, today=None):
             miles = sum(a.distance_meters for a in activities) / 1609.34
             if miles >= row.distance_miles * .9:
                 successful['long_run'].add(day)
-    ratings = [(day, a.feel_rating) for day, items in by_date.items() for a in items if a.feel_rating is not None]
+    ratings = [(day, a.effective_feel) for day, items in by_date.items() for a in items if a.effective_feel is not None]
     # Planned-day feedback also counts as recovery evidence, once per date.
     ratings += [(day, row.feel_rating) for day, row in latest.items() if day in by_date and row.feel_rating is not None]
     rated_days = {}
@@ -108,4 +116,5 @@ def quality_history(user_id, db, today=None):
             'recent_low_feel': any(f<=4 for f in recent.values()),
             'weekly_run_days': full_week_run_days,
             'evidence_window_days': 56,
+            'development_dates': sorted(development_dates),
             'matched_quality_dates': sorted(successful['primary'] | successful['support'])}

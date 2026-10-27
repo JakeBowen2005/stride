@@ -310,7 +310,7 @@ def test_fast_goal_pace_session_never_recalibrates_interval_pace():
         db.add(WorkoutProgression(user_id=1, category='intervals', program_key=program_key('5k'), current_level=1,
                                   current_pace_sec=330))
         db.commit()
-    r = TestClient(__import__('app.main', fromlist=['app']).app).post(f'/api/plans/1/feedback/{today}', json={'feel_rating': 8})
+    r = TestClient(__import__('app.main', fromlist=['app']).app).post(f'/api/plans/1/feedback/{today}', json={'feel_notes': 'Test run notes.', 'feel_rating': 8})
     assert r.status_code == 200, r.text
     assert r.json()['evaluation']['decision'] == 'hold'
     with SessionLocal() as db:

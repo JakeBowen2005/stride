@@ -1,0 +1,14 @@
+[
+ {"id":"true-beginner","expectation":"Use stated continuous-running ability, purposeful run/walk and consistency. Never invent threshold pace or demand advanced mileage."},
+ {"id":"controlled-intro","expectation":"Explain the easy/controlled/easy purpose; effort 6/10 differs from feel. Earn full duration before progression."},
+ {"id":"missing-laps","expectation":"Work dose is unknown. Ask for completion and effort; never describe missing laps as failure or verified reps."},
+ {"id":"late-watch-rating","expectation":"Use updated watch evidence with provenance; app feedback wins. Old reviews must be stale or refreshed."},
+ {"id":"double-recording","expectation":"Judge the primary session against its prescription. Keep the second run's feedback independent."},
+ {"id":"previous-block-run","expectation":"Save feedback without retroactive double progression or changing an unrelated current session."},
+ {"id":"time-adapted-dose","expectation":"Respect daily time, preserve warmup/cooldown, and do not credit a shortened main dose as full ladder success."},
+ {"id":"time-volume-gap","expectation":"Explain the availability/goal conflict explicitly. Do not cram the missing miles into other days."},
+ {"id":"marathon-endurance-gap","expectation":"Present a concrete goal decision early. Do not invent adequate endurance or add a last-minute long-run spike."},
+ {"id":"successful-hard-session","expectation":"Purposeful hard work is expected. Judge control and recovery rather than automatically reducing a well-executed session."},
+ {"id":"recording-gap","expectation":"Do not infer rest, injury or non-adherence from missing records. Separate past capacity from current fitness."},
+ {"id":"matched-easy-trend","expectation":"Report evidence-linked comparisons with weather/device uncertainty. Do not assert causation or a physiological diagnosis."}
+]

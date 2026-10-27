@@ -27,6 +27,12 @@ def prescription(category, fmt, segments, *, program=None, phase=None, level=Non
 
 def render(data):
     """Display is a projection of the numeric prescription, never its input."""
+    if data.get('format')=='run_walk':
+        s=data['segments'][0]
+        reps=s['reps'];run=s['duration_seconds']/60;walk=(s.get('recovery_seconds') or 0)/60
+        warm=(data.get('warmup') or {}).get('duration_seconds',0)/60
+        total=warm+reps*run+max(0,reps-1)*walk+(data.get('cooldown') or {}).get('duration_seconds',0)/60
+        return f'{warm:g}min brisk walk, then {reps} x ({run:g}min easy run + {walk:g}min walk). About {total:g} minutes. Run slowly enough to talk; walk briskly.'
     pieces = []
     for s in data['segments']:
         reps = s['reps']
@@ -39,6 +45,8 @@ def render(data):
             continue
         label = f"{reps}x{length}" if reps > 1 else length
         pace = s.get('pace_range_sec_per_mile')
+        if s.get('effort'):
+            label += f" at {s['effort']}"
         if pace:
             rng = format_pace(pace['fast'])
             if pace['slow'] != pace['fast']:
@@ -97,10 +105,18 @@ def long_run_prescription(parts, note, easy_pace=None):
     return data
 
 
+def race_pace_miles(day):
+    """Miles at race pace in a structured long run (0 for anything else)."""
+    data = loads(day.get('prescription')) if day.get('type') == 'long_run' else None
+    return round(sum(s.get('reps', 1) * (s.get('distance_meters') or 0) for s in (data or {}).get('segments') or []
+                     if s.get('category') == 'race_pace') / MI, 1)
+
+
 def day_prescription(day):
     """New non-ladder days retain their effort/fueling guidance as an authored note."""
-    if day.get('prescription') and day['type'] in ('workout', 'long_run'):
-        return day['prescription']
+    existing=loads(day.get('prescription'))
+    if existing and (day['type'] in ('workout', 'long_run') or existing.get('format')=='run_walk'):
+        return existing
     return prescription(day['type'], 'continuous', [segment(meters=round(day.get('distance_miles', 0) * MI, 2))] if day.get('distance_miles') else [],
                         note=day.get('description'), source='effort_guidance')
 

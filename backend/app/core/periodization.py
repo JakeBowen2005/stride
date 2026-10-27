@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Race-date periodization: which training phase each week is in.
 
 Phases are counted backwards from race day (CLAUDE.md "Periodization"):
@@ -29,8 +30,12 @@ ULTRA_DISTANCES = {"50k", "50mi", "100k", "100mi"}
 # Taper length in days before race day (race week included)
 TAPER_DAYS = {
     "5k": 7, "10k": 10, "half": 10, "marathon": 14,
-    "50k": 10, "50mi": 14, "100k": 14, "100mi": 21,
+    "50k": 10, "50mi": 14, "100k": 21, "100mi": 21,
 }
+
+# Calendar down weeks are suppressed this many weeks before the taper starts:
+# the taper is the absorption week, and a deload there removes the final peak work.
+NO_DELOAD_BEFORE_TAPER_WEEKS = 2
 
 # Weeks of peak (race-specific) and build work immediately before the taper
 PEAK_WEEKS = {"5k": 3, "10k": 4, "half": 4, "marathon": 5, "50k": 4, "50mi": 5, "100k": 5, "100mi": 6}
@@ -123,8 +128,7 @@ def week_phase(
         )
 
     weeks_to_race = (race_date - week_start).days // 7  # ≥ 1 here
-    taper_weeks = max(1, round(TAPER_DAYS.get(distance, 7) / 7))
-    pre_race_taper = TAPER_VOLUME.get(taper_weeks, [0.8, 0.65])  # weeks before race week
+    pre_race_taper = TAPER_VOLUME.get(taper_weeks(distance), [0.8, 0.65])  # weeks before race week
 
     if weeks_to_race <= len(pre_race_taper):
         idx = len(pre_race_taper) - weeks_to_race
@@ -167,6 +171,24 @@ def week_phase(
     return wp
 
 
+def taper_weeks(distance: str | None) -> int:
+    """Taper length in weeks, race week included (outlook.TAPER_WEEKS mirrors this)."""
+    return max(1, round(TAPER_DAYS.get(distance, 7) / 7))
+
+
+def weeks_before_taper(wp: WeekPhase, distance: str | None) -> int | None:
+    """1 = the last full training week before the taper; None outside base/build/peak."""
+    if wp.weeks_to_race is None or wp.phase not in ("base", "build", "peak"):
+        return None
+    return wp.weeks_to_race - (taper_weeks(distance) - 1)
+
+
+def protects_peak(wp: WeekPhase, distance: str | None) -> bool:
+    """No calendar deload in the final weeks before the taper."""
+    before = weeks_before_taper(wp, distance)
+    return before is not None and before <= NO_DELOAD_BEFORE_TAPER_WEEKS
+
+
 def plan_phases(
     start_date: date,
     num_weeks: int,
@@ -201,7 +223,7 @@ def check_readiness(
 
     Returns {"ready": bool, "reasons": [...], "suggestion": str | None}.
     """
-    today = today or date.today()
+    today = today or athlete_today()
     reasons: list[str] = []
     suggestion = None
     weeks = (race_date - today).days / 7 if race_date else None

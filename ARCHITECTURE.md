@@ -12,29 +12,30 @@ app, and the plan for scaling to many athletes.
                             ▼
                          FastAPI (127.0.0.1:8000, not exposed)
                             │ SQLAlchemy ─▶ SQLite (WAL)
-                            │ asyncio poll loop (every 10 min)
+                            │ asyncio poll loop (15 min, hourly overnight; app-open sync resets it)
                             ▼
-                         Garmin Connect (garminconnect library, token login)
+                         Garmin Connect Personal API (official, API key → 24h bearer)
                          OpenAI bounded adviser (template fallback when unavailable)
 ```
 
 | Layer | Responsibility | Key files |
 |---|---|---|
 | Ingest | Pull runs and laps, merge legacy Strava rows, rebuild lap summaries | `services/garmin.py`, `services/lap_analyzer.py` |
-| Wellness | Sleep, HRV, resting HR, body battery, readiness, training status, VO2max, race predictions | `services/wellness.py`, `api/wellness.py` |
+| Wellness | Sleep, HRV, resting HR, body battery, stress (readiness/status/predictions are not in the Personal API) | `services/wellness.py`, `api/wellness.py` |
 | Training science | Paces, ladders, periodization, race weeks, ultra rules, readiness gates | `core/plan_engine.py`, `core/periodization.py`, `core/special_weeks.py`, `core/workout_ladders.py` |
 | Adaptation | Feedback → ladder progression, fatigue downgrade, reschedule; LLM coach | `api/plans.py`, `core/workout_evaluator.py`, `services/coach.py` |
 | UI | Today (readiness + run + recovery trends), Plan, History, Settings | `frontend/app/*`, `frontend/components/home/*` |
 
 ### Design choices worth knowing
 
-- **Garmin via `garminconnect`, not the official API.** Garmin's Connect Developer
-  Program is enterprise-only and closed to new applicants. The library logs in once
-  (`garmin_login.py`, MFA supported), and only the session token is saved, never the password.
-- **Polling, not webhooks.** Webhooks are only offered through the official program. The
-  backend polls every `GARMIN_POLL_MINUTES`, and the app also syncs when it opens or comes
-  back to the foreground. Incremental sync stops at the first known activity, and wellness
-  data is throttled to one refresh per 20 minutes.
+- **Garmin via the official Personal API.** Garmin opened self-service Personal API keys in
+  Oct 2026. `services/garmin_api.py` exchanges `GARMIN_API_KEY` for a 24h bearer token (in memory;
+  re-exchanged on 401) and replaced the unofficial `garminconnect` login-as-you scraper. Laps come
+  from the activity's FIT file (the API has no `/splits`); lap times are the watch's timer time.
+- **Pull-only, so cheap polling.** The Personal API has no webhooks. Incremental sync is one
+  date-windowed request (`activityType=running`, newest stored run minus 2 days), and only new runs
+  cost a FIT download. Wellness is three range requests. `poll_due` skips background checks when any
+  sync ran within `GARMIN_POLL_MINUTES` and drops to hourly in quiet hours.
 - **Laps → workout text.** The pace calibrator and evaluator were built to parse
   "6x800 (3:01, ...)" notes. `lap_analyzer` writes that text from Garmin laps
   (structured-workout intensities first, then pace vs. the athlete's easy pace on that
@@ -52,7 +53,8 @@ app, and the plan for scaling to many athletes.
 | Step | Rule | Code |
 |---|---|---|
 | Load | Baseline (last four full calendar weeks, empty weeks included; last completed week shown separately) → per-week budgets → long-term destination (e.g. a 75 mpw goal sets the direction and a cap; it is never prescribed all at once). Historical peak sets the default ramp rate, not a ceiling. Advanced mileage builders can repeat a modest increase from a supported recent high instead of restarting from the average. Reaching the destination holds; a lower destination comes down 10%/week. After a down week, growth resumes from the training level (the full-volume weeks), not the deload-dragged average. Spikes and missed weeks keep the average, and fatigue recovery starts from it. | `core/load_policy.py` |
-| Fit | Easy days absorb whatever budget is left after the sessions actually placed. When a week can't hold its sessions it gives way in this order: long run → second quality day → easy-day length → number of easy days. Weeks are never padded to beat last week. 4 run days allow 1 workout; 3 allow none. General goals get 1 threshold session; quality stages progress from one session through light support to two substantial goal-specific sessions using completed rep evidence and recovery (`quality_policy.py`, `quality_history.py`). | `core/plan_validator.py`, `core/plan_engine.py` |
+| Fit | Easy days absorb whatever budget is left after the sessions actually placed. The established full-quality path gives way in this order: long run → second quality day → easy-day length → number of easy days. Weeks are never padded to beat last week. That path allows 1 workout on 4 days and none on 3; the introductory path below permits one controlled session on 3 days. Quality stages progress from one session through light support to two substantial goal-specific sessions using completed rep evidence and recovery (`quality_policy.py`, `quality_history.py`). | `core/plan_validator.py`, `core/plan_engine.py` |
+| Introductory road training | Beginner/intermediate runners without established full-quality tolerance use a separate `development` duration track: easy bookends around controlled continuous, short-rep and long-rep work. Two consistent running weeks permit introduction; four successful full-dose exposures earn a beginner step, two an intermediate step. Work duration plus recovery does not establish threshold intensity or calibrate pace. A new step holds mileage for its first week; subsequent weekly growth is capped at 10% from repeatable completed volume. Tenth-mile allocation preserves frequency with shorter easy runs. Planned deloads need accumulated quality exposure or mileage growth, not old stable easy history alone. Race-week work is reduced and familiar. Advanced/expert and ultra paths are unchanged. | `core/developmental.py`, `core/load_policy.py`, `core/workout_evaluator.py` |
 | Validate | One validator for generation and every later change: budget, rest days, no hard-after-hard across weeks or against real hard runs just before the plan. The only allowed pair is a flagged ultra back-to-back. | `plan_validator.validate_plan` / `enforce_no_back_to_back_hard` |
 | Partial weeks | Days before the plan carry real miles (or 0); only the remainder is prescribed. | `generate_plan(completed_by_date, prior_hard_dates)` |
 | Evaluate | Version-1 numeric prescriptions/executions for new sessions, legacy text fallback for old rows. Policy `eval-v2`. Per-rep evidence plus every prescribed rep are required to advance or recalibrate. Whole-run averages are weak evidence. Fade is checked before speed. One lever per decision. Decisions are persisted with their evidence. | `core/workout_evaluator.py`, `api/plans._apply_feedback_effects` |
@@ -128,7 +130,7 @@ Detailed policy numbers, sources and remaining evidence/UI limitations: `docs/co
 
 ## OpenAI adviser
 
-See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable.
+See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable. A synced run, or a comment saved on one, also queues a refresh of the active plan's coach perspective (`coaching_jobs` rows with `plan_id`), run after that run's own review so the block sees the comment and review; unchanged evidence is never re-queued.
 
 
 ## Synced-run jobs, session choices and demos
@@ -138,3 +140,23 @@ See [automatic reviews and adaptive choices](docs/adaptive-sessions-and-demos.md
 ## Coaching trust and cloud operations
 
 See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity identity, reversible classification, partial-work evidence, execution-aware block assessment, stale-advice handling and the shared completed-calendar-week workload definition. [Deployment recovery](docs/deployment-recovery.md) covers pre-migration backups, verified restores, scheduled snapshots and optional encrypted offsite export. Settings exposes operational status, and health/readiness have separate endpoints. Existing cookies require sign-in again after the expiring-session upgrade.
+
+
+## Plain-language plan changes, running hours, multi-user prep (Oct 2026)
+
+- **Plan changes** (`docs/plain-language-plan-changes.md`): `plan_change_requests` stores each request,
+  its proposal, rejections, before/after row snapshots and a plan fingerprint. The AI returns only
+  constraints and move/swap/shorten/easy/skip ops (`plan_change_ai.PlanChangeProposal`); Stride applies
+  them in `read_only_trial` and runs `_validate_schedule` plus `request_ops.request_violations` (volume
+  never rises, no added workouts, long runs ≥5 days apart, reduce-only in taper/race week and when sick or
+  hurt, the request's own constraints). One retry, then the brute-force solver; the quick picker is
+  solver-only and costs nothing. Approve re-validates under `_begin_schedule_write`; undo restores
+  snapshots only when nothing changed since. Long-run spacing now lives in `validate_plan` for every plan.
+- **Running hours** (`docs/aerobic-hours.md`): `/analysis/{id}/mileage` returns moving, elapsed and
+  planned seconds; `services/aerobic_hours.shadow` records hours budgets and a longest-session guard on
+  each new block (`load.shadow_hours`) without enforcing them.
+- **AI spend**: `services/ai_budget` prices recorded tokens per model and enforces monthly caps
+  (`OPENAI_MONTHLY_BUDGET_USD`, per athlete and owner) on top of the daily attempt limits. AI consent is
+  required in every mode, the owner included.
+- **Garmin attribution**: `activities.device_name`, "Garmin <device>" on run views, a derived-data line
+  on AI reviews, and an attribution field in the export. `/terms` acceptance is recorded at registration.

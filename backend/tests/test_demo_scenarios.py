@@ -28,6 +28,9 @@ def test_synthetic_history_to_approved_block_feedback_and_revision(scenario,phas
         assert db.query(Plan).filter_by(is_active=True).count()==1
         assert db.query(CoachingJob).count()==0 and db.query(CoachingReview).count()==0
         assert db.get(User,1).name.startswith('Demo')
+        # Synthetic laps use the same stored shape as Garmin FIT laps, so the run sheet renders them
+        laps=[lap for a in db.query(Activity).all() for lap in json.loads(a.splits or '[]')]
+        assert laps and all(lap['pace'].endswith('/mi') and lap['distance_miles'] and lap['mile'] for lap in laps)
         plan=db.query(Plan).filter_by(is_active=True).one()
         rows=db.query(PlannedWorkout).filter_by(plan_id=plan.id).all()
         assert all(json.loads(r.prescription)['schema_version']==1 for r in rows)
@@ -103,7 +106,13 @@ def test_beginner_scenarios_are_conservative(scenario,phase):
         # 10% rule: week one stays within ~1.1x the recent 4-week average.
         recent=sum(profile['weekly_miles'][-4:])/4
         assert sum(r.distance_miles for r in rows if r.week_number==1)<=recent*1.1+0.5
-        assert not any(r.type=='workout' for r in rows if r.week_number==1)  # no early speed work
+        for week in (1,2):
+            workouts=[r for r in rows if r.week_number==week and r.type=='workout']
+            assert len(workouts)<=1
+            for row in workouts:
+                spec=json.loads(row.prescription)
+                assert spec['category']=='development'
+                assert all(s.get('pace_range_sec_per_mile') is None for s in spec['segments'])
     _feedback_preview_approve(profile)
 
 

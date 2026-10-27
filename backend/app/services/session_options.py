@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Personalized, deterministic replacement menus. The athlete (or the AI review)
 selects one concrete option; nothing here is authored by a model.
 
@@ -82,7 +83,7 @@ def context_for(plan, db):
     goal = db.query(Goal).filter_by(user_id=plan.user_id, active=True).first()
     analysis = analyze_athlete(plan.user_id, db)
     experience = user.experience_level or analysis.get('overview', {}).get('experience_level', 'beginner')
-    today = date.today()
+    today = athlete_today()
     monday = today - timedelta(days=today.weekday())
     weeks = {w['week_start']: w['actual'] for w in compute_weekly_mileage(plan.user_id, db, 10)}
     full_weeks = [weeks.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
@@ -134,6 +135,8 @@ def context_for(plan, db):
     }
     token = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, default=str).encode()).hexdigest()
     return {'user': user, 'goal': goal, 'experience': experience, 'baseline': sum(full_weeks[-4:]) / 4,
+            'developmental': bool((_json(plan.load, {}) or {}).get('developmental')),
+            'completed_weeks': full_weeks, 'development_state': next(({'current_level': p.current_level} for p in progression if p.category == 'development'), {}),
             'recent_long': recent_long, 'evidence': evidence, 'quality': quality, 'paces': paces,
             'rows': rows, 'token': token, 'program': program}
 
@@ -196,6 +199,22 @@ def _quality_candidates(category, row, week, ctx, poor):
         return [], ['Recent recovery or a race/recovery week calls for easy running or rest instead of another hard session.']
     if week.hard_count >= week.capacity and not week.row_is_hard:
         return [], ['This week already has its hard sessions. Swap one of those instead, or keep this day easy.']
+    from app.core import developmental
+    if ctx.get('developmental'):
+        if not developmental.ready_for_workout(ctx['completed_weeks'], ctx['evidence']['weekly_run_days'],
+                                               ctx['baseline'], ctx['evidence'], None, poor):
+            return [], ['Build two consistent running weeks before adding a controlled effort session.']
+        from app.core.workout_ladders import program_key
+        approved = loads(row.prescription) or {}
+        level = min(ctx['development_state'].get('current_level', 1), approved.get('level') or 1)
+        shapes = ('continuous', 'long', 'short') if category == 'threshold' else ('short', 'long', 'continuous')
+        options = []
+        for shape in shapes:
+            wo = developmental.workout(level, ctx['paces']['long_run_pace'], week.budget,
+                program=program_key(ctx['program']), phase=week.phase, reduced=week.deload or week.phase == 'taper', shape=shape)
+            if wo:
+                options.append((shape, _as_patch(wo)))
+        return options, ['One controlled effort session with easy bookends. Alternative shapes hold the earned progression level; pace is guided by effort.']
     pace = ctx['paces']['broken_threshold_pace' if category == 'threshold' else 'interval_pace']
     volume = max(ctx['baseline'], week.budget or 0)
     band = dose_band(category, ctx['experience'], volume, pace, week.phase, week.deload)
@@ -311,7 +330,7 @@ def read_only_trial(plan, db):
 
 def _dry_run(plan, row, ctx, candidates, db):
     """Keep the first valid candidate per family, up to MAX_OPTIONS."""
-    from app.api.plans import _fits_week_budget, _validate_schedule
+    from app.api.plans import _fits_week_budget, _session_minutes, _validate_schedule
     before = {r.id: snapshot(r) for r in ctx['rows']}
     options, families, seen = [], set(), set()
     for family, patch in candidates:
@@ -326,9 +345,10 @@ def _dry_run(plan, row, ctx, candidates, db):
             try:
                 if not _fits_week_budget(trial_plan, trial_row, patch['distance_miles'], trial):
                     continue
+                grown = {r.id: _session_minutes(trial_plan, r) for r in trial_rows}
                 for key, value in patch.items():
                     setattr(trial_row, key, value)
-                _validate_schedule(trial_plan, trial)
+                _validate_schedule(trial_plan, trial, changed=grown)
                 changes = [{'session_id': r.id, 'date': r.date, 'before': before[r.id], 'replacement': snapshot(r)}
                            for r in trial_rows if snapshot(r) != before[r.id]]
                 if not changes:
@@ -348,7 +368,7 @@ def _dry_run(plan, row, ctx, candidates, db):
 
 def build_session_options(plan, row, category, db, context=None):
     from app.api.plans import _get_activities_for_date
-    locked = (not plan.is_active or row.date < max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
+    locked = (not plan.is_active or row.date < max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date)
               or row.type == 'race' or row.activity_id or row.moved_to or row.session_status == 'skipped'
               or _get_activities_for_date(row.date, plan.user_id, db))
     if locked:
@@ -376,13 +396,15 @@ def build_session_options(plan, row, category, db, context=None):
 
 
 def apply_option(plan, row, category, option_id, reason, db):
-    from app.api.plans import _mark_changed, _validate_schedule
+    from app.api.plans import _mark_changed, _session_minutes, _validate_schedule
     menu = build_session_options(plan, row, category, db)
     choice = next((o for o in menu['options'] if o['id'] == option_id), None)
     if not choice:
         raise HTTPException(409, 'This option is no longer available. Reload the options using your latest training.')
+    grown = {}
     for change in choice['changes']:
         target = db.get(PlannedWorkout, change['session_id'])
+        grown[target.id] = _session_minutes(plan, target)
         if target.id == row.id:
             _mark_changed(target, f'{reason}: chose {choice["title"]}.')
         else:
@@ -392,6 +414,6 @@ def apply_option(plan, row, category, option_id, reason, db):
         if target.id == row.id:
             target.session_status = 'replaced'
     db.flush()
-    _validate_schedule(plan, db)
+    _validate_schedule(plan, db, changed=grown)
     return choice
 

@@ -2,13 +2,15 @@
 
 import { apiUrl, USER_ID } from "@/lib/api";
 import Link from "next/link";
+import { syncMessage, waitForSync } from "@/lib/garmin-sync";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 
 interface GarminStatus {
-  tokens_present: boolean;
+  api_key_present: boolean;
   connected: boolean;
+  connection_issue?: string | null;
   display_name: string | null;
   last_sync_at: string | null;
   last_error: string | null;
@@ -42,12 +44,17 @@ export function GarminSync({
   onNewActivities?: () => void;
   autoSync?: boolean;
   label?: string;
-  variant?: "default" | "sidebar";
+  variant?: "default" | "bar";
 }) {
   const [status, setStatus] = useState<GarminStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const lastAutoSync = useRef(0);
+  const inFlight = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+  const onRefresh = useRef(onNewActivities);
+  useEffect(() => { onRefresh.current = onNewActivities; }, [onNewActivities]);
+  useEffect(() => () => controller.current?.abort(), []);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -59,39 +66,44 @@ export function GarminSync({
   }, []);
 
   const sync = useCallback(
-    async (manual: boolean) => {
+    async () => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      controller.current = new AbortController();
+      const signal = controller.current.signal;
       setSyncing(true);
-      if (manual) setMessage(null);
+      setMessage(null);
       try {
-        const res = await fetch(apiUrl(`/garmin/sync/${USER_ID}`), { method: "POST" });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          if (data.status === "busy") {
-            if (manual) setMessage("Sync already running…");
-          } else if ((data.new || 0) + (data.merged || 0) > 0) {
-            setMessage(`${data.new + data.merged} new run${data.new + data.merged === 1 ? "" : "s"} from Garmin`);
-            onNewActivities?.();
-            window.dispatchEvent(new Event(SYNC_EVENT));
-          } else if (data.wellness?.status === "ok") {
-            // No new run, but sleep/HRV/readiness refreshed — reload what's on screen
-            onNewActivities?.();
-            if (manual) setMessage("Up to date");
-          } else if (manual) {
-            setMessage("Up to date");
-          }
-        } else if (res.status === 409) {
-          setMessage(null); // status line below explains it
-        } else if (manual) {
-          setMessage(data.detail || "Sync failed");
+        const res = await fetch(apiUrl(`/garmin/sync/${USER_ID}`), { method: "POST", signal });
+        let data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Sync failed");
+        if (data.state === "running" || data.status === "busy") {
+          setMessage("Syncing with Garmin…");
+          data = await waitForSync(async () => {
+            const response = await fetch(apiUrl(`/garmin/status/${USER_ID}`), { signal });
+            if (!response.ok) throw new Error("Could not check Garmin sync status");
+            const next = await response.json();
+            setStatus(next);
+            return next;
+          }, signal);
         }
-      } catch {
-        if (manual) setMessage("Can't reach Stride backend");
+        if (signal.aborted) return;
+        setMessage(syncMessage(data));
+        if (data.status === "ok") {
+          onRefresh.current?.();
+          window.dispatchEvent(new Event(SYNC_EVENT));
+        }
+      } catch (error) {
+        if (!signal.aborted) setMessage(error instanceof Error ? error.message : "Can't reach Stride backend");
       } finally {
-        setSyncing(false);
-        loadStatus();
+        inFlight.current = false;
+        if (!signal.aborted) {
+          setSyncing(false);
+          loadStatus();
+        }
       }
     },
-    [loadStatus, onNewActivities],
+    [loadStatus],
   );
 
   useEffect(() => {
@@ -99,42 +111,51 @@ export function GarminSync({
       loadStatus();
       if (autoSync) maybeSync();
     }, 0);
-    if (!autoSync) return () => clearTimeout(initial);
     const maybeSync = () => {
       // At most once a minute, only when visible
       if (document.visibilityState !== "visible") return;
       if (Date.now() - lastAutoSync.current < 60_000) return;
       lastAutoSync.current = Date.now();
-      sync(false);
+      sync();
     };
-    document.addEventListener("visibilitychange", maybeSync);
+    window.addEventListener(SYNC_EVENT, loadStatus);
+    if (autoSync) document.addEventListener("visibilitychange", maybeSync);
     return () => {
       clearTimeout(initial);
       document.removeEventListener("visibilitychange", maybeSync);
+      window.removeEventListener(SYNC_EVENT, loadStatus);
     };
   }, [autoSync, loadStatus, sync]);
 
-  const notConnected = status && !status.tokens_present;
+  const notConnected = status && !status.api_key_present;
 
-  if (variant === "sidebar") {
-    const healthy = status?.tokens_present && !status.last_error;
+  if (variant === "bar") {
+    const healthy = status?.connected && !status.last_error;
     return (
-      <div className="space-y-1 text-xs text-[#c9c9c3]">
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full" style={{ background: healthy ? "#34d399" : "#fb923c" }} />
-          <span>Garmin</span>
-        </div>
-        <div>{message ?? (notConnected ? "not connected" : `synced ${timeAgo(status?.last_sync_at ?? null)}`)}</div>
-        {notConnected ? <Link href="/settings" className="underline underline-offset-2 hover:text-white">Connect</Link> :
-          <button type="button" onClick={() => sync(true)} disabled={syncing}
-            className="underline underline-offset-2 hover:text-white disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
+      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <span aria-hidden="true" className="dot" style={{ background: healthy ? "var(--status-good)" : "var(--status-serious)" }} />
+        <span className="truncate"><span className="sr-only">Garmin: </span><span aria-hidden="true" className="max-md:hidden">Garmin · </span>{message ?? (notConnected ? "not connected" : `synced ${timeAgo(status?.last_sync_at ?? null)}`)}</span>
+        {notConnected ? <Link href="/settings" className="shrink-0 rounded-full px-2 py-1 font-semibold text-foreground underline-offset-2 hover:underline">Connect</Link> :
+          <button type="button" onClick={() => sync()} disabled={syncing}
+            className="min-h-8 shrink-0 rounded-full px-2.5 font-semibold text-foreground transition-colors hover:bg-[var(--row-hover)] disabled:opacity-60">{syncing ? "Syncing…" : "Sync now"}</button>}
+      </div>
+    );
+  }
+
+  if (notConnected) {
+    return (
+      <div className="flex max-w-sm flex-col items-end gap-1">
+        <Link href="/settings#garmin" className="inline-flex min-h-10 items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-inner)] px-3.5 text-xs font-semibold">
+          {status?.last_sync_at ? "Reconnect Garmin" : "Connect Garmin"}
+        </Link>
+        <span className="text-right text-xs text-muted-foreground">{status?.connection_issue || "Garmin needs to be connected in Settings."}</span>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button variant="outline" size="sm" className="h-10 sm:h-7" onClick={() => sync(true)} disabled={syncing || !!notConnected}>
+      <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => sync()} disabled={syncing}>
         {syncing ? "Syncing…" : label}
       </Button>
       {notConnected || (status?.last_error && !message) ? (
