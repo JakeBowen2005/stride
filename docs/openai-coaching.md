@@ -15,14 +15,14 @@ Put `OPENAI_API_KEY` in **backend/.env**, never frontend environment variables o
 ```dotenv
 OPENAI_API_KEY=your-key-here
 OPENAI_COACH_MODEL=gpt-5.4-mini
-OPENAI_COACH_DAILY_LIMIT=12
+OPENAI_COACH_DAILY_LIMIT=30
 OPENAI_COACH_TIMEOUT_SECONDS=35
 OPENAI_AUTO_REVIEWS=true
 ```
 
-The default is GPT-5.4 mini with low reasoning effort and the Responses API's Pydantic Structured Outputs. The official model documentation lists $0.75/M input tokens and $4.50/M output tokens when checked October 19, 2026. A measured synthetic review used 7,277 input / 561 output tokens, roughly $0.008 at those rates; actual context/output varies. Twelve such calls/day would be about $3/month, but this is an illustration, **not a dollar budget guarantee**. Set a project budget/alerts in OpenAI as well.
+The default is GPT-5.4 mini with low reasoning effort and the Responses API's Pydantic Structured Outputs. The official model documentation lists $0.75/M input tokens and $4.50/M output tokens when checked October 19, 2026. A measured synthetic review used 7,277 input / 561 output tokens, roughly $0.008 at those rates; actual context/output varies. Real run reviews now carry far more context: seven recorded ones averaged ~30k input / ~500 output tokens, about $0.025 each, so the 30/day default caps worst-case spend near $0.75/day. This is an illustration, **not a dollar budget guarantee**. Set a project budget/alerts in OpenAI as well.
 
-Each call has a 120,000-character serialized input ceiling, 3,000 output-token ceiling, bounded network timeout, and no SDK retries. The local 12-attempt/day UTC limit includes failed requests and retried attempts; requests with identical evidence are cached and don't spend again. No paid calls on page load. Newly synced recent Garmin runs now enqueue an automatic background review (see [automatic review and session menus](adaptive-sessions-and-demos.md)). Saving planned-day run feedback requests one review after the deterministic effects have committed. There is no automatic historical backfill.
+Each call has a 120,000-character serialized input ceiling, 3,000 output-token ceiling, bounded network timeout, and no SDK retries. The per-athlete limit (`OPENAI_COACH_DAILY_LIMIT`, default 30 attempts) resets at the athlete's local midnight and includes failed requests and retried attempts; automatic reviews waiting on it retry hourly; requests with identical evidence are cached and don't spend again. No paid calls on page load. Newly synced recent Garmin runs now enqueue an automatic background review (see [automatic review and session menus](adaptive-sessions-and-demos.md)). Saving planned-day run feedback requests one review after the deterministic effects have committed. There is no automatic historical backfill.
 
 Official references: [model and pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 

@@ -2,9 +2,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WeeklyMileageChart } from "@/components/charts/weekly-mileage-chart";
-import { PaceVsTargetChart } from "@/components/charts/pace-vs-target-chart";
 import { MileageOverTimeChart } from "@/components/charts/mileage-over-time-chart";
-import type { WeeklyMileage, PaceVsTarget } from "@/lib/types";
+import { AerobicEfficiencyChart } from "@/components/charts/aerobic-efficiency-chart";
+import type { WeeklyMileage } from "@/lib/types";
 
 export function WeeklyMileageChartWrapper({ data, showTitle = true }: { data: WeeklyMileage[]; showTitle?: boolean }) {
   return (
@@ -19,27 +19,27 @@ export function WeeklyMileageChartWrapper({ data, showTitle = true }: { data: We
   );
 }
 
-export function PaceVsTargetChartWrapper({ data }: { data: PaceVsTarget[] }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Pace vs Target</CardTitle>
-      </CardHeader>
-      <CardContent className="pl-0 pr-2">
-        <PaceVsTargetChart data={data} />
-      </CardContent>
-    </Card>
-  );
-}
-
-export function MileageOverTimeChartWrapper({ data }: { data: WeeklyMileage[] }) {
+export function MileageOverTimeChartWrapper({ revision }: { revision: number }) {
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Mileage Over Time</CardTitle>
       </CardHeader>
       <CardContent className="pl-0 pr-2">
-        <MileageOverTimeChart data={data} />
+        <MileageOverTimeChart revision={revision} />
+      </CardContent>
+    </Card>
+  );
+}
+
+export function AerobicEfficiencyChartWrapper({ revision }: { revision: number }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Aerobic Efficiency</CardTitle>
+      </CardHeader>
+      <CardContent className="pl-0 pr-2">
+        <AerobicEfficiencyChart revision={revision} />
       </CardContent>
     </Card>
   );

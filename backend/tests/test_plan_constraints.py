@@ -97,6 +97,7 @@ def test_four_run_days_allow_one_workout():
 def test_threshold_only_week_is_accounted():
     # Base phase, non-advanced: one quality session, which is threshold for a half
     p = plan(goal_type="race", goal_distance="half", experience_level="intermediate",
+             completed_weeks=[31]*4, weekly_run_days=[5]*4,
              race_date=MONDAY + timedelta(weeks=20, days=5))
     assert_fits(p)
     wk1 = p["weeks"][0]["days"]

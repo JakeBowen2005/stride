@@ -61,3 +61,39 @@ def test_slow_hilly_run_without_easy_pace_is_not_reps():
     laps = [lap(MI, t, "INTERVAL") for t in (650, 776, 799, 661, 739, 677, 650)]
     assert summarize_workout(laps, None) is None
     assert summarize_workout(laps, EASY) is None
+
+
+def _threshold_with_brisk_warmup():
+    """2x12min threshold after a warmup that drifts quick (8:53 then 8:03 / 8:11), auto-lapped:
+    the athlete's real session that read as a "3-rep fartlek"."""
+    def at(miles, pace):
+        return lap(MI * miles, miles * pace)
+    return [at(1, 533), at(1, 483), at(0.37, 491), at(1, 410), at(0.75, 414), at(0.23, 770),
+            at(1, 406), at(0.78, 404), at(0.88, 513)]
+
+
+def test_brisk_warmup_mile_is_not_a_rep():
+    # A slow easy reference (9:50) lets the 8:03 warmup mile pass the work cutoff on its own
+    from app.services.lap_analyzer import analyze_laps
+    for easy in (540, 590, 620):
+        found = analyze_laps(_threshold_with_brisk_warmup(), easy)
+        assert found["label"] == "2x12min" and found["category"] == "threshold", easy
+        assert [round(r["pace_sec_per_mile"]) for r in found["reps"]] == [412, 405]
+
+
+def test_athletes_comment_names_the_reps(monkeypatch):
+    from app.services import lap_analyzer
+    from app.services.lap_analyzer import analyze_laps, structure_hint
+    assert structure_hint("instead of the 3 mile tempo i did 2x12 min at threshold") == {"reps": 2, "seconds": 720}
+    assert structure_hint("6x800 w/ 90s jog") == {"reps": 6, "meters": 800}
+    assert structure_hint("3 x 2 miles") == {"reps": 3, "meters": 2 * MI}
+    assert structure_hint("did 2x12 today") is None  # minutes or laps? not guessed
+    # Without the warmup trim the laps alone read three reps; the comment says which two
+    monkeypatch.setattr(lap_analyzer, "_trim_edges", lambda laps, work, paces: work)
+    laps = _threshold_with_brisk_warmup()
+    assert analyze_laps(laps, 590)["label"] == "3-rep fartlek"
+    found = analyze_laps(laps, 590, "Felt good, did 2x12 min at threshold")
+    assert found["label"] == "2x12min" and found["category"] == "threshold"
+    assert found["work_miles"] == 3.53
+    # A description that matches none of the measured reps leaves the lap read alone
+    assert analyze_laps(laps, 590, "8x400m")["label"] == "3-rep fartlek"

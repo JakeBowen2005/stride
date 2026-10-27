@@ -74,24 +74,49 @@ export interface ExecutedWorkout {
   off_plan: boolean;
 }
 
+/** The day's one "what was run" record from the backend (calendar, day detail, block summary, coach).
+ * Quality comes from the laps; a long run run on an easy day (or the reverse) is inferred from distance. */
+export interface RanSession {
+  title: string;
+  type: WorkoutType;
+  off_plan: boolean;
+  planned_title: string;
+  planned_type: WorkoutType;
+  /** The day this long run traded places with */
+  swapped_with: string | null;
+}
+
 export interface ActivityLine {
   id: number;
+  source?: string | null;
+  device_name?: string | null;
   name: string | null;
   distance_miles: number;
   avg_pace: string | null;
   duration_seconds: number;
   average_heartrate: number | null;
+  /** This recording's own comment and watch rating */
+  notes?: string | null;
+  watch_feel?: number | null;
+  watch_effort?: number | null;
 }
 
 export interface ActualRun {
   activity_id?: number;
+  /** The main run's own comment */
+  notes?: string | null;
   workout?: ExecutedWorkout | null;
+  session?: RanSession | null;
   distance_miles: number;
   avg_pace: string | null;
   duration_seconds: number;
   average_heartrate: number | null;
   description: string | null;
   feel_rating: number | null;
+  effort_rating?: number | null;
+  /** The rating entered on the Garmin watch after the run (Stride's 1-10 scales) */
+  watch_feel?: number | null;
+  watch_effort?: number | null;
   name: string | null;
   activity_count?: number;
   /** All runs that day (a double counts; walks never do) */
@@ -110,6 +135,8 @@ export interface ActualRun {
 
 export interface DayFeedback {
   feel_rating: number | null;
+  effort_rating?: number | null;
+  reported_completion?: { status: string; reps?: number | null; minutes?: number | null; source: string } | null;
   feel_notes: string | null;
   pace_assessment: string | null;
   swapped: boolean;
@@ -178,6 +205,8 @@ export interface Activity {
   session?: { title: string; category: ExecutedWorkout["category"] } | null;
   external_id?: string;
   source?: "garmin" | "strava" | "manual";
+  /** Garmin device that recorded it, for "Garmin <device>" attribution (null when unknown). */
+  device_name?: string | null;
   date: string;
   type: WorkoutType;
   title: string;
@@ -189,6 +218,9 @@ export interface Activity {
   elevation_gain_ft?: number;
   cadence?: number;
   feel_rating?: number;
+  effort_rating?: number | null;
+  watch_feel?: number | null;
+  watch_effort?: number | null;
   notes?: string;
   coach_analysis?: string;
   description?: string;
@@ -209,7 +241,7 @@ export interface Activity {
 
 export interface Split {
   mile: number; // split/lap number
-  pace: string;
+  pace?: string;
   heart_rate?: number;
   // Garmin laps
   distance_miles?: number;
@@ -221,13 +253,34 @@ export interface WeeklyMileage {
   week_start: string;
   planned: number;
   actual: number;
+  /** Running (moving) time that week */
+  seconds?: number;
 }
 
-export interface PaceVsTarget {
-  date: string;
-  workout_title: string;
-  target_pace_seconds: number;
-  actual_pace_seconds: number;
+export type MileageBucket = "week" | "month" | "year";
+
+export interface MileagePeriod {
+  period_start: string;
+  actual: number;
+  planned: number | null;
+  runs: number;
+  partial: boolean;
+  /** Running (moving) time; walks never count. */
+  actual_seconds?: number;
+  /** Tooltip context: includes stops (aid stations, lights). Legacy rows count as moving time. */
+  elapsed_seconds?: number;
+  /** Runs with no recorded duration, so the hours bar never silently under-reports. */
+  runs_without_time?: number;
+  /** Estimated from each approved block's frozen easy pace; null when no block covered the period. */
+  planned_seconds?: number | null;
+  walk_seconds?: number;
+}
+
+export interface AerobicEfficiency {
+  reference_heartrate: number | null;
+  weeks: { week_start: string; pace_sec_per_mile: number; runs: number; activity_ids: number[] }[];
+  change_sec_per_mile: number | null;
+  note: string;
 }
 
 export interface OnboardingData {

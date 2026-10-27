@@ -29,14 +29,17 @@ export function OnboardingLayout({
   const progress = ((step + 1) / totalSteps) * 100;
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col">
-      <Progress value={progress} className="mb-8 h-1" />
+    <div className="glass mx-auto my-2 flex min-h-[70vh] w-full max-w-xl flex-col p-5 sm:my-6 sm:p-8">
+      <div className="mb-8 space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground">Step {step + 1} of {totalSteps}</p>
+        <Progress value={progress} className="h-1.5 [&_[data-slot=progress-indicator]]:bg-[var(--accent-warm)]" />
+      </div>
 
       <div className="flex-1 space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">{title}</h1>
+          <h1 className="display">{title}</h1>
           {subtitle && (
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
           )}
         </div>
 
@@ -45,13 +48,13 @@ export function OnboardingLayout({
 
       <div className="flex items-center justify-between pt-8">
         {step > 0 ? (
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="ghost" size="lg" onClick={onBack}>
             Back
           </Button>
         ) : (
           <div />
         )}
-        <Button onClick={onNext} disabled={nextDisabled}>
+        <Button size="lg" onClick={onNext} disabled={nextDisabled}>
           {nextLabel}
         </Button>
       </div>

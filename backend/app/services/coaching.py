@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Grounded advice with durable deduplication, bounded spend and explicit acceptance."""
 import hashlib
 import json
@@ -12,7 +13,7 @@ from sqlalchemy import func
 from app.config import settings
 from app.core.workout_data import execution_from_activities, loads
 from app.models.activity import Activity, runs_only, is_walk, activity_classification
-from app.models.coaching import CoachingReview
+from app.models.coaching import CoachingReview, CoachingAttempt
 from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
@@ -23,7 +24,7 @@ from app.services.quality_history import quality_history
 
 logger = logging.getLogger('stride.coaching')
 DOCS = Path(__file__).resolve().parents[3] / 'docs'
-VERSION = 'openai-coach-v7'
+VERSION = 'openai-coach-v10-training-expectations'
 
 
 def research_context(goal):
@@ -62,7 +63,7 @@ def _brief_run(a, executed=None):
             'pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
             'avg_hr': round(a.average_heartrate) if a.average_heartrate else None,
             'session': executed['label'] + f" {executed['category']}" if executed else None,
-            'feel': a.feel_rating}
+            'feel': a.effective_feel}
 
 
 def _run(a, executed=None, planned=None):
@@ -79,6 +80,9 @@ def _run(a, executed=None, planned=None):
                      'intensity': lap.get('intensity'), 'elev_ft': lap.get('elevation_diff_ft')})
     miles = a.distance_meters / 1609.34
     feedback_matches = bool(planned and planned.feedback_activity_id == a.id)
+    app_feel = planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating
+    app_effort = planned.effort_rating if feedback_matches else a.effort_rating
+    lap_summary = next((line.strip() for line in (a.description or '').splitlines() if line.strip().startswith('Garmin laps:')), None)
     run = {'id': a.id, 'date': a.date.date().isoformat(), 'miles': round(miles, 2),
            'duration': f"{int(a.duration_seconds // 60)}:{int(a.duration_seconds % 60):02d}" if a.duration_seconds else None,
            'avg_pace': _pace(a.duration_seconds / miles) if miles and a.duration_seconds else None,
@@ -87,19 +91,48 @@ def _run(a, executed=None, planned=None):
            'classification': activity_classification(a),
            'aerobic_training_effect': a.aerobic_training_effect,
            'anaerobic_training_effect': a.anaerobic_training_effect,
+           # Everything else the watch measured for this run (null = not recorded)
+           'garmin_metrics': {'moving_time_s': a.duration_seconds, 'elapsed_time_s': a.elapsed_seconds,
+                              'training_effect_label': a.training_effect_label, 'training_load': a.training_load,
+                              'cadence_spm': round(a.average_cadence * 2) if a.average_cadence else None,
+                              'ground_contact_ms': a.avg_ground_contact_time,
+                              'vertical_oscillation_cm': a.avg_vertical_oscillation, 'calories': a.calories,
+                              'run_type': a.activity_subtype, 'event_type': a.event_type},
            'laps': laps,
+           # Measured from the watch's laps: the authority on what was actually run
+           'measured_lap_summary': lap_summary,
            'detected_session': None,
-           'athlete_feedback': {'feel_1_to_10': planned.feel_rating if feedback_matches and planned.feel_rating is not None else a.feel_rating,
+           'watch_self_evaluation': {'feel': a.watch_feel_label, 'feel_1_to_10': a.watch_feel,
+                                     'perceived_effort': a.watch_effort_label, 'effort_1_to_10': a.watch_effort,
+                                     'primary_benefit': a.training_effect_label,
+                                     'provenance': 'garmin_watch_prompt_after_the_run'}
+                                    if a.garmin_feel is not None or a.garmin_rpe else None,
+           'athlete_feedback': {'feel_1_to_10': app_feel if app_feel is not None else a.watch_feel,
+                                'feel_source': 'app' if app_feel is not None else ('watch' if a.watch_feel is not None else None),
                                 'notes': ((planned.feel_notes if feedback_matches else None) or a.feel_notes or '')[:700] or None,
                                 'pace_vs_target': planned.pace_assessment if feedback_matches else None,
-                                'said_swapped': bool(planned.swapped) if feedback_matches else False}}
+                                'said_swapped': bool(planned.swapped) if feedback_matches else False,
+                                'effort_1_to_10': app_effort if app_effort is not None else a.watch_effort,
+                                'reported_completion': loads_json(planned.reported_completion) if feedback_matches else ({'completion':a.reported_completion,'evidence_source':'self_reported'} if a.reported_completion else None),
+                                'provenance': 'athlete_report',
+                                'evidence_note': 'Reported completion/effort is subjective; it is not measured lap verification.'}}
     if executed:
         run['detected_session'] = {'title': executed.get('title'), 'category': executed['category'],
             'matched_activity_ids': [executed['activity_id']],
-            'reps': [{'miles': round(r['distance_m'] / 1609.34, 2), 'time_s': round(r['duration_s']),
+            'reps': [{'meters': round(r['distance_m']), 'time_s': round(r['duration_s']),
                       'pace': _pace(r['pace_sec_per_mile']), 'avg_hr': r['average_hr']} for r in executed['reps']],
-            'recovery_s': executed['recovery_seconds'], 'work_miles': executed['work_miles']}
+            # What was run between reps (measured), next to what the plan asked for
+            'measured_recovery_s': executed['recovery_seconds'],
+            'planned_recovery_s': _planned_recovery(planned),
+            'work_miles': executed['work_miles']}
     return run
+
+
+def _planned_recovery(planned):
+    data = loads_json(planned.prescription) if planned and planned.prescription else None
+    if not isinstance(data, dict):
+        return None
+    return next((s.get('recovery_seconds') for s in data.get('segments') or [] if s.get('recovery_seconds')), None)
 
 
 def _training_summary(user_id, runs, executed_by_id, today, plan_rows, goal):
@@ -161,7 +194,8 @@ def prior_reviews(user_id, db, activity_id=None, plan_id=None):
     """The coach's own completed notes from the last two weeks, newest first.
 
     Only the latest note per subject (a run, or a plan's weekly review) is kept, and the
-    subject under review is left out so a refresh does not just echo itself.
+    subject under review is left out so a refresh does not just echo itself. A run review
+    sees only earlier run reviews; the weekly review sees both, to synthesize the trend.
     """
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=MEMORY_DAYS)
     rows = db.query(CoachingReview).filter(CoachingReview.user_id == user_id, CoachingReview.status == 'ready',
@@ -173,6 +207,8 @@ def prior_reviews(user_id, db, activity_id=None, plan_id=None):
         result = loads_json(row.result) or {}
         if subject in seen or not result.get('summary'):
             continue
+        if current[0] == 'run' and subject[0] == 'week':
+            continue  # a run review stays about its run; week notes made the two converge
         seen.add(subject)
         run = db.get(Activity, row.activity_id) if row.activity_id else None
         notes.append({'written': row.created_at.date().isoformat(), 'scope': subject[0],
@@ -187,6 +223,38 @@ def prior_reviews(user_id, db, activity_id=None, plan_id=None):
 
 
 def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
+    """Cache expensive facts/menu building, while keeping prior coach notes fresh."""
+    from app.services.history_cache import cached
+    goal = db.query(Goal).filter_by(user_id=user_id, active=True).first()
+    sources = research_context(goal)
+    selected_plan = db.query(Plan).filter_by(user_id=user_id, id=plan_id).first() if plan_id else db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    resolved_plan_id = selected_plan.id if selected_plan else plan_id
+    key = hashlib.sha256(json.dumps({'version': VERSION, 'today': athlete_today().isoformat(),
+        'activity': activity_id, 'plan': resolved_plan_id, 'concern': normalize_concern(concern),
+        'model': settings.openai_coach_model, 'instructions': INSTRUCTIONS, 'research': sources,
+        'credential_version': hashlib.sha256(settings.openai_api_key.encode()).hexdigest()}, sort_keys=True).encode()).hexdigest()
+    def build():
+        context, docs, fingerprint, plan = _build_context(user_id, db, activity_id, plan_id, concern)
+        context.pop('prior_reviews', None)
+        return {'context': context, 'sources': docs, 'fingerprint': fingerprint, 'plan_id': plan.id if plan else None}
+    result = cached(user_id, 'coach-context', key, db, build, persist=db.info.get('history_cache_write', False))
+    context = result['context']
+    context['prior_reviews'] = prior_reviews(user_id, db, activity_id, result['plan_id'])
+    plan = db.get(Plan, result['plan_id']) if result['plan_id'] else None
+    return context, result['sources'], result['fingerprint'], plan
+
+
+def _distance_swap_note(matched, ran_by_date):
+    """A long run moved to an easy day (or run short): judge the run as what it was."""
+    ran = ran_by_date.get(matched.date) if matched else None
+    if not ran or not ran['off_plan'] or ran['type'] == 'workout':
+        return None
+    swap = f", swapped with {ran['swapped_with']}" if ran['swapped_with'] else ""
+    return (f"OFF-PLAN: prescribed {matched.title} ({matched.distance_miles} mi), but the athlete ran this as "
+            f"{ran['title']}{swap}. Judge it as a {ran['title'].lower()}, not against the prescription.")
+
+
+def _build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
     from app.api.plans import _get_activities_for_date
     user = db.get(User, user_id)
     if not user:
@@ -197,14 +265,14 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         raise HTTPException(404, 'Run not found')
     if activity and is_walk(activity):
         raise HTTPException(409, 'This is a walking activity; select the running session to review it.')
-    if activity and activity.date.date() > date.today():
+    if activity and activity.date.date() > athlete_today():
         raise HTTPException(409, 'Future activities cannot be reviewed as completed runs')
     plan = db.query(Plan).filter_by(user_id=user_id, id=plan_id).first() if plan_id else db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
     if plan_id and (not plan or plan.preview_state in {'discarded', 'superseded'}):
         raise HTTPException(404, 'Plan not available')
     if not activity and not plan:
         raise HTTPException(404, 'No run or plan to review')
-    today = date.today()
+    today = athlete_today()
     # Eight weeks establish quality/recovery context. Exclude future activities.
     runs = db.query(Activity).filter(Activity.user_id == user_id, runs_only(),
         Activity.date >= datetime.combine(today-timedelta(days=56), datetime.min.time()),
@@ -221,11 +289,31 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
             executed_by_id[run.id] = found | {'title': session_title(found)}
     actuals_by_day = {}
     for run in runs:actuals_by_day.setdefault(run.date.date().isoformat(),[]).append(run)
+    # What was run on each completed plan day: the same record the calendar shows (swaps paired)
+    from app.core.session_match import ran_session, pair_swaps
+    ran_rows = []
+    long_by_week = {}
+    for r in rows:
+        if r.type == 'long_run':
+            long_by_week[r.week_number] = max(long_by_week.get(r.week_number, 0), r.distance_miles or 0)
+    for r in rows:
+        day_runs = actuals_by_day.get(r.date)
+        if day_runs and r.type != 'rest':
+            primary_run = max(day_runs, key=lambda a: a.distance_meters)
+            found = executed_by_id.get(primary_run.id)
+            spec_r = loads(r.prescription)
+            ran_rows.append({'date': r.date, 'session': ran_session(r.type, r.title, r.distance_miles or 0,
+                (primary_run.distance_meters or 0) / 1609.34, found,
+                bool(found and r.type == 'workout' and off_plan(spec_r, found)), long_by_week.get(r.week_number))})
+    pair_swaps(ran_rows)
+    ran_by_date = {x['date']: x['session'] for x in ran_rows}
     row_data = [{**snapshot(r), 'id': r.id, 'date': r.date, 'weekday': date.fromisoformat(r.date).strftime('%a'),
                  'days_from_today': (date.fromisoformat(r.date) - today).days,
                  'status': 'completed' if actuals_by_day.get(r.date) else r.session_status,
                  'moved_to': r.moved_to, 'moved_from': r.moved_from, 'activity_id': max(actuals_by_day[r.date],key=lambda a:a.distance_meters).id if actuals_by_day.get(r.date) else r.activity_id,
-                 'feel': r.feel_rating, 'notes': r.feel_notes, 'evaluation': loads_json(r.evaluation)} for r in rows]
+                 'ran_as': ({k: ran_by_date[r.date][k] for k in ('title', 'type', 'off_plan', 'swapped_with')}
+                            if r.date in ran_by_date else None),
+                 'feel': r.feel_rating, 'effort_1_to_10': r.effort_rating, 'reported_completion': loads_json(r.reported_completion), 'notes': r.feel_notes, 'evaluation': loads_json(r.evaluation)} for r in rows]
     matched = None
     if activity:
         # Latest approved genuine prescription, not synthetic history or a draft.
@@ -251,7 +339,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
                 from app.api.plans import _plan_program
                 state = db.query(WorkoutProgression).filter_by(user_id=user_id, category=contract["category"], program_key=_plan_program(plan)).first()
                 provisional = evaluate_workout(None, None, None, matched.type, None, matched.title,
-                    matched.feel_rating if matched.feedback_activity_id == activity.id and matched.feel_rating is not None else activity.feel_rating, contract, execution)
+                    matched.feel_rating if matched.feedback_activity_id == activity.id and matched.feel_rating is not None else activity.effective_feel, contract, execution)
                 evaluation = gate_progression(provisional, contract, state.current_level if state else None).to_dict()
                 evaluation['provisional'] = True  # explanation only; no progression or feedback effects applied
     wellness = db.query(DailyWellness).filter(DailyWellness.user_id == user_id,
@@ -291,7 +379,7 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
         'week_view': _week_view(rows, runs, today),
         'training_summary': _training_summary(user_id, runs, executed_by_id, today, rows, goal_data),
         'run': _run(activity, executed_run, matched) if activity else None,
-        'run_vs_plan': off_plan_note or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
+        'run_vs_plan': off_plan_note or _distance_swap_note(matched, ran_by_date) or ('Matches the prescribed session.' if matched and execution and execution.get('confidence') in {'high', 'medium'} else None),
         # Four weeks of single-line history; older trends are already in training_summary.last_6_weeks.
         'recent_runs': [_brief_run(a, executed_by_id.get(a.id)) for a in runs if a.date.date() >= today - timedelta(days=28)],
         'quality_evidence': quality_history(user_id, db), 'recovery': wellness_data,
@@ -322,6 +410,18 @@ def build_context(user_id, db, activity_id=None, plan_id=None, concern=None):
             'heart_rate': 'No athlete HR zones/threshold are supplied. An average HR alone cannot establish excessive easy effort.',
             'risk': 'The injury-risk label is a heuristic. Compare prescribed load with actual recent full weeks and recovery; it is not a diagnosis or automatic veto.',
             'matching': 'matched_prescription null means there is no genuine prescription to judge this run against. Never infer missed strides or incomplete work from a synthetic historical day.'}
+    from app.services.history_dossier import dossier, evidence_manifest
+    context['historical_profile'] = dossier(user_id, db, today, persist=db.info.get('history_cache_write', False))
+    ids = {r.id for r in runs}
+    if activity:
+        ids.add(activity.id)
+    for block in context['historical_profile']['historical_capacity']['sustained_blocks']:
+        ids.update(block['activity_ids'])
+    for race in context['historical_profile']['race_buildups']:
+        ids.update(race['activity_ids'])
+    for run in context['historical_profile']['historical_capacity']['longest_runs']:
+        ids.update(run['activity_ids'])
+    context['evidence_manifest'] = evidence_manifest(user_id, db, ids)
     sources = research_context(goal)
     fingerprint = hashlib.sha256(json.dumps({'context': context, 'research': sources, 'instructions': INSTRUCTIONS, 'key_version': hashlib.sha256(settings.openai_api_key.encode()).hexdigest()}, sort_keys=True, default=str).encode()).hexdigest()
     # Memory is added after hashing: it is the coach's own earlier opinion, not training data,
@@ -373,14 +473,44 @@ def serialize_review(row, *, stale=False):
             # Bullets have no length cap, so the provider never cuts them off; leave them as written.
             'observations': result.get('observations', []), 'uncertainties': result.get('uncertainties', []),
             'research': result.get('research', []),
+            'history_insights': result.get('history_insights', []),
+            'input_revision': row.input_revision,
             'suggestions': [{**c, 'reason': chosen[c['id']]} for c in candidates if c['id'] in chosen]}
 
 
+def _check_ai_budget(user_id,db,configured):
+    if not configured:return
+    if db.bind.dialect.name=='postgresql':
+        from sqlalchemy import text
+        # Reservations across athletes share only this short quota lock.
+        # Commit releases it before any provider network call.
+        db.execute(text('SELECT pg_advisory_xact_lock(68743103)'))
+    utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # The athlete's allowance resets at their own midnight; the app-wide cap stays on the UTC day.
+    from app.athlete_clock import day_start_utc
+    used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
+        CoachingReview.created_at >= day_start_utc(), CoachingReview.model.is_not(None)).scalar()
+    global_used=db.query(func.coalesce(func.sum(CoachingReview.attempts),0)).filter(
+        CoachingReview.created_at>=utc_day,CoachingReview.model.is_not(None)).scalar()
+    if global_used>=settings.openai_coach_global_daily_limit:
+        raise HTTPException(429,'The app AI budget is reached for today. Training rules and saved reviews still work.')
+    if used >= settings.openai_coach_daily_limit:
+        raise HTTPException(429, f'Daily AI review limit reached ({used} of {settings.openai_coach_daily_limit} today; '
+                                 'it resets at midnight). Saved reviews and training rules still work.')
+    from app.services import ai_budget
+    ai_budget.check(user_id, db)
+
+
 def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
+    from app.models.user import User
+    user=db.get(User,user_id)
+    if not user or not user.ai_consent:  # every mode, the owner included
+        raise HTTPException(403, 'AI coaching consent is required.')
     from app.api.plans import _begin_schedule_write
     # Reserve before calling OpenAI: concurrent retries reuse the same review;
     # quota checks and reservations share a SQLite write lock.
     _begin_schedule_write(db)
+    db.info['history_cache_write'] = True
     concern = normalize_concern(concern)
     context, sources, fingerprint, plan = build_context(user_id, db, activity_id, plan_id, concern)
     cached = db.query(CoachingReview).filter_by(user_id=user_id, context_hash=fingerprint).first()
@@ -392,11 +522,7 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
         db.commit()
         return serialize_review(cached)
     configured = bool(settings.openai_api_key)
-    utc_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    used = db.query(func.coalesce(func.sum(CoachingReview.attempts), 0)).filter(CoachingReview.user_id == user_id,
-        CoachingReview.created_at >= utc_day, CoachingReview.model.is_not(None)).scalar()
-    if configured and used >= settings.openai_coach_daily_limit:
-        raise HTTPException(429, 'Daily AI review limit reached. Existing reviews and training rules still work; try tomorrow.')
+    _check_ai_budget(user_id,db,configured)
     row = cached or CoachingReview(user_id=user_id, activity_id=activity_id, plan_id=plan.id if plan else None,
         context_hash=fingerprint, status='pending', model=settings.openai_coach_model if configured else None,
         candidates=json.dumps(context['candidates']), athlete_concern=concern, policy_version=VERSION)
@@ -404,10 +530,19 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
         row.status = 'pending'
         row.attempts += 1
         row.created_at = datetime.now(timezone.utc)
+    from app.services.openai_coach import model_payload
+    row.input_snapshot = json.dumps({'instructions': INSTRUCTIONS, **model_payload(context, sources)}, default=str)
+    row.input_revision = context['historical_profile']['input_revision']
     db.add(row)
+    db.flush()
+    attempt = CoachingAttempt(review_id=row.id, number=row.attempts, input_snapshot=row.input_snapshot,
+        input_revision=row.input_revision, model=row.model, policy_version=VERSION, status='pending')
+    db.add(attempt)
     db.commit()  # No write lock held across network I/O.
-    review_id = row.id
+    review_id, attempt_id = row.id, attempt.id
     db.rollback()  # release the read transaction opened by expire-on-commit access
+    import time
+    started=time.monotonic()
     try:
         if not configured:
             raise RuntimeError('not_configured')
@@ -425,7 +560,11 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
         known_sources = {s['id']: s for s in sources}
         if any(s not in known_sources for s in advice.research_ids):
             raise ValueError('Unknown research reference')
+        known_insights = {item['id']: item for item in context['historical_profile']['insights']}
+        if any(item not in known_insights for item in advice.history_insight_ids):
+            raise ValueError('Unknown historical evidence')
         result = advice.model_dump()
+        result['history_insights'] = [known_insights[item] for item in dict.fromkeys(advice.history_insight_ids)]
         result['research'] = [{'id': s, 'path': known_sources[s]['path']} for s in advice.research_ids]
         status = 'ready'
     except Exception as exc:
@@ -440,6 +579,12 @@ def review_training(user_id, db, activity_id=None, plan_id=None, concern=None):
     row = db.get(CoachingReview, review_id)
     row.result, row.status = json.dumps(result), status
     row.input_tokens, row.output_tokens = usage.get('input_tokens', 0), usage.get('output_tokens', 0)
+    attempt = db.get(CoachingAttempt, attempt_id)
+    attempt.latency_ms=round((time.monotonic()-started)*1000)
+    attempt.status, attempt.result = status, row.result
+    attempt.input_tokens, attempt.output_tokens = row.input_tokens, row.output_tokens
+    from app.services.ai_budget import cost
+    attempt.cost_usd = round(cost(attempt.model, attempt.input_tokens, attempt.output_tokens), 6)
     db.commit()
     try:
         current_hash = build_context(user_id, db, activity_id, plan_id, concern)[2]

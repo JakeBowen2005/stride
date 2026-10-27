@@ -349,6 +349,9 @@ def _goal_pace_ladder(distance: str) -> list[dict]:
     return result
 
 
+TAPER_DOSE = 2 / 3  # share of the normal session kept in taper weeks (~60-70%)
+
+
 def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> list[dict]:
     """Stride templates, not validated physiological dose equivalences.
 
@@ -370,8 +373,12 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
         rep_minutes = duration + (level - 1) % 4
         if phase == "base":
             reps, rep_minutes = 2, max(5, int(reps * rep_minutes * .65 / 2))
-        elif phase in ("taper", "race_week", "recovery"):
-            reps, rep_minutes = 2, 4 if phase == "taper" else 3
+        elif phase == "taper":
+            # Taper cuts volume, not the session's character: keep ~2/3 of the normal dose
+            # (e.g. 2x13min ≈ 2x2mi threshold for a sub-3 marathoner) rather than a token 2x4min.
+            reps, rep_minutes = 2, max(4, round(reps * rep_minutes * TAPER_DOSE / 2))
+        elif phase in ("race_week", "recovery"):
+            reps, rep_minutes = 2, 3
         if category == "threshold":
             name = f"{reps}x{rep_minutes}min Threshold"
             structure = f"{reps}x{rep_minutes}min at {{tp_fast}}/mi with 2min jog rest."
@@ -380,8 +387,10 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
         else:
             # Longer-race intervals emphasize controlled aerobic repetitions;
             # never substitute an aspirational goal race pace for demonstrated pace.
-            meters = 400 if phase in ("base", "taper", "race_week", "recovery") else (800 if distance == "5k" else 1200 if phase == "peak" else 1000 if distance == "10k" else 1200)
-            reps = (4 if phase == "base" else 3) if phase in ("base", "taper", "race_week", "recovery") else 3 + (level - 1) // 3
+            meters = 400 if phase in ("base", "race_week", "recovery") else (800 if distance == "5k" else 1200 if phase == "peak" else 1000 if distance == "10k" else 1200)
+            reps = (4 if phase == "base" else 3) if phase in ("base", "race_week", "recovery") else 3 + (level - 1) // 3
+            if phase == "taper":
+                reps = max(3, round(reps * TAPER_DOSE))
             pace = "{ip_range}"
             name = f"{reps}x{meters}m Intervals"
             structure = f"{reps}x{meters}m at {pace}/mi with 2min jog rest."

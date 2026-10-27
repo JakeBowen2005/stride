@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """One calendar-week mileage definition for planning, dashboard and explanations.
 
 Policy ratio, not an injury predictor: last completed Monday–Sunday divided by
@@ -11,7 +12,7 @@ MI = 1609.34
 
 
 def completed_week_load(user_id, db, today=None):
-    today = today or date.today()
+    today = today or athlete_today()
     monday = today - timedelta(days=today.weekday())
     starts = [monday - timedelta(weeks=i) for i in range(12, 0, -1)]
     totals = dict.fromkeys(starts, 0.0)

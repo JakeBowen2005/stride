@@ -1,0 +1,16 @@
+"use client";
+import { useState } from "react";
+export default function RegisterPage(){
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
+  return <section className="glass mx-auto my-6 w-full max-w-md space-y-4 p-6 sm:my-10"><h1 className="text-2xl font-light tracking-tight">Create your athlete account</h1>
+    <p>Use the invitation from the app owner. Your training history and plan stay private to your account.</p>
+    <form className="space-y-3" onSubmit={async e=>{e.preventDefault();setBusy(true);setError(""); const f=new FormData(e.currentTarget);
+      try {const r=await fetch("/auth/register/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:f.get("name"),email:f.get("email"),password:f.get("password"),invite_code:f.get("invite"),timezone:f.get("timezone"),ai_consent:f.get("ai")==="on",accept_terms:f.get("terms")==="on"})});const d=await r.json();if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:"Check the form.");window.location.href="/onboarding";}catch(e){setError(e instanceof Error?e.message:"Could not create account.");}finally{setBusy(false);}}}>
+      {[['name','Name','text'],['email','Email','email'],['password','Password (12 or more characters)','password'],['invite','Invitation code','password']].map(([name,label,type])=><label className="block" key={name}>{label}<input className="block min-h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] p-2" name={name} type={type} required minLength={name==='password'?12:1} autoComplete={name==='password'?'new-password':name==='invite'?'off':name}/></label>)}
+      <label className="block">Timezone<input className="block min-h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] p-2" name="timezone" defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone} required /></label>
+      <label className="flex gap-2"><input name="ai" type="checkbox"/>Allow AI coaching to send selected training history, wellness, and my feedback to the configured AI provider. Optional; rule-based plans work without it.</label>
+      <label className="flex gap-2"><input name="terms" type="checkbox" required/><span>I agree to the <a className="underline" href="/terms" target="_blank">Terms of Service</a> and have read the <a className="underline" href="/privacy" target="_blank">privacy policy</a>.</span></label>
+      {error&&<p role="alert">{error}</p>}<button className="min-h-11 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60" disabled={busy}>{busy?'Creating…':'Create account'}</button>
+    </form><a className="underline" href="/login">Back to sign in</a></section>;
+}

@@ -6,6 +6,13 @@ import { AUTH_COOKIE, validAuthSession } from "@/lib/auth";
 // STRIDE_PASSWORD is unset (e.g. local dev on localhost only) — except on Render
 // (RENDER is set there), where a missing password fails closed instead of going public.
 export function proxy(request: NextRequest) {
+  if (process.env.STRIDE_ACCOUNTS_ENABLED === "true") {
+    // Optimistic page gate only. FastAPI validates the revocable session and
+    // athlete ownership on every API request, including numeric URLs.
+    if (request.cookies.get("stride_account")?.value) return NextResponse.next();
+    if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({detail:"Not signed in"},{status:401});
+    return NextResponse.redirect(new URL("/login",request.url));
+  }
   const password = process.env.STRIDE_PASSWORD;
   if (!password) {
     if (process.env.RENDER) {
@@ -26,7 +33,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the login flow, the Render health check, Next internals and install
-  // assets (the home-screen icon and manifest must load before sign-in).
-  matcher: ["/((?!login|auth|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
+  // Everything except the login flow, the public privacy policy and about page, the Render
+  // health check, Next internals and install assets (icon and manifest load before sign-in).
+  matcher: ["/((?!login|auth|privacy|terms|about|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
 };

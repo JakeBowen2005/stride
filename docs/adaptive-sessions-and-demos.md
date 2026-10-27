@@ -82,7 +82,17 @@ These use optional scenario keys in `seed_demo`. Omitting them reproduces the th
 
 The launcher and seed CLI accept any `demo/scenarios/*.json` filename.
 
-Beginner plans stay easy-only in week 1, at or under the single-workout quality stage, within ~10% of the recent 4-week average, with no back-to-back hard days and no more run days than the athlete chose (`test_beginner_scenarios_are_conservative`). The fixtures exposed one engine quirk: at very low volume, easy-day floors made the long run shorter than the easy runs. `fit_week_to_budget` now moves half miles from the longest easy day to the long run until it is at least as long, without changing the weekly total or the longest single run. A deload week whose easy days already sit at the 2 mi floor can still show a slightly shorter long run, because closing that gap would add load.
+Beginner and introductory intermediate road programs now use a separate effort-based
+progression (`core/developmental.py`). After two consistent completed weeks, one controlled
+session can begin below the old 20 mpw workout gate, including on three-day schedules.
+Ten easy / ten controlled / ten easy is the initial pattern; smaller budgets shorten it.
+Completed work durations plus recovery earn repeated exposures before extending the dose
+or changing its shape. These efforts never calibrate threshold/interval pace. Mileage holds
+when a new step is introduced, then grows with the same workout repeated. Run frequency
+is preserved with shorter easy days and tenth-mile allocation. Planned deloads require
+actual training stress; fatigue still takes priority. Race-week pickups use a familiar,
+reduced dose and a short shakeout. Advanced/expert and ultra generation is unchanged.
+See [the full programs and review](demo-programs/README.md) for the simulations and limits.
 
 After checking out a branch:
 

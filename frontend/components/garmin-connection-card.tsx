@@ -1,31 +1,38 @@
 "use client";
 
 import { apiUrl, USER_ID } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { GarminSync } from "@/components/garmin-sync";
+import { GarminSync, SYNC_EVENT } from "@/components/garmin-sync";
 
 
 interface Status {
-  tokens_present: boolean;
+  api_key_present: boolean;
+  connection_issue?: string | null;
+  can_reconnect?: boolean;
+  business_pending?: boolean;
+  owner_key_storage_ready?: boolean;
   connected: boolean;
   display_name: string | null;
   last_sync_at: string | null;
   last_new_activity_at: string | null;
   last_error: string | null;
   full_sync_done: boolean;
-  full_sync_job: { state: "running" | "done" | "error"; result: unknown } | null;
+  full_sync_job: { state: "running" | "done" | "error"; result: unknown; error?: string | null } | null;
 }
 
 export function GarminConnectionCard() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [connectionMessage,setConnectionMessage]=useState("");
+  const [reconnecting, setReconnecting] = useState(false);
   const [offline, setOffline] = useState(false);
 
   async function load() {
     try {
       const res = await fetch(apiUrl(`/garmin/status/${USER_ID}`));
+      if (!res.ok) throw new Error("Could not load Garmin status");
       setStatus(await res.json());
       setOffline(false);
     } catch {
@@ -35,11 +42,18 @@ export function GarminConnectionCard() {
 
   useEffect(() => {
     const id = setTimeout(load, 0);
-    return () => clearTimeout(id);
+    window.addEventListener(SYNC_EVENT, load);
+    return () => { clearTimeout(id); window.removeEventListener(SYNC_EVENT, load); };
   }, []);
 
   // Poll while a full history import is running
   const running = status?.full_sync_job?.state === "running";
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running && status?.full_sync_job?.state === "done")
+      window.dispatchEvent(new Event(SYNC_EVENT));
+    wasRunning.current = running;
+  }, [running, status?.full_sync_job?.state]);
   useEffect(() => {
     if (!running) return;
     const id = setInterval(load, 4000);
@@ -47,51 +61,80 @@ export function GarminConnectionCard() {
   }, [running]);
 
   async function fullSync() {
-    await fetch(apiUrl(`/garmin/full-sync/${USER_ID}`), { method: "POST" });
-    load();
+    try {
+      const res = await fetch(apiUrl(`/garmin/full-sync/${USER_ID}`), { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Could not start history import");
+      setConnectionMessage("History import queued. Progress appears below.");
+      load();
+    } catch (error) {
+      setConnectionMessage(error instanceof Error ? error.message : "Could not start history import");
+    }
   }
 
   const job = status?.full_sync_job;
 
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-4">
+    <Card id="garmin">
+      <CardContent className="space-y-4 pt-0">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Garmin Connect</h2>
-          {status?.tokens_present ? (
+          <h2 className="text-[13px] font-bold">Garmin Connect</h2>
+          {status?.api_key_present && !status.connected && status.last_error ? (
+            <Badge variant="destructive" className="text-xs">Needs attention</Badge>
+          ) : status?.connected ? (
             <Badge variant="secondary" className="text-xs">
               Connected{status.display_name ? ` · ${status.display_name}` : ""}
             </Badge>
+          ) : status?.api_key_present ? (
+            <Badge variant="outline" className="text-xs">Not verified · sync to check</Badge>
           ) : (
             <Badge variant="outline" className="text-xs">
-              Not connected
+              Not set up
             </Badge>
           )}
         </div>
 
         {offline && <p className="text-sm text-destructive">Can&apos;t reach the Stride backend.</p>}
 
-        {status && !status.tokens_present && (
-          <div className="space-y-2 rounded-md bg-secondary/40 p-3 text-sm">
-            <p className="font-medium">Garmin needs to be connected (or reconnected) from your computer.</p>
+        {status?.connection_issue && <p role="status" className="glass-tile rounded-xl p-3.5 text-sm">{status.connection_issue}</p>}
+        {status?.can_reconnect && (!status.connected || !!status.connection_issue) && <Button variant="outline" disabled={reconnecting} onClick={async () => {
+          setReconnecting(true);
+          try {
+            const response = await fetch(apiUrl(`/garmin/reconnect/${USER_ID}`), { method: "POST" });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || "Could not reconnect Garmin.");
+            setConnectionMessage("Reconnected to the server key. Sync queued; progress appears below.");
+            await load();
+          } catch (error) { setConnectionMessage(error instanceof Error ? error.message : "Could not reconnect Garmin."); }
+          finally { setReconnecting(false); }
+        }}>{reconnecting ? "Reconnecting…" : "Reconnect Garmin using server key"}</Button>}
+        {status?.business_pending && <p className="text-sm">Separate Garmin connections are awaiting Business API approval. Import your original FIT files below to build your history now.</p>}
+        {status && !status.api_key_present && !status.business_pending && (
+          <div className="space-y-2 glass-tile rounded-xl p-3.5 text-sm">
+            <p className="font-medium">Connect Garmin with a Personal API key.</p>
             <p className="text-muted-foreground">
-              Garmin doesn&apos;t offer a sign-in button for personal apps, so this is a one-time step on the computer
-              that runs Stride. Your password is never stored, only a session token.
+              Create a key in Garmin Connect (Settings → Personal API Key), then add it to this server’s environment as{" "}
+              <code>GARMIN_API_KEY</code> and redeploy. For Render, use your service’s Environment page. Your local .env file is not deployed.
             </p>
-            <details>
-              <summary className="cursor-pointer text-muted-foreground">Show the command</summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-background p-2 text-xs">
-                cd backend{"\n"}venv/bin/python garmin_login.py
-              </pre>
-            </details>
+            <a
+              className="text-sm underline underline-offset-2"
+              href="https://connect.garmin.com/app/settings/personalApiToken"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open Garmin&apos;s Personal API Key page
+            </a>
           </div>
         )}
 
-        {status?.tokens_present && (
+        {status?.owner_key_storage_ready && <form className="space-y-2" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const r=await fetch(apiUrl(`/garmin/connect/${USER_ID}`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:f.get('key')})});const d=await r.json();setConnectionMessage(r.ok?d.message:typeof d.detail==='string'?d.detail:'Could not save key.');if(r.ok){form.reset();load();}}}><label className="block text-sm">Your owner Personal API key<input className="block min-h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] p-2" name="key" type="password" required autoComplete="off"/></label><Button type="submit" variant="outline">Save encrypted key</Button></form>}
+        {connectionMessage && <p role="status" className="text-sm">{connectionMessage}</p>}
+        {status?.api_key_present && <Button variant="outline" onClick={async()=>{const r=await fetch(apiUrl(`/garmin/disconnect/${USER_ID}`),{method:'POST'});if(r.ok){setConnectionMessage('Disconnected. Revoke the key in Garmin to finish removal there.');load();}}}>Disconnect Garmin</Button>}
+        {status?.api_key_present && (
           <>
             <div className="flex items-start justify-between gap-4 text-sm">
               <div className="space-y-1 text-muted-foreground">
-                <p>New runs sync automatically every few minutes while Stride is running, and whenever you open the app.</p>
+                <p>New runs sync whenever you open the app, and Stride checks Garmin every 15 minutes in the background (hourly overnight).</p>
                 {status.last_error && <p className="text-destructive">{status.last_error}</p>}
               </div>
               <GarminSync autoSync={false} label="Sync now" onNewActivities={load} />
@@ -105,7 +148,7 @@ export function GarminConnectionCard() {
                   {(job.result as { message?: string })?.message ?? "Done"}
                 </span>
               )}
-              {job?.state === "error" && <span className="text-xs text-destructive">{String(job.result)}</span>}
+              {job?.state === "error" && <span className="text-xs text-destructive">{status?.last_error || job.error || "History import failed. Try again."}</span>}
             </div>
           </>
         )}
