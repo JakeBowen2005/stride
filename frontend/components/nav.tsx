@@ -15,7 +15,9 @@ const links = [
 ];
 
 const isActive = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
-const isAuthPage = (pathname: string) => pathname.startsWith("/login") || pathname.startsWith("/auth");
+// Sign-in and public pages (privacy policy, about) show only the wordmark: no app nav or Garmin status.
+const isAuthPage = (pathname: string) => pathname.startsWith("/login") || pathname.startsWith("/auth")
+  || pathname === "/privacy" || pathname === "/about";
 
 function Wordmark({ className }: { className?: string }) {
   return <Link href="/" className={cn("wordmark rounded-full text-[21px] leading-none", className)}>Stride</Link>;

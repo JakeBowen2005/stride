@@ -28,6 +28,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </form>
           {accounts && <p className="text-sm"><a className="underline" href="/auth/register">Create an invited account</a> · <a className="underline" href="/auth/reset">Recover account</a></p>}
           {!accounts && !process.env.RENDER && <p className="text-xs text-muted-foreground">The app owner can find the local password in frontend/.env.local.</p>}
+          <p className="text-xs text-muted-foreground"><a className="underline underline-offset-2" href="/about">About Stride</a> · <a className="underline underline-offset-2" href="/privacy">Privacy policy</a></p>
         </CardContent>
       </Card>
     </div>
