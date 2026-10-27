@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Entirely synthetic, reproducible athlete fixtures. Requires an empty demo DB."""
 import json
 import math
@@ -9,6 +10,7 @@ from app.models.plan import Plan, PlannedWorkout
 from app.models.progression import WorkoutProgression
 from app.models.user import Goal, User
 from app.models.wellness import DailyWellness
+from app.services.lap_analyzer import lap_split
 
 DAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 PRS=[('5K',3.10686,'5k'),('10K',6.21371,'10k'),('Half',13.1094,'half'),('Marathon',26.2188,'marathon')]
@@ -24,7 +26,7 @@ def easy_week(profile,target,run_days,long_day):
 
 def seed_demo(db, profile):
     if db.query(User).count():raise ValueError('Refusing to overwrite a populated database')
-    today=date.today();monday=today-timedelta(days=today.weekday())
+    today=athlete_today();monday=today-timedelta(days=today.weekday())
     goal_type=profile.get('goal_type','race');workouts=profile.get('workouts',True)
     rest_days=profile.get('rest_days',['sunday']);days_per_week=profile.get('days_per_week',6);long_run_day=profile.get('long_run_day','saturday')
     race=monday+timedelta(weeks=profile['weeks_to_race'],days=6) if goal_type=='race' else None
@@ -92,6 +94,7 @@ def seed_demo(db, profile):
                         laps.append({'intensity':'ACTIVE','distance_m':meters,'duration_s':seconds})
                         if rep<s['reps']-1:laps.append({'intensity':'RECOVERY','distance_m':120/profile['easy_pace']*MI,'duration_s':120})
                     laps.append({'intensity':'COOLDOWN','distance_m':1.5*MI,'duration_s':1.5*profile['easy_pace']})
+                    laps=[lap_split(i+1,l['distance_m'],l['duration_s'],intensity=l['intensity']) for i,l in enumerate(laps)]
                 duration=sum(l['duration_s'] for l in laps) if laps else miles*profile['easy_pace']
                 activity=Activity(user_id=1,source='manual',external_id=f'demo-{profile["id"]}-{d}',name=f'Synthetic {title}',date=datetime.combine(d,datetime.min.time()).replace(hour=7),
                     distance_meters=miles*MI,duration_seconds=duration,average_pace_per_km=duration/(miles*1.60934),average_heartrate=155 if data else 132,

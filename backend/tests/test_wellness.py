@@ -1,5 +1,7 @@
 from app.api.wellness import recovery_signals, training_status_label
-from app.services.wellness import parse_day
+from datetime import date
+
+from app.services.wellness import fetch_range, flatten_summary, parse_day
 
 SUMMARY = {"restingHeartRate": 41, "lastSevenDaysAvgRestingHeartRate": 43, "bodyBatteryMostRecentValue": 58,
            "bodyBatteryAtWakeTime": 95, "averageStressLevel": 20, "totalSteps": 11996, "dailyStepGoal": 19840}
@@ -41,3 +43,123 @@ def test_recovery_signals():
 def test_training_status_label():
     assert training_status_label("PRODUCTIVE_3") == "Productive"
     assert training_status_label(None) is None
+
+
+V2 = {"calendarDate": "2026-10-21", "heartRate": {"restingValue": 42}, "stress": {"avgLevel": 32},
+      "bodyBattery": {"minValue": 15, "maxValue": 80, "latestValue": 20},
+      "movement": {"steps": {"goal": 19340, "value": 18251}}, "pulseOx": {"avgValue": 95},
+      "respiration": {"avgValue": 13}}
+
+
+class RangeClient:
+    def daily_summaries(self, start, end):
+        return [V2]
+
+    def sleep_range(self, start, end):
+        return [{"calendarDate": "2026-10-21", "sleepTimeSeconds": 25000, "deepSleepSeconds": 3600,
+                 "sleepScores": {"overall": {"value": 71, "qualifierKey": "FAIR"}}}]
+
+    def hrv_range(self, start, end):
+        return [{"calendarDate": "2026-10-21", "lastNightAvg": 90, "weeklyAvg": 85, "status": "BALANCED",
+                 "baseline": {"balancedLow": 75, "balancedUpper": 110}}]
+
+
+def test_personal_api_range_payloads_map_to_wellness_fields():
+    assert flatten_summary(V2)["restingHeartRate"] == 42
+    day = fetch_range(RangeClient(), date(2026, 10, 21), date(2026, 10, 21))["2026-10-21"]
+    assert day["resting_hr"] == 42 and day["stress_avg"] == 32 and day["steps"] == 18251
+    assert day["sleep_score"] == 71 and day["sleep_seconds"] == 25000
+    assert day["hrv_last_night"] == 90 and day["hrv_baseline_low"] == 75
+    assert "readiness_score" not in day  # not exposed by the Personal API
+
+
+def test_good_signal_without_garmin_readiness():
+    signals = recovery_signals({"hrv_last_night": 90, "hrv_baseline_low": 75, "sleep_seconds": 7.5 * 3600})
+    assert [s["level"] for s in signals] == ["good"]
+
+
+def test_partial_endpoint_failure_has_separate_coverage_and_does_not_advance_backfill():
+    from app.database import SessionLocal
+    from app.models.history import HistoryCoverage, WellnessRevision
+    class Partial(RangeClient):
+        def hrv_range(self, start, end):
+            raise RuntimeError('provider failure')
+    start = date(2026, 10, 1); end = date(2026, 10, 28)
+    with SessionLocal() as db:
+        fetch_range(Partial(), start, end, user_id=1, db=db); db.commit()
+        assert db.query(HistoryCoverage).filter_by(stream='sleep').one().status == 'checked'
+        assert db.query(HistoryCoverage).filter_by(stream='hrv').one().status == 'failed'
+        assert db.query(HistoryCoverage).filter_by(stream='wellness').one().status == 'failed'
+        assert db.query(WellnessRevision).count() == 2
+        fetch_range(RangeClient(), start, end, user_id=1, db=db); db.commit()
+        assert db.query(HistoryCoverage).filter_by(stream='wellness').one().status == 'checked'
+        assert db.query(WellnessRevision).count() == 3  # unchanged successful evidence is deduplicated
+
+
+def test_wellness_history_backfill_is_bounded_resumable_and_offline(monkeypatch):
+    from datetime import datetime, timedelta
+    from app.database import SessionLocal
+    from app.models.activity import Activity
+    from app.models.wellness import DailyWellness
+    from app.models.history import HistoryCoverage
+    from app.services import wellness
+    calls = []
+    class Empty:
+        def daily_summaries(self, start, end):
+            calls.append((start, end)); return []
+        sleep_range = daily_summaries
+        hrv_range = daily_summaries
+    monkeypatch.setattr(wellness, 'get_client', Empty)
+    with SessionLocal() as db:
+        db.add(Activity(user_id=1, source='manual', date=datetime.now()-timedelta(days=120), distance_meters=8000, duration_seconds=2700))
+        for back in range(7):
+            db.add(DailyWellness(user_id=1, date=(date.today()-timedelta(days=back)).isoformat(), resting_hr=50))
+        db.commit()
+        wellness._sync_wellness(1, db, True)
+        assert len(calls) == 6  # three recent requests plus three for one historical chunk
+        first = min(r.start_date for r in db.query(HistoryCoverage).filter_by(stream='wellness', status='checked'))
+        calls.clear()
+        wellness._sync_wellness(1, db, True)
+        assert len(calls) == 6
+        assert min(r.start_date for r in db.query(HistoryCoverage).filter_by(stream='wellness', status='checked')) < first
+
+
+def test_wellness_catches_up_days_missed_while_server_was_stopped(monkeypatch):
+    from datetime import timedelta
+    from app.athlete_clock import today
+    from app.database import SessionLocal
+    from app.models.wellness import DailyWellness
+    from app.services import wellness
+    calls = []
+    class Client:
+        def daily_summaries(self, start, end):
+            calls.append((start, end))
+            return [{'calendarDate': (start + timedelta(days=i)).isoformat(),
+                     'heartRate': {'restingValue': 48}} for i in range((end-start).days+1)]
+        def sleep_range(self, start, end): return []
+        def hrv_range(self, start, end): return []
+    monkeypatch.setattr(wellness, 'get_client', Client)
+    with SessionLocal() as db:
+        for i in range(3, 11):
+            db.add(DailyWellness(user_id=1, date=(today()-timedelta(days=i)).isoformat(), resting_hr=50))
+        db.commit()
+        result = wellness._sync_wellness(1, db, True)
+        assert result['status'] == 'ok'
+        assert calls[0] == (today()-timedelta(days=3), today())
+        for i in range(3):
+            assert db.query(DailyWellness).filter_by(user_id=1, date=(today()-timedelta(days=i)).isoformat()).one().resting_hr == 48
+
+
+def test_failed_wellness_stream_is_partial_and_not_throttled_as_fresh(monkeypatch):
+    from app.database import SessionLocal
+    from app.services import wellness
+    class Client:
+        def daily_summaries(self, start, end): raise RuntimeError('provider unavailable')
+        def sleep_range(self, start, end): return []
+        def hrv_range(self, start, end): return []
+    monkeypatch.setattr(wellness, 'get_client', Client)
+    monkeypatch.setattr(wellness, '_last_today_refresh', {})
+    with SessionLocal() as db:
+        assert wellness._sync_wellness(1, db, False)['status'] == 'partial'
+        assert 1 not in wellness._last_today_refresh
+        assert wellness._sync_wellness(1, db, False)['status'] == 'partial'

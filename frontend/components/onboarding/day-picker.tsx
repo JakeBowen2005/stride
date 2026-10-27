@@ -40,11 +40,13 @@ export function DayPicker({
             key={name}
             type="button"
             onClick={() => toggle(i)}
+            aria-pressed={selected.includes(i)}
+            aria-label={name}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-md border text-sm font-medium transition-colors",
+              "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition-colors",
               selected.includes(i)
-                ? "border-foreground bg-foreground text-background"
-                : "border-border hover:bg-secondary"
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-[var(--glass-border)] bg-[var(--glass-inner)] hover:bg-[var(--row-hover)]"
             )}
           >
             {name.charAt(0)}

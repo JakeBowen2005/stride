@@ -1,0 +1,2986 @@
+[
+  {
+    "name": "auth_throttles",
+    "columns": [
+      {
+        "name": "key",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "attempts",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "expires_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "blob_deletions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "bucket",
+        "type": "VARCHAR",
+        "length": 255,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "key",
+        "type": "VARCHAR",
+        "length": 512,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [],
+    "unique": [
+      [
+        "key"
+      ]
+    ],
+    "indexes": []
+  },
+  {
+    "name": "users",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "age",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "units",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "workout_format",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "timezone",
+        "type": "VARCHAR",
+        "length": 80,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "ai_consent",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "years_running",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "current_weekly_mileage",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "peak_weekly_mileage",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "experience_level",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "continuous_run_minutes",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "continuous_run_set_on",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pr_5k",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pr_10k",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pr_half",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pr_marathon",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "days_per_week",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "rest_days",
+        "type": "VARCHAR",
+        "length": 50,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "long_run_day",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "workout_progressions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "category",
+        "type": "VARCHAR",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "program_key",
+        "type": "VARCHAR",
+        "length": 80,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "current_level",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "last_workout_date",
+        "type": "DATE",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_workout_name",
+        "type": "VARCHAR",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_execution",
+        "type": "VARCHAR",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "current_pace_sec",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "sessions_at_level",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "format_rotation",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_workout_progressions_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "account_sessions",
+    "columns": [
+      {
+        "name": "token_hash",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "expires_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "kind",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_account_sessions_expires_at",
+        "columns": [
+          "expires_at"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_account_sessions_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "accounts",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "email",
+        "type": "VARCHAR",
+        "length": 254,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "password_hash",
+        "type": "VARCHAR",
+        "length": 512,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "email"
+      ]
+    ],
+    "indexes": []
+  },
+  {
+    "name": "activities",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "source",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "external_id",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR",
+        "length": 200,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "distance_meters",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "duration_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "elapsed_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "average_pace_per_km",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "average_heartrate",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "max_heartrate",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "elevation_gain",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "average_cadence",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "strava_workout_type",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "suffer_score",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pr_count",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "has_workout_description",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "splits",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "event_type",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "activity_subtype",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "aerobic_training_effect",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "anaerobic_training_effect",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "training_effect_label",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "training_load",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "vo2max",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "avg_ground_contact_time",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "avg_vertical_oscillation",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "calories",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "feel_rating",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "effort_rating",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "reported_completion",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "feel_notes",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "garmin_feel",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "garmin_rpe",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "garmin_rating_checked_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "user_highlighted",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "user_workout_notes",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "activity_kind_override",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "workout_type",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_activities_user_date",
+        "columns": [
+          "user_id",
+          "date"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ux_activities_user_source_external",
+        "columns": [
+          "user_id",
+          "source",
+          "external_id"
+        ],
+        "unique": true
+      }
+    ]
+  },
+  {
+    "name": "analysis_snapshots",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "kind",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "cache_key",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "revision",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "payload",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "kind",
+        "cache_key"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_analysis_snapshots_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "athlete_revisions",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "revision",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "daily_wellness",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "resting_hr",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "resting_hr_7d_avg",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "hrv_last_night",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "hrv_weekly_avg",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "hrv_status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "hrv_baseline_low",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "hrv_baseline_high",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "sleep_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "sleep_score",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "sleep_quality",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "deep_sleep_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "light_sleep_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "rem_sleep_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "awake_sleep_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "body_battery_now",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "body_battery_wake",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "body_battery_high",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "body_battery_low",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "stress_avg",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "steps",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "step_goal",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "spo2_avg",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "respiration_avg",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "readiness_score",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "readiness_level",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "readiness_feedback",
+        "type": "VARCHAR",
+        "length": 60,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "recovery_time_min",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "training_status",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "acute_load",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "chronic_load",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "acwr",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "load_balance_feedback",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "vo2max",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "predicted_5k",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "predicted_10k",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "predicted_half",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "predicted_marathon",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "date"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_daily_wellness_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "garmin_connections",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "display_name",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "connected",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "last_sync_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_new_activity_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_error",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "full_sync_done",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "full_repair_started_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_reconciled_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "backoff_until",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id"
+      ]
+    ],
+    "indexes": []
+  },
+  {
+    "name": "goals",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "active",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "goal_type",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "race_distance",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "target_time_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "race_date",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "terrain",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "elevation_gain_ft",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "intent",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "decision",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "target_weekly_mileage",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "history_coverage",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "stream",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "start_date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "end_date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "checked_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "stream",
+        "start_date",
+        "end_date"
+      ]
+    ],
+    "indexes": []
+  },
+  {
+    "name": "history_daily_facts",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "payload",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "version",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "history_dirty_days",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": true
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "plans",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "start_date",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "end_date",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "block_number",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "is_deload",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "training_paces",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pacing_guide",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "notes",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "goal_snapshot",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "athlete_snapshot",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "phases",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "prescribed_from",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "load",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "assessment",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "preview_data",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "preview_context",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "preview_state",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_plans_user_active",
+        "columns": [
+          "user_id",
+          "is_active"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "provider_credentials",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "kind",
+        "type": "VARCHAR",
+        "length": 40,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "ciphertext",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "scopes",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "expires_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "revoked_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "sync_jobs",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "full",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "attempts",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "available_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "lease_until",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "lease_token",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "result",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "error",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_sync_jobs_available_at",
+        "columns": [
+          "available_at"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_sync_jobs_lease_until",
+        "columns": [
+          "lease_until"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_sync_jobs_status",
+        "columns": [
+          "status"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "wellness_revisions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "stream",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "start_date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "end_date",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "content_hash",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "payload",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "retrieved_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "stream",
+        "start_date",
+        "end_date",
+        "content_hash"
+      ]
+    ],
+    "indexes": []
+  },
+  {
+    "name": "activity_sources",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "provider",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "external_id",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "summary_hash",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "enrichment_status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "attempts",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "next_retry_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_error",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_seen_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "fit_checked_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "parser_version",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "activity_id"
+        ],
+        "targets": [
+          "activities.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "provider",
+        "external_id"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_activity_sources_activity_id",
+        "columns": [
+          "activity_id"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_source_retry",
+        "columns": [
+          "user_id",
+          "enrichment_status",
+          "next_retry_at"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "coaching_reviews",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "plan_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "context_hash",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "model",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "result",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "candidates",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "attempts",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "input_tokens",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "output_tokens",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "applied_candidate_id",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "policy_version",
+        "type": "VARCHAR",
+        "length": 50,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "input_snapshot",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "input_revision",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "athlete_concern",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "plan_id"
+        ],
+        "targets": [
+          "plans.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "activity_id"
+        ],
+        "targets": [
+          "activities.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "context_hash"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_coaching_reviews_created_at",
+        "columns": [
+          "created_at"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_coaching_reviews_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "personal_records",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "distance_label",
+        "type": "VARCHAR",
+        "length": 50,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "distance_miles",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "time_seconds",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "pace_per_mile",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "strava_activity_id",
+        "type": "VARCHAR",
+        "length": 50,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "activity_id"
+        ],
+        "targets": [
+          "activities.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": []
+  },
+  {
+    "name": "planned_workouts",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "plan_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "date",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "day_name",
+        "type": "VARCHAR",
+        "length": 10,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "week_number",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "feedback_activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "feedback_history",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "type",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "title",
+        "type": "VARCHAR",
+        "length": 200,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "purpose",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "distance_miles",
+        "type": "FLOAT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "warmup",
+        "type": "VARCHAR",
+        "length": 200,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "cooldown",
+        "type": "VARCHAR",
+        "length": 200,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "prescription",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "execution",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "b2b",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "session_status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "moved_to",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "moved_from",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "feel_rating",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "feel_notes",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "pace_assessment",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "effort_rating",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "reported_completion",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "swapped",
+        "type": "BOOLEAN",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "swap_reason",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "actual_workout_type",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "coach_response",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "evaluation",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "adjustment_note",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "original_prescription",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "side_effects_applied_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "activity_id"
+        ],
+        "targets": [
+          "activities.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "plan_id"
+        ],
+        "targets": [
+          "plans.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [],
+    "indexes": [
+      {
+        "name": "ix_planned_workouts_plan_date",
+        "columns": [
+          "plan_id",
+          "date"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "coaching_attempts",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "review_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "number",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "input_snapshot",
+        "type": "TEXT",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "input_revision",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "model",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "policy_version",
+        "type": "VARCHAR",
+        "length": 50,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "result",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "input_tokens",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "output_tokens",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "review_id"
+        ],
+        "targets": [
+          "coaching_reviews.id"
+        ],
+        "ondelete": "CASCADE"
+      }
+    ],
+    "unique": [
+      [
+        "review_id",
+        "number"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_coaching_attempts_review_id",
+        "columns": [
+          "review_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "coaching_jobs",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "activity_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "version",
+        "type": "VARCHAR",
+        "length": 30,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "attempts",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "available_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "review_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "last_error",
+        "type": "VARCHAR",
+        "length": 100,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "lease_token",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": true,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "activity_id"
+        ],
+        "targets": [
+          "activities.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "user_id"
+        ],
+        "targets": [
+          "users.id"
+        ],
+        "ondelete": null
+      },
+      {
+        "columns": [
+          "review_id"
+        ],
+        "targets": [
+          "coaching_reviews.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "user_id",
+        "activity_id",
+        "version"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_coaching_jobs_status",
+        "columns": [
+          "status"
+        ],
+        "unique": false
+      },
+      {
+        "name": "ix_coaching_jobs_user_id",
+        "columns": [
+          "user_id"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "name": "source_revisions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": true
+      },
+      {
+        "name": "source_id",
+        "type": "INTEGER",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "content_hash",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "kind",
+        "type": "VARCHAR",
+        "length": 20,
+        "nullable": false,
+        "pk": false
+      },
+      {
+        "name": "payload",
+        "type": "TEXT",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "fit_blob_key",
+        "type": "VARCHAR",
+        "length": 512,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "fit_sha256",
+        "type": "VARCHAR",
+        "length": 64,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "fit_bytes",
+        "type": "BLOB",
+        "length": null,
+        "nullable": true,
+        "pk": false
+      },
+      {
+        "name": "retrieved_at",
+        "type": "DATETIME",
+        "length": null,
+        "nullable": false,
+        "pk": false
+      }
+    ],
+    "foreign_keys": [
+      {
+        "columns": [
+          "source_id"
+        ],
+        "targets": [
+          "activity_sources.id"
+        ],
+        "ondelete": null
+      }
+    ],
+    "unique": [
+      [
+        "source_id",
+        "content_hash"
+      ]
+    ],
+    "indexes": [
+      {
+        "name": "ix_source_revisions_source_id",
+        "columns": [
+          "source_id"
+        ],
+        "unique": false
+      }
+    ]
+  }
+]

@@ -6,95 +6,73 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { DayFeedback } from "@/lib/types";
 
+const COMMENT_MIN = 3;
 
-const FEEL_OPTIONS = [
-  { value: 1, label: "1" },
-  { value: 2, label: "2" },
-  { value: 3, label: "3" },
-  { value: 4, label: "4" },
-  { value: 5, label: "5" },
-  { value: 6, label: "6" },
-  { value: 7, label: "7" },
-  { value: 8, label: "8" },
-  { value: 9, label: "9" },
-  { value: 10, label: "10" },
-];
-
-const PACE_OPTIONS = [
-  { value: "above", label: "Faster" },
-  { value: "on_target", label: "On Target" },
-  { value: "below", label: "Slower" },
-];
-
-const SWAP_TYPES = [
-  "easy",
-  "recovery",
-  "tempo",
-  "intervals",
-  "long_run",
-  "rest",
-];
-
-const RESCHEDULE_TYPES = [
-  { value: "threshold", label: "Threshold" },
-  { value: "intervals", label: "Intervals" },
-  { value: "tempo", label: "Tempo" },
-  { value: "skip", label: "Don't reschedule" },
-];
+/** Garmin's five-step "how did you feel" answer, on Stride's 1-10 scale (2/4/6/8/10). */
+const WATCH_FEEL: Record<number, string> = { 2: "Very weak", 4: "Weak", 6: "Normal", 8: "Strong", 10: "Very strong" };
+/** Garmin's perceived-effort words for 1-10, as the Connect app shows them ("Light 2/10"). */
+const WATCH_EFFORT: Record<number, string> = { 1: "Very light", 2: "Light", 3: "Light", 4: "Moderate", 5: "Moderate",
+  6: "Moderate", 7: "Hard", 8: "Hard", 9: "Very hard", 10: "Maximum" };
 
 interface FeedbackFormProps {
   date: string;
+  activityId?: number;
+  /** A Garmin recording exists for the day; otherwise offer manual logging */
+  hasRecording?: boolean;
+  /** The rating entered on the watch after the run (Stride's 1-10 scales); it is the true data */
+  watch?: { feel?: number | null; effort?: number | null };
   onSubmitted: (feedback: DayFeedback) => void;
-  /** Parent already asks "how did it feel?" — hide the form's own headings */
+  /** Parent supplies its own heading */
   compact?: boolean;
+  /** Editing an earlier comment */
+  initial?: { notes?: string | null };
 }
 
-export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFormProps) {
-  const [feel, setFeel] = useState<number | null>(null);
-  const [notes, setNotes] = useState("");
-  const [pace, setPace] = useState<string | null>(null);
-  const [swapped, setSwapped] = useState(false);
-  const [swapType, setSwapType] = useState<string | null>(null);
-  const [swapReason, setSwapReason] = useState("");
-  const [rescheduleType, setRescheduleType] = useState<string | null>(null);
+/** The one thing the athlete adds after a run: a comment. Feel and effort come from the
+ * Garmin watch's post-run prompt. Saving starts the AI review of the run. */
+export function FeedbackForm({ date, activityId, onSubmitted, compact = false, hasRecording = true, watch, initial }: FeedbackFormProps) {
+  const [manualMiles, setManualMiles] = useState("");
+  const [manualMinutes, setManualMinutes] = useState("");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = feel !== null;
+  const validNumber = (v: string) => v !== "" && Number.isFinite(Number(v)) && Number(v) > 0;
+  const manualReady = validNumber(manualMiles) && validNumber(manualMinutes);
+  const manualMissing = !hasRecording && !manualReady;
+  const commentReady = notes.trim().length >= COMMENT_MIN;
+  const canSubmit = commentReady && !manualMissing;
+  const watchFeel = watch?.feel != null ? `${WATCH_FEEL[watch.feel] ?? `${watch.feel}/10`}` : null;
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl(`/plans/${USER_ID}/feedback/${date}`), {
+      const res = await fetch(apiUrl(activityId ? `/analysis/${USER_ID}/activities/${activityId}/feedback` : `/plans/${USER_ID}/feedback/${date}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feel_rating: feel,
-          feel_notes: notes || null,
-          pace_assessment: pace,
-          swapped,
-          swap_reason: swapReason || null,
-          actual_workout_type: swapped ? swapType : null,
-          // "skip" is sent explicitly: the backend only reschedules on an explicit workout choice
-          desired_reschedule_type: swapped ? rescheduleType : null,
+          feel_notes: notes.trim(),
+          manual_distance_miles: !hasRecording && manualReady ? Number(manualMiles) : null,
+          manual_duration_minutes: !hasRecording && manualReady ? Number(manualMinutes) : null,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || "Failed to submit feedback");
+        setError(typeof data.detail === "string" ? data.detail : "Could not save your comment");
         return;
       }
-      const data = await res.json();
       onSubmitted({
-        feel_rating: data.feel_rating,
-        feel_notes: notes || null,
-        pace_assessment: data.pace_assessment,
-        swapped: data.swapped,
+        feel_rating: data.feel_rating ?? null,
+        effort_rating: data.effort_rating ?? null,
+        reported_completion: data.reported_completion ?? null,
+        feel_notes: notes.trim(),
+        pace_assessment: data.pace_assessment ?? null,
+        swapped: !!data.swapped,
         swap_reason: data.swap_reason || null,
         actual_workout_type: data.actual_workout_type || null,
-        coach_response: data.coach_response,
+        coach_response: data.coach_response ?? null,
         evaluation: data.evaluation ?? null,
         changes: data.changes ?? [],
       });
@@ -107,143 +85,60 @@ export function FeedbackForm({ date, onSubmitted, compact = false }: FeedbackFor
 
   return (
     <div className="space-y-3">
-      {!compact && (
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          How&apos;d it go?
+      {!compact && <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">How&apos;d it go?</p>}
+
+      {hasRecording && (
+        <p className="text-xs text-muted-foreground">
+          {watchFeel || watch?.effort != null
+            ? <>From your watch: {watchFeel && <>felt <span className="font-medium text-foreground">{watchFeel}</span></>}
+                {watchFeel && watch?.effort != null && " · "}
+                {watch?.effort != null && <>effort <span className="font-medium text-foreground">{WATCH_EFFORT[watch.effort] ? `${WATCH_EFFORT[watch.effort]} ` : ""}<span className="num">{watch.effort}/10</span></span></>}</>
+            : "Your watch didn't record a post-run rating for this run."}
         </p>
       )}
-      <p className="text-xs text-muted-foreground">Your rating adjusts the next few days of your plan.</p>
 
-      {/* Feel rating — how it FELT, not effort (low scores trigger extra recovery) */}
-      <div>
-        {!compact && <p className="mb-1.5 text-sm text-muted-foreground">How did it feel?</p>}
-        <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="How did the run feel, 1 to 10">
-          {FEEL_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={feel === opt.value}
-              onClick={(e) => { e.stopPropagation(); setFeel(opt.value); }}
-              className={`h-11 rounded-md font-mono text-sm transition-colors ${
-                feel === opt.value
-                  ? "bg-foreground text-background"
-                  : "bg-secondary hover:bg-secondary/80"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-          <span>1 = awful</span>
-          <span>5 = okay</span>
-          <span>10 = felt amazing</span>
-        </div>
-      </div>
-
-      {/* Pace assessment */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-1.5">Pace vs target?</p>
-        <div className="flex gap-1.5">
-          {PACE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={(e) => { e.stopPropagation(); setPace(opt.value); }}
-              className={`rounded px-3 py-1 text-xs transition-colors ${
-                pace === opt.value
-                  ? "bg-foreground text-background"
-                  : "bg-secondary hover:bg-secondary/80"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Swap toggle */}
-      <div>
-        <button
-          onClick={(e) => { e.stopPropagation(); setSwapped(!swapped); }}
-          className={`rounded px-3 py-1 text-xs transition-colors ${
-            swapped
-              ? "bg-yellow-500/20 text-yellow-600"
-              : "bg-secondary hover:bg-secondary/80 text-muted-foreground"
-          }`}
-        >
-          {swapped ? "Swapped workout" : "I swapped this workout"}
-        </button>
-      </div>
-
-      {swapped && (
-        <div className="space-y-2 pl-2 border-l-2 border-yellow-500/30">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">What did you do instead?</p>
-            <div className="flex flex-wrap gap-1">
-              {SWAP_TYPES.map((t) => (
-                <button
-                  key={t}
-                  onClick={(e) => { e.stopPropagation(); setSwapType(t); }}
-                  className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                    swapType === t
-                      ? "bg-foreground text-background"
-                      : "bg-secondary hover:bg-secondary/80"
-                  }`}
-                >
-                  {t.replace("_", " ")}
-                </button>
-              ))}
-            </div>
+      {!hasRecording && (
+        <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+          <p className="text-sm text-muted-foreground">No watch recording. Log the run yourself:</p>
+          <div className="flex gap-2">
+            <label className="flex-1 text-xs text-muted-foreground">
+              Distance (mi)
+              <input inputMode="decimal" value={manualMiles}
+                onChange={(e) => setManualMiles(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="mt-1 h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 font-mono text-sm text-foreground" />
+            </label>
+            <label className="flex-1 text-xs text-muted-foreground">
+              Time (min)
+              <input inputMode="decimal" value={manualMinutes}
+                onChange={(e) => setManualMinutes(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="mt-1 h-11 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 font-mono text-sm text-foreground" />
+            </label>
           </div>
-          <div onClick={(e) => e.stopPropagation()}>
-            <Textarea
-              placeholder="Why did you swap? (optional)"
-              value={swapReason}
-              onChange={(e) => setSwapReason(e.target.value)}
-              className="h-16 text-xs resize-none"
-            />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Reschedule as?</p>
-            <div className="flex flex-wrap gap-1">
-              {RESCHEDULE_TYPES.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={(e) => { e.stopPropagation(); setRescheduleType(t.value); }}
-                  className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                    rescheduleType === t.value
-                      ? "bg-foreground text-background"
-                      : "bg-secondary hover:bg-secondary/80"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {manualMissing && (manualMiles || manualMinutes) && (
+            <p className="text-xs text-destructive">Enter distance and time as numbers (e.g. 3.1 and 32).</p>
+          )}
         </div>
       )}
 
-      {/* Notes */}
       <div onClick={(e) => e.stopPropagation()}>
+        <label className="mb-1.5 block text-sm text-muted-foreground" htmlFor={`comment-${activityId ?? date}`}>
+          How did it go? <span className="text-xs">(required)</span>
+        </label>
         <Textarea
-          placeholder="Any notes? (optional)"
+          id={`comment-${activityId ?? date}`}
+          placeholder="e.g. Legs heavy the first mile, reps felt smooth, recoveries felt short"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          className="h-16 text-xs resize-none"
+          className="h-20 resize-none text-sm"
+          aria-required="true"
         />
+        <p className="mt-1 text-xs text-muted-foreground">Saving sends your comment and the watch data to your coach for a review.</p>
       </div>
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
 
-      <Button
-        size="sm"
-        onClick={(e) => { e.stopPropagation(); handleSubmit(); }}
-        disabled={!canSubmit || submitting}
-        className="w-full"
-      >
-        {submitting ? "Submitting..." : "Submit Feedback"}
+      <Button size="sm" onClick={(e) => { e.stopPropagation(); handleSubmit(); }} disabled={!canSubmit || submitting} className="w-full">
+        {submitting ? "Saving..." : "Save comment"}
       </Button>
     </div>
   );

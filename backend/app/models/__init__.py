@@ -5,3 +5,10 @@ from app.models.progression import WorkoutProgression  # noqa: F401
 from app.models.garmin import GarminConnection  # noqa: F401
 from app.models.wellness import DailyWellness  # noqa: F401
 from app.models.coaching import CoachingReview  # noqa: F401
+from app.models.history import ActivitySource, SourceRevision, HistoryCoverage  # noqa: F401
+from app.models.history import AthleteRevision, DirtyDay, DailyFact, AnalysisSnapshot, WellnessRevision  # noqa: F401
+from app.services import history_tracking  # noqa: F401 — transaction-local invalidation hooks
+
+from app.models.account import Account, AccountSession, AuthThrottle  # noqa: F401
+from app.models.operations import ProviderCredential, SyncJob, BlobDeletion  # noqa: F401
+from app.models.plan_change import PlanChangeRequest  # noqa: F401

@@ -9,6 +9,7 @@ import { coachingState } from "@/lib/coaching-state";
 import { useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, unitLabel } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { DERIVED_FROM_GARMIN } from "@/components/garmin-attribution";
 
 interface Review {
   id: number;
@@ -18,12 +19,15 @@ interface Review {
   policy_version?: string | null;
   context_as_of?: string | null;
   stale: boolean;
+  /** Block reviews: a run has arrived since this review, so refreshing it is worthwhile */
+  new_run_since?: boolean;
   applied_candidate_id: string | null;
   athlete_concern?: string | null;
   summary: string;
   plan_fit: "consistent" | "consider_change" | "insufficient_evidence";
   observations: string[];
   uncertainties: string[];
+  history_insights?: { id: string; text: string; dates: string[]; activity_ids: number[] }[];
   research: { id: string; path: string }[];
   suggestions: { id: string; date: string; reason: string;
     before: { title: string; distance_miles: number };
@@ -40,8 +44,12 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 
 const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, presentation = "default" }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, presentation = "default", hasComment, refreshKey }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
+  /** Re-load when this changes (e.g. the plan re-fetched after a run synced or a comment saved) */
+  refreshKey?: number;
+  /** Run reviews start from the athlete's comment: without one, ask for it instead of offering a review */
+  hasComment?: boolean;
   /** Draw its own card border (when not already inside a card) */
   bordered?: boolean;
   /** The "Coach" label; off when a surrounding header already names it */
@@ -67,12 +75,13 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       const [saved, status, job] = await Promise.all([
         getJson<Review>(`/coaching/${USER_ID}/latest?${query}`),
         getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`),
-        activityId ? getJson<{status:string|null;message:string|null}>(`/coaching/${USER_ID}/jobs/${activityId}`) : Promise.resolve(null),
+        // Block reviews refresh automatically when a run syncs or is commented (queued after its run review)
+        getJson<{status:string|null;message:string|null}>(activityId ? `/coaching/${USER_ID}/jobs/${activityId}` : `/coaching/${USER_ID}/plans/${planId}/job`),
       ]);
       setReview(saved); setConfigured(status?.configured ?? false); setAutoJob(job);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load the saved coaching review."); }
-  }, [query, activityId]);
-  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
+  }, [query, activityId, planId]);
+  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load, refreshKey]);
 
   const autoPending = autoJob?.status && ["waiting_sync", "queued", "running"].includes(autoJob.status);
   useEffect(() => {
@@ -108,18 +117,29 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     finally { setBusy(false); }
   }
   const when = review ? new Date(review.created_at + (review.created_at.endsWith("Z") || review.created_at.includes("+") ? "" : "Z")) : null;
-  const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0);
+  const hasDetails = !!review && (review.observations.length > 0 || review.uncertainties.length > 0 || review.research.length > 0 || (review.history_insights?.length ?? 0) > 0);
   const refreshLabel = busy ? "Reviewing…" : review?.status === "pending" ? "Check review" : review ? "Refresh" : activityId ? "Review this run" : "Review this block";
+  const needsComment = !!activityId && hasComment === false;
+  const failed = autoJob?.status === "failed" || review?.status === "fallback";
+  // Run reviews run when the comment is saved (and again when it's edited), so there is nothing to
+  // refresh by hand unless that failed. A block review can be refreshed once a new run has arrived.
+  const canRefresh = configured === true && !needsComment && !autoPending && (busy || review?.status === "pending" || (activityId
+    ? failed || !review
+    : !review || failed || !!review.new_run_since));
+  // An older run review stays the review of that run; later plan edits don't make it "outdated".
+  const showStale = !!review?.stale && !activityId;
   return <section className={cn(presentation === "today" ? "space-y-3 text-sm" : "space-y-2 text-sm", bordered && "rounded-xl border bg-card p-3")} aria-label="AI coaching review" aria-busy={busy}>
-    <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
+    {(showLabel || canRefresh) && <div className={cn("flex items-center gap-2", showLabel ? "justify-between" : "justify-end -mb-1")}>
       {showLabel && <span className="stat-label">{activityId ? "Run review" : "Block review"}</span>}
-      <Button size="xs" variant="ghost" className="h-8 px-2 text-xs sm:h-6" disabled={busy || configured !== true}
+      {canRefresh && <Button size="xs" variant={review ? "default" : "outline"} className="h-8 px-3.5 text-xs" disabled={busy}
         title={PRIVACY} onClick={() => generate(review?.athlete_concern)}>
         <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden /> {refreshLabel}
-      </Button>
-    </div>
-    <p role="status" className={cn("text-xs", review?.stale ? "rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-950" : "text-muted-foreground")}>{coachingState(review, autoJob?.status ?? null, busy)}</p>
-    {review && (presentation === "today" ? <div className="space-y-1 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      </Button>}
+    </div>}
+    {needsComment
+      ? <p role="status" className="text-sm text-muted-foreground">Add a comment about this run and your coach will review it automatically.</p>
+      : <p role="status" className={cn("text-xs", showStale ? "rounded-xl border border-[color-mix(in_srgb,var(--warn)_45%,transparent)] bg-[var(--warn-tint)] px-3 py-2.5 text-sm text-foreground" : "text-muted-foreground")}>{coachingState(review && { ...review, stale: showStale }, autoJob?.status ?? null, busy, !activityId)}</p>}
+    {review && (presentation === "today" ? <div className="space-y-1 rounded-xl bg-[var(--glass-inner)] px-3 py-2 text-xs text-muted-foreground">
       <p>{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
       <details className="text-[11px]">
         <summary className="cursor-pointer py-1 underline underline-offset-2">Review details</summary>
@@ -132,33 +152,36 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     </div> : <p className="text-[11px] text-muted-foreground">{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{review.model ? ` · ${review.model}` : " · rules only"} · policy {review.policy_version ?? "legacy"}{review.context_as_of ? ` · evidence as of ${review.context_as_of}` : ""}</p>)}
     {configured === false && !review && <p className="text-xs text-muted-foreground">AI coach isn&apos;t configured. Your training rules and feedback still work.</p>}
     {busy && request && <p role="status" className="text-xs text-muted-foreground">Coach is reviewing your request…</p>}
-    {autoPending && <p role="status" className="text-xs text-muted-foreground">New run received · {autoJob?.status === "running" ? "coach is reviewing it" : "review queued"}.</p>}
+    {autoPending && <p role="status" className="text-xs text-muted-foreground">{activityId
+      ? autoJob?.status === "running" ? "Your coach is reviewing this run…" : "Review queued; it appears here in a moment."
+      : autoJob?.status === "running" ? "Your coach is updating this block with your latest run…" : "Latest run synced; the coach perspective updates in a moment."}</p>}
     {autoJob?.status === "failed" && !review && <p role="status" className="text-xs text-muted-foreground">Automatic review couldn&apos;t finish. Tap Refresh to try again.</p>}
-    {!review && configured === true && !busy && !autoPending && <p className="text-xs text-muted-foreground">No review yet.</p>}
     {review && <>
-      {review.athlete_concern && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs"><span className="font-medium">You asked:</span> {review.athlete_concern}</p>}
-      {(!review.stale || expanded) && <p className={cn("leading-relaxed", !expanded && "line-clamp-3", review.stale && "text-muted-foreground")}>{review.summary}</p>}
-      {review.stale && <p className="text-xs text-muted-foreground">This advice predates newer evidence. Refresh explicitly to review it; browsing never starts a paid refresh.</p>}
+      {review.athlete_concern && <p className="rounded-xl bg-muted px-3 py-2 text-xs"><span className="font-semibold">You asked:</span> {review.athlete_concern}</p>}
+      {(!showStale || expanded) && <p className={cn("leading-relaxed", !expanded && "line-clamp-3", showStale && "text-muted-foreground")}>{review.summary}</p>}
+      {showStale && <p className="text-xs text-muted-foreground">{review.new_run_since ? "A new run has arrived since this review. Refresh to update it." : "Your plan changed after this review. You can refresh it once your next run syncs."}</p>}
       {/* The suggested change sits right under the advice it comes from; the evidence is behind More. */}
-      {review.suggestions.map(option => <div key={option.id} className="space-y-1.5 rounded-md border p-2.5">
+      {review.suggestions.map(option => <div key={option.id} className="space-y-2 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-inner)] p-3">
         <p className="font-medium">{formatDateShort(option.date)}: {option.before.title} → {option.replacement.title} <span className="num font-normal text-muted-foreground">({distance(option.replacement.distance_miles)} {unit})</span></p>
         <p className="text-xs text-muted-foreground">{option.reason}</p>
         {option.changes?.filter(change => change.date !== option.date).map(change => <p key={change.date} className="text-xs text-muted-foreground">Also {formatDateShort(change.date)}: {distance(change.before.distance_miles)} → {distance(change.replacement.distance_miles)} {unit} to keep the weekly budget.</p>)}
         <Button size="sm" variant="outline" disabled={busy || review.stale || !!review.applied_candidate_id} onClick={() => accept(option.id)}>{review.applied_candidate_id === option.id ? "Applied" : "Apply"}</Button>
       </div>)}
       {review.applied_candidate_id && <p role="status" className="text-xs text-primary">Change saved. Stride rechecked the schedule and budget.</p>}
-      {(review.stale || hasDetails || review.summary.length > 220) && (
+      {(showStale || hasDetails || review.summary.length > 220) && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
-          className="-my-1.5 py-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
-          {expanded ? "Less" : review.stale ? "Show previous advice" : "More"}
+          className="inline-flex min-h-8 items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-inner)] px-3.5 text-xs font-semibold text-foreground transition-colors hover:bg-[var(--row-hover)]">
+          {expanded ? "Less" : showStale ? "Show previous advice" : "More"}
         </button>
       )}
       {expanded && <div className="space-y-2 text-xs text-muted-foreground">
         {review.observations.length > 0 && <ul className="list-disc space-y-1 pl-4 text-foreground">{review.observations.map((text, i) => <li key={i}>{text}</li>)}</ul>}
         {review.uncertainties.length > 0 && <ul className="list-disc space-y-1 pl-4">{review.uncertainties.map((text, i) => <li key={i}>{text}</li>)}</ul>}
+        {review.history_insights?.map(insight => <p key={insight.id} className="text-foreground">{insight.text}<span className="block text-muted-foreground">Evidence: {insight.dates.map(formatDateShort).join(" · ")}{insight.activity_ids.length ? ` · ${insight.activity_ids.length} recorded runs` : ""}</span></p>)}
         {review.research.length > 0 && <p className="break-words">Research: {review.research.map(s => s.path.split("/").pop()?.replace(/\.md$/, "").replaceAll("-", " ")).join(" · ")}</p>}
         <p>{review.status === "ready" ? "AI review" : review.status === "pending" ? "Review in progress" : "AI unavailable · rules-based fallback"}{when ? ` · ${when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</p>
       </div>}
+      {review.status === "ready" && <p className="text-[11px] text-muted-foreground">{DERIVED_FROM_GARMIN}</p>}
     </>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {error && configured === null && <Button size="sm" variant="outline" onClick={load}>Retry loading coach</Button>}

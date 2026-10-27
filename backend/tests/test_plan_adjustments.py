@@ -57,7 +57,7 @@ def _day(off: int) -> PlannedWorkout:
 def test_explicit_skip_creates_no_replacement():
     _plan([(0, "workout", "6x800m", 7), (1, "easy", "Easy Run", 5), (3, "easy", "Easy Run", 5)])
     _run(0, 4)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 6, "swapped": True, "actual_workout_type": "easy", "desired_reschedule_type": "skip",
         "swap_reason": "felt tired, want intervals later",  # notes must not override the explicit choice
     }).json()
@@ -69,7 +69,7 @@ def test_no_safe_slot_explains_instead_of_stacking():
     # Every remaining easy day is next to a hard day
     _plan([(0, "workout", "6x800m", 7), (1, "easy", "Easy Run", 5), (2, "long_run", "Long", 10)])
     _run(0, 4)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 6, "swapped": True, "actual_workout_type": "easy", "desired_reschedule_type": "intervals",
     }).json()
     assert r["changes"][0]["change"] == "not_rescheduled" and "dropped rather than stacked" in r["changes"][0]["reason"]
@@ -80,7 +80,7 @@ def test_safe_slot_reschedules_and_records_original():
     _plan([(0, "workout", "6x800m", 7), (2, "easy", "Easy Run", 5), (3, "easy", "Easy Run", 5),
            (4, "easy", "Easy Run", 5), (6, "long_run", "Long", 10)])
     _run(0, 4)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 6, "swapped": True, "actual_workout_type": "easy", "desired_reschedule_type": "threshold",
     }).json()
     moved = r["changes"][0]
@@ -94,7 +94,7 @@ def test_split_recordings_use_the_workout_activity():
     _run(0, 2.0, "Warmup", ext="w")
     _run(0, 3.0, "Garmin laps: 6x800 (2:58, 2:59, 2:58, 2:57, 2:58, 2:59) w/ 90s recovery", ext="m")
     _run(0, 2.5, "Cooldown", ext="c")  # longest non-work activity would have been picked before
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8}).json()
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", "feel_rating": 8}).json()
     assert r["evaluation"]["evidence"] == "splits" and r["evaluation"]["decision"] == "advance"
     assert len(r["evaluation"]["activity_ids"]) == 3
 
@@ -107,7 +107,7 @@ def test_concurrent_duplicate_submissions_apply_once():
 
     def submit():
         barrier.wait()
-        results.append(client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 3}).json())
+        results.append(client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", "feel_rating": 3}).json())
 
     threads = [threading.Thread(target=submit) for _ in range(2)]
     [t.start() for t in threads]
@@ -128,7 +128,7 @@ def test_coach_failure_keeps_feedback_and_decision(monkeypatch):
         raise RuntimeError("LLM down")
 
     monkeypatch.setattr(coaching, "request_advice", boom)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8})
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", "feel_rating": 8})
     assert r.status_code == 200
     body = r.json()
     assert body["evaluation"]["decision"] == "advance"
@@ -146,12 +146,12 @@ def test_failed_side_effects_release_the_claim(monkeypatch):
     real = plans_api._apply_feedback_effects
     monkeypatch.setattr(plans_api, "_apply_feedback_effects", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     try:
-        client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8})
+        client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", "feel_rating": 8})
     except RuntimeError:
         pass
     assert _day(0).side_effects_applied_at is None and _day(0).feel_rating == 8  # feedback kept, claim released
     monkeypatch.setattr(plans_api, "_apply_feedback_effects", real)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_rating": 8}).json()
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", "feel_rating": 8}).json()
     assert r["side_effects_applied"] is True  # retry applies exactly once
 
 
@@ -164,7 +164,7 @@ def test_reschedule_respects_weekly_budget():
     db.commit()
     db.close()
     _run(0, 4)
-    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={
+    r = client.post(f"/api/plans/1/feedback/{TODAY}", json={"feel_notes": "Test run notes.", 
         "feel_rating": 6, "swapped": True, "actual_workout_type": "easy", "desired_reschedule_type": "intervals",
     }).json()
     assert r["changes"][0]["change"] == "not_rescheduled" and "budget" in r["changes"][0]["reason"]

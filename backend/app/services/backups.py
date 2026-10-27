@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
+import shutil
 import tempfile
 import time
 from urllib.parse import unquote, urlsplit
@@ -104,13 +105,44 @@ def upload_s3(path: Path, bucket: str, prefix="stride", kms_key_id=None):
     return key
 
 
-def backup_once(source: Path, folder: Path, *, keep=28, reason="scheduled", bucket=None, prefix="stride", kms_key_id=None) -> dict:
+def storage_status(source: Path, folder: Path) -> dict:
+    usage = shutil.disk_usage(folder if folder.exists() else source.parent)
+    database_bytes = source.stat().st_size if source.exists() else 0
+    backup_bytes = sum(p.stat().st_size for p in folder.glob("stride-*.sqlite3"))
+    reserve = max(64 * 1024**2, database_bytes * 2)
+    return {"database_bytes": database_bytes, "backup_bytes": backup_bytes,
+            "free_bytes": usage.free, "total_bytes": usage.total,
+            "warning": usage.free < max(reserve * 2, usage.total * .15)}
+
+
+def _prune(folder: Path, keep: int, budget: int, protected=None):
+    # Only our own snapshots; never remove the last usable recovery point.
+    rows = sorted(folder.glob("stride-*.sqlite3"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
+    protected = protected or (rows[0] if rows else None)
+    total = sum(p.stat().st_size for p in rows)
+    remaining = len(rows)
+    for old in reversed(rows):
+        if old != protected and (remaining > keep or total > budget):
+            size = old.stat().st_size
+            old.unlink()
+            total -= size
+            remaining -= 1
+
+
+def backup_once(source: Path, folder: Path, *, keep=28, reason="scheduled", bucket=None, prefix="stride", kms_key_id=None, max_bytes=None) -> dict:
     if keep < 1:
         raise ValueError("Keep at least one backup")
     if not source.is_file():
         raise FileNotFoundError("Source database is missing")
     folder.mkdir(parents=True, exist_ok=True)
     folder.chmod(0o700)
+    budget = max_bytes if max_bytes is not None else int(os.environ.get("STRIDE_BACKUP_MAX_BYTES", str(512 * 1024**2)))
+    if budget < 1:
+        raise ValueError("Backup budget must be positive")
+    _prune(folder, keep, budget)
+    capacity = storage_status(source, folder)
+    if capacity["free_bytes"] < 2 * capacity["database_bytes"] + 64 * 1024**2:
+        raise OSError("Insufficient free space for a verified backup; previous snapshot retained")
     now = datetime.now(timezone.utc).isoformat()
     previous = {}
     status_path = folder / "status.json"
@@ -147,9 +179,10 @@ def backup_once(source: Path, folder: Path, *, keep=28, reason="scheduled", buck
     _atomic_json(status_path, result)
     # Preserve the snapshot named by status even if the wall clock moved back or
     # several snapshots were taken under a frozen test clock.
-    older = sorted((p for p in folder.glob("stride-*.sqlite3") if p != backup), reverse=True)
-    for old in older[max(keep - 1, 0):]:
-        old.unlink()
+    _prune(folder, keep, budget, protected=backup)
+    result["storage"] = storage_status(source, folder)
+    result["storage"]["budget_exceeded"] = result["storage"]["backup_bytes"] > budget
+    _atomic_json(status_path, result)
     return result
 
 

@@ -47,7 +47,7 @@ export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly, units = "mi
           )}
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-1 rounded-xl bg-muted/50 p-2" aria-label={`Week ${week.week_number} session overview`}>
+      <div className="glass grid grid-cols-7 gap-1 rounded-[22px] p-2" aria-label={`Week ${week.week_number} session overview`}>
         {week.workouts.map((w) => <button key={w.id} type="button" onClick={() => {
           setExpandedId(w.id);
           requestAnimationFrame(() => {
@@ -55,9 +55,9 @@ export function PlanWeek({ week, isCurrent, onPlanChanged, readOnly, units = "mi
             row?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});
             row?.focus({preventScroll:true});
           });
-        }} aria-expanded={expandedId===w.id} aria-label={`${w.date}: ${w.title}, ${distanceInUnits(w.distance_miles, units)} ${unitLabel(units)}. Show session.`} className="group flex min-h-20 flex-col items-center justify-end gap-1 rounded-md p-1 hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary">
+        }} aria-expanded={expandedId===w.id} aria-label={`${w.date}: ${w.title}, ${distanceInUnits(w.distance_miles, units)} ${unitLabel(units)}. Show session.`} className="group flex min-h-20 flex-col items-center justify-end gap-1 rounded-xl p-1 hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-primary">
           <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{w.distance_miles>0?distanceInUnits(w.distance_miles, units):"—"}</span>
-          <span aria-hidden="true" className={`w-full max-w-6 rounded-sm ${w.type==='workout'?'bg-primary':w.type==='long_run'?'bg-primary/55':w.type==='rest'?'bg-border':'bg-primary/20'}`} style={{height:Math.max(4,Math.min(36,w.distance_miles*3))}} />
+          <span aria-hidden="true" className={`w-full max-w-6 rounded-sm ${w.type==='workout'?'bg-[var(--accent-warm)]':w.type==='long_run'?'bg-[var(--accent-warm)]/60':w.type==='rest'?'bg-border':'bg-foreground/30'}`} style={{height:Math.max(4,Math.min(36,w.distance_miles*3))}} />
           <span className="text-[10px] font-medium text-muted-foreground">{new Date(w.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short"})}</span>
         </button>)}
       </div>

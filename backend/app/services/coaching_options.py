@@ -1,3 +1,4 @@
+from app.athlete_clock import today as athlete_today
 """Server-authored alternatives: a model selects IDs, never writes prescriptions."""
 import copy
 import json
@@ -77,13 +78,13 @@ def build_options(plan, db):
     Isolated identity maps validate proposed rows without writing to SQLite.
     GET requests must never acquire a writer lock while listing alternatives.
     """
-    from app.api.plans import _get_activities_for_date, _validate_schedule
+    from app.api.plans import _get_activities_for_date, _session_minutes, _validate_schedule
     from app.services.session_options import read_only_trial
     candidates = []
     paces = json.loads(plan.training_paces or '{}')
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
     for row in rows:
-        if (row.date < max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
+        if (row.date < max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date)
                 or row.type != 'workout' or row.activity_id or row.moved_to
                 or row.session_status in {'skipped', 'moved'}
                 or _get_activities_for_date(row.date, plan.user_id, db)):
@@ -104,9 +105,10 @@ def build_options(plan, db):
             with read_only_trial(plan, db) as (trial_plan, trial_rows, trial):
                 trial_row = next(r for r in trial_rows if r.id == row.id)
                 try:
+                    grown = {r.id: _session_minutes(trial_plan, r) for r in trial_rows}
                     for key, value in replacement.items():
                         setattr(trial_row, key, value)
-                    _validate_schedule(trial_plan, trial)
+                    _validate_schedule(trial_plan, trial, changed=grown)
                     candidates.append({'id': f'option-{len(candidates)+1}', 'date': row.date,
                                        'session_id': row.id, 'before': before,
                                        'replacement': replacement})
@@ -118,7 +120,7 @@ def build_options(plan, db):
     # Include easy-to-quality options only when earned weekly slots allow them.
     from app.services.session_options import build_session_options, context_for
     context = context_for(plan, db)
-    targets = [r for r in rows if r.date >= max(date.today().isoformat(), plan.prescribed_from or plan.start_date)
+    targets = [r for r in rows if r.date >= max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date)
                and r.type in {'easy','workout'} and not r.activity_id and not r.moved_to
                and not _get_activities_for_date(r.date,plan.user_id,db)][:3]
     for target in targets:
