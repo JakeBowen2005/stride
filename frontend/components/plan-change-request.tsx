@@ -257,7 +257,7 @@ function Result({ request, units, busy, answer, setAnswer, onReply, onApprove, o
       {s === "undone" && <p className="text-sm">Change undone. Your week is back to how it was.</p>}
       {s === "applied" && <p className="text-sm font-medium">Week updated. The changed days are marked in your plan.</p>}
 
-      <div className="sticky bottom-0 -mx-1 flex flex-wrap gap-2 bg-background/95 px-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
+      <div className="sticky bottom-0 -mx-1 flex flex-wrap gap-2 bg-popover px-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
         {(s === "proposed" || (s === "safety" && request.ops.length > 0)) && (
           <>
             <Button className="h-10 flex-1 sm:h-9" disabled={busy} onClick={onApprove}>
