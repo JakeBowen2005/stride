@@ -3,7 +3,7 @@
 export const LEGAL = {
   operator: "Jake Bowen (Stride)",
   location: "California, United States",
-  contactEmail: "",
+  contactEmail: "jakeeb05@gmail.com",
   effectiveDate: "October 27, 2026",
   /** Keep in sync with the S3 bucket's lifecycle rule for off-site backups. */
   offsiteBackupDays: 30,
