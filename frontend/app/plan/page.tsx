@@ -16,12 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlanWeek } from "@/components/plan-week";
 import { BlockReviewPanel, GoalRoute, type BlockReview, type Outlook } from "@/components/goal-route";
-import { PlanDay } from "@/components/plan-day";
+import { PlanDayDetail } from "@/components/plan-day-detail";
 import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SYNC_EVENT } from "@/components/garmin-sync";
-import { formatDateShort } from "@/lib/format";
+import { formatDateLong, formatDateShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExecutedWorkout, PlanWeek as PlanWeekType, Workout, WeekPhaseInfo } from "@/lib/types";
 
@@ -207,6 +207,8 @@ export default function PlanPage() {
   const [coachRequest, setCoachRequest] = useState<{ concern: string; nonce: number } | null>(null);
   const [coachOpen, setCoachOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Bumped on every plan fetch: the open day's run and the coach perspective re-load with it
+  const [planRevision, setPlanRevision] = useState(0);
   const isDesktop = useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP_QUERY).matches, () => false);
 
   useEffect(() => {
@@ -221,6 +223,7 @@ export default function PlanPage() {
       setActivePlan(state.active);
       setPlan(state.visible);
       setNoPlan(!state.visible);
+      setPlanRevision((n) => n + 1);
     } catch {
       setError("Failed to connect to server");
     } finally {
@@ -368,15 +371,14 @@ export default function PlanPage() {
     else requestAnimationFrame(() => document.getElementById("plan-inspector")?.scrollIntoView({ block: "start" }));
   };
   const inspector = selected && (
-    <PlanDay
+    <PlanDayDetail
       key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${moveRequest?.nonce ?? ""}`}
       workout={selected}
       units={units}
       sessionAction={moveRequest?.date === selected.date ? "move" : undefined}
       readOnly={!!plan.preview}
       isToday={selected.date === today}
-      expanded
-      pinned
+      revision={planRevision}
       onPlanChanged={refresh}
     />
   );
@@ -474,7 +476,7 @@ export default function PlanPage() {
         </button>
         {/* Stays mounted while collapsed so an in-flight review or a coach request isn't lost. */}
         <div id="plan-coach-body" hidden={!coachOpen} className="px-4 pb-4 sm:px-5">
-          <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} />
+          <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} refreshKey={planRevision} />
         </div>
       </div>
       <TrainingExpectations weeks={plan.expectations || []} />
@@ -514,13 +516,14 @@ export default function PlanPage() {
       </div>
 
       <Sheet open={isDesktop && inspectorOpen && !!selected} onOpenChange={setInspectorOpen}>
-        <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl data-[side=right]:lg:max-w-3xl">
+        <SheetContent className={cn("overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:w-3/4 data-[side=right]:sm:max-w-2xl",
+          selected?.actual ? "data-[side=right]:lg:max-w-4xl" : "data-[side=right]:lg:max-w-3xl")}>
           {selected && (
             <>
-              <SheetHeader className="pb-0">
-                <SheetTitle>Selected · {formatDateShort(selected.date)}</SheetTitle>
+              <SheetHeader className="pb-0 sm:px-6 sm:pt-6">
+                <SheetTitle className="pr-10 text-2xl font-light tracking-tight">{formatDateLong(selected.date)}</SheetTitle>
               </SheetHeader>
-              <div className="px-4 pb-6">{inspector}</div>
+              <div className="px-4 pb-6 sm:px-6">{inspector}</div>
             </>
           )}
         </SheetContent>

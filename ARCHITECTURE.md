@@ -130,7 +130,7 @@ Detailed policy numbers, sources and remaining evidence/UI limitations: `docs/co
 
 ## OpenAI adviser
 
-See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable.
+See [OpenAI coaching](docs/openai-coaching.md). Run feedback and explicit run/block reviews use bounded structured OpenAI Responses output. The model selects only server-authored, prevalidated alternatives; athlete acceptance rechecks freshness, completion locks, schedule and budget, records original prescriptions and commits atomically. Model output never changes fitness or activates plans. Cached reviews, daily attempt limits and explicit fallback preserve deterministic coaching when the provider is unavailable. A synced run, or a comment saved on one, also queues a refresh of the active plan's coach perspective (`coaching_jobs` rows with `plan_id`), run after that run's own review so the block sees the comment and review; unchanged evidence is never re-queued.
 
 
 ## Synced-run jobs, session choices and demos

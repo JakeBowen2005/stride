@@ -18,6 +18,9 @@ REP_LENGTH_TOLERANCE = 0.25
 # Stride matching heuristic: without explicit substitution, materially reduced work
 # remains an incomplete attempt. This is an intent/evidence guard, not a safety limit.
 MIN_SUBSTITUTION_WORK_SHARE = 0.80
+# A rep length the athlete describes this far from the prescription is a different session (5x1200
+# on a 5x1k day). Tighter than REP_LENGTH_TOLERANCE: the comment, not GPS noise, says it changed.
+DESCRIBED_LENGTH_TOLERANCE = 0.10
 
 
 def executed_session(activities, easy_pace_sec: float | None) -> dict | None:
@@ -30,7 +33,8 @@ def executed_session(activities, easy_pace_sec: float | None) -> dict | None:
             continue
         if not isinstance(laps, list) or not all(isinstance(lap, dict) for lap in laps):
             continue
-        analysis = analyze_laps(laps, easy_pace_sec)
+        # The athlete's comment ("did 2x12min instead") says which laps were the reps
+        analysis = analyze_laps(laps, easy_pace_sec, getattr(activity, "feel_notes", None))
         if analysis and (best is None or analysis["work_miles"] > best["work_miles"]):
             best = {**analysis, "activity_id": activity.id}
     return best
@@ -91,6 +95,12 @@ def session_relationship(prescription: dict | None, executed: dict | None, *, su
         return result | {"status": "substituted"}
     reps, rep_seconds = _prescribed_rep_seconds(prescription)
     done_seconds = statistics.median(r["duration_s"] for r in executed["reps"])
+    if executed.get("described") and (
+            len(executed["reps"]) > reps
+            or (rep_seconds and abs(done_seconds - rep_seconds) / rep_seconds > DESCRIBED_LENGTH_TOLERANCE)):
+        # The comment names the session the laps show, and it isn't the prescription: the athlete
+        # has told us it was a swap. Fewer reps of the prescribed length stays a partial attempt.
+        return result | {"status": "substituted", "intent": "described_in_comment"}
     different_length = bool(rep_seconds and abs(done_seconds - rep_seconds) / rep_seconds > REP_LENGTH_TOLERANCE)
     different_count = len(executed["reps"]) != reps
     if planned and done is not None and done < planned * MIN_SUBSTITUTION_WORK_SHARE:

@@ -1031,6 +1031,13 @@ def submit_feedback(user_id: int, feedback_date: str, req: FeedbackRequest, db: 
         if req.completion is not None:
             evidence_act.reported_completion = req.completion
 
+    # The comment can name the structure the laps alone misread ("did 2x12min"): re-read them
+    if evidence_act:
+        from app.services.garmin import refresh_activity_lap_summary
+        refresh_activity_lap_summary(evidence_act, db)
+    if not claimed:
+        _refresh_off_plan_log(user_id, pw, activities, db)
+
     # Persist the athlete's input (and the claim) before anything that can fail
     db.commit()
     db.refresh(pw)
@@ -1317,6 +1324,19 @@ def _off_plan_evaluation(user_id: int, pw: PlannedWorkout, activities: list[Acti
     return off_plan_evaluation(pw.title, executed) if off_plan(prescribed, executed) else None
 
 
+def _refresh_off_plan_log(user_id: int, pw: PlannedWorkout, activities: list[Activity], db: Session) -> None:
+    """An edited comment re-describes an already logged off-plan session. Off-plan moves no
+    ladder, so only the description of what was run changes; other decisions stay as made."""
+    evaluation = json.loads(pw.evaluation) if pw.evaluation else None
+    if not isinstance(evaluation, dict) or evaluation.get("decision") != "off_plan":
+        return
+    fresh = _off_plan_evaluation(user_id, pw, activities, db)
+    if fresh:
+        keep = {k: evaluation[k] for k in ("feel", "activity_ids") if k in evaluation}
+        pw.evaluation = json.dumps(fresh | keep)
+        pw.actual_workout_type = pw.actual_workout_type or fresh["executed"]["category"]
+
+
 def _decision_summary(evaluation: dict | None, changes: list[dict]) -> str | None:
     parts = []
     if evaluation:
@@ -1567,7 +1587,8 @@ def _displayed_evaluation(pw: PlannedWorkout, actual: dict | None) -> dict | Non
     stored = json.loads(pw.evaluation) if pw.evaluation else None
     workout = (actual or {}).get("workout")
     # Only re-read verdicts that left the ladder alone; an applied regress/advance stays visible.
-    if workout and workout["off_plan"] and (stored or {}).get("decision") in {None, "insufficient", "hold"}:
+    # An off-plan log moved nothing either: describe it with the current lap read.
+    if workout and workout["off_plan"] and (stored or {}).get("decision") in {None, "insufficient", "hold", "off_plan"}:
         from app.core.session_match import off_plan_evaluation
         return off_plan_evaluation(pw.title, workout) | {"feel": pw.feel_rating}
     return stored

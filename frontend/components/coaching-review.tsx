@@ -43,8 +43,10 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 
 const PRIVACY = "Training summaries, feedback and research excerpts go to OpenAI when a run syncs, you refresh, or you submit feedback. No GPS routes or credentials are sent.";
 
-export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, presentation = "default", hasComment }: {
+export function CoachingReview({ activityId, planId, onPlanChanged, request, bordered = false, showLabel = true, presentation = "default", hasComment, refreshKey }: {
   activityId?: number; planId?: number; onPlanChanged?: () => void;
+  /** Re-load when this changes (e.g. the plan re-fetched after a run synced or a comment saved) */
+  refreshKey?: number;
   /** Run reviews start from the athlete's comment: without one, ask for it instead of offering a review */
   hasComment?: boolean;
   /** Draw its own card border (when not already inside a card) */
@@ -72,12 +74,13 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
       const [saved, status, job] = await Promise.all([
         getJson<Review>(`/coaching/${USER_ID}/latest?${query}`),
         getJson<{ configured: boolean }>(`/coaching/${USER_ID}/status`),
-        activityId ? getJson<{status:string|null;message:string|null}>(`/coaching/${USER_ID}/jobs/${activityId}`) : Promise.resolve(null),
+        // Block reviews refresh automatically when a run syncs or is commented (queued after its run review)
+        getJson<{status:string|null;message:string|null}>(activityId ? `/coaching/${USER_ID}/jobs/${activityId}` : `/coaching/${USER_ID}/plans/${planId}/job`),
       ]);
       setReview(saved); setConfigured(status?.configured ?? false); setAutoJob(job);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load the saved coaching review."); }
-  }, [query, activityId]);
-  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
+  }, [query, activityId, planId]);
+  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load, refreshKey]);
 
   const autoPending = autoJob?.status && ["waiting_sync", "queued", "running"].includes(autoJob.status);
   useEffect(() => {
@@ -148,7 +151,9 @@ export function CoachingReview({ activityId, planId, onPlanChanged, request, bor
     </div> : <p className="text-[11px] text-muted-foreground">{activityId ? "This run" : "This block"} · reviewed {when?.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{review.model ? ` · ${review.model}` : " · rules only"} · policy {review.policy_version ?? "legacy"}{review.context_as_of ? ` · evidence as of ${review.context_as_of}` : ""}</p>)}
     {configured === false && !review && <p className="text-xs text-muted-foreground">AI coach isn&apos;t configured. Your training rules and feedback still work.</p>}
     {busy && request && <p role="status" className="text-xs text-muted-foreground">Coach is reviewing your request…</p>}
-    {autoPending && <p role="status" className="text-xs text-muted-foreground">{autoJob?.status === "running" ? "Your coach is reviewing this run…" : "Review queued; it appears here in a moment."}</p>}
+    {autoPending && <p role="status" className="text-xs text-muted-foreground">{activityId
+      ? autoJob?.status === "running" ? "Your coach is reviewing this run…" : "Review queued; it appears here in a moment."
+      : autoJob?.status === "running" ? "Your coach is updating this block with your latest run…" : "Latest run synced; the coach perspective updates in a moment."}</p>}
     {autoJob?.status === "failed" && !review && <p role="status" className="text-xs text-muted-foreground">Automatic review couldn&apos;t finish. Tap Refresh to try again.</p>}
     {review && <>
       {review.athlete_concern && <p className="rounded-xl bg-muted px-3 py-2 text-xs"><span className="font-semibold">You asked:</span> {review.athlete_concern}</p>}

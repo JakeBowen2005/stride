@@ -232,8 +232,10 @@ def test_comment_only_feedback_uses_the_watch_rating_and_queues_the_review(monke
     with SessionLocal() as db:
         run = db.query(Activity).one()
         assert run.feel_notes == "Felt flat, legs heavy all run." and run.feel_rating is None  # no invented app rating
-        job = db.query(CoachingJob).one()
+        job = db.query(CoachingJob).filter_by(plan_id=None).one()
         assert job.status == "queued" and job.activity_id == run.id  # review starts now, not after a sync
+        block = db.query(CoachingJob).filter(CoachingJob.plan_id.isnot(None)).one()
+        assert block.status == "queued" and block.id > job.id  # coach perspective refreshes after the run review
         nxt = db.query(PlannedWorkout).filter_by(date=(date.today() + timedelta(days=2)).isoformat()).one()
         assert nxt.type == "easy"  # the watch's "weak" rating (4/10) still triggers the recovery rule
 

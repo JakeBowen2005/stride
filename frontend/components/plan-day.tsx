@@ -30,6 +30,8 @@ interface PlanDayProps {
   onPlanChanged?: () => void;
   readOnly?: boolean;
   sessionAction?: "move";
+  /** The run's numbers are shown alongside (Plan day sheet): skip the duplicate metrics grid */
+  hideRunStats?: boolean;
 }
 
 function ComparisonBadge({ diffMiles, units }: { diffMiles: number; units: Units }) {
@@ -72,7 +74,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, hideRunStats, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -213,7 +215,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 )}
 
                 {/* Actual metrics grid: the selected run, or the whole day */}
-                {(() => {
+                {!(hideRunStats && runTab === "primary") && (() => {
                   const a = workout.actual!;
                   const shown = runTab === "total"
                     ? { distance_miles: a.total_distance_miles ?? a.distance_miles, avg_pace: null, average_heartrate: null,

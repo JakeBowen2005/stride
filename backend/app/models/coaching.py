@@ -45,6 +45,8 @@ class CoachingJob(Base):
     review_id: Mapped[int | None] = mapped_column(ForeignKey('coaching_reviews.id'), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Set on block jobs: refresh this plan's coach perspective (activity_id = the run that triggered it)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey('plans.id'), nullable=True)
 
 
 class CoachingAttempt(Base):
