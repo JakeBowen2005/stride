@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     openai_coach_daily_limit: int = 30
     openai_coach_timeout_seconds: float = 35
     openai_auto_reviews: bool = True
+    # Plain-language plan changes: a slim ~3k-token request, so a separate, smaller cap
+    # (docs/plain-language-plan-changes.md §3). Empty model = use openai_coach_model.
+    openai_plan_change_model: str = ""
+    openai_plan_change_daily_limit: int = 10
     allowed_origins: str = "http://localhost:3000,http://localhost:3001"
 
     # Garmin Connect Personal API key (connect.garmin.com/app/settings/personalApiToken).

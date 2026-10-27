@@ -11,3 +11,4 @@ from app.services import history_tracking  # noqa: F401 — transaction-local in
 
 from app.models.account import Account, AccountSession, AuthThrottle  # noqa: F401
 from app.models.operations import ProviderCredential, SyncJob, BlobDeletion  # noqa: F401
+from app.models.plan_change import PlanChangeRequest  # noqa: F401

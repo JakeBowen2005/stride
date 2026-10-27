@@ -409,6 +409,10 @@ export default function PlanPage() {
             aiConfigured={aiConfigured}
             busy={generating}
             nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
+            days={allDays}
+            today={today}
+            units={units}
+            onPlanChanged={() => fetchPlan()}
             onAskCoach={(concern) => {
               setCoachRequest({ concern, nonce: Date.now() });
               setCoachOpen(true);
