@@ -82,7 +82,7 @@ def workout(level, easy_pace, weekly_miles, *, program=None, phase='general', re
 
 # Introductory intervals (VO2max): (rep minutes, jog minutes). Recoveries are at least as long as
 # the rep, unlike threshold reps (docs/5k-training-science.md: 3-5 min reps, ~1:1 jog, for trained runners).
-INTERVAL_SHAPES = {'short': (1, 2), 'medium': (2, 2), 'long': (3, 3)}
+INTERVAL_SHAPES = {'short': (1, 1), 'medium': (2, 2), 'long': (3, 3)}
 INTERVAL_SHARE = .6  # hard rep time vs the threshold step's work: harder effort, smaller dose
 
 
@@ -95,7 +95,7 @@ def intro_intervals(level, easy_pace, weekly_miles, *, program=None, phase='gene
     rep, jog = INTERVAL_SHAPES[shape]
     hard = min(12, max(4, round(base['prescription']['segments'][0]['duration_seconds'] / 60 * INTERVAL_SHARE)))
     reps = hard // rep
-    if reps < 3:
+    if reps < (2 if rep >= 3 else 3):  # longer reps need fewer repetitions for the same stimulus
         return None
     estimate = easy_pace * .85
     bookend = 10
