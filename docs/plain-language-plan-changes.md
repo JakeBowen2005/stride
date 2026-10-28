@@ -1,5 +1,13 @@
 # Plain-language plan changes (design)
 
+> **Removed Oct 28 2026.** In use the AI turned "move my back-to-back to Sat-Sun" into a single
+> easy-day swap that left the weekend broken, and the quick picker dropped workouts instead of
+> rearranging them. Both are gone from the app (services, API, UI, tests). The `plan_change_requests`
+> table and model stay for history and this month's AI spend. Rearranging is now by hand with
+> **Switch** (`_resolve_switch` in `api/plans.py`): swap two days in a week, back-to-back weekends
+> move as a pair, and a switch that breaks hard-day spacing tries the smallest same-week
+> rearrangement that keeps every session. The notes below are kept as the design history.
+
 > Status: phases 0–1 implemented Oct 27 2026 (`core/request_ops.py`, `services/plan_changes.py`,
 > `services/plan_change_ai.py`, `api/plan_changes.py`, `components/plan-change-request.tsx`).
 > Open questions in §6 were defaulted to the doc's recommendations: reduce/rearrange only, no
