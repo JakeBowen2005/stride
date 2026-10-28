@@ -429,8 +429,10 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
     budgets = load.get("weekly_budgets") or []
     for week in revision.weeks:
         # A schedule change may add only the small, guard-checked allowance; record it in the budget.
+        # Totals come from the days: weeks with nothing editable never get a target, and availability fitting runs after.
         if week["week_number"] - 1 < len(budgets):
-            budgets[week["week_number"] - 1] = round(max(budgets[week["week_number"] - 1], week["target_mileage"]), 1)
+            miles = sum(d.get("distance_miles") or 0 for d in week["days"])
+            budgets[week["week_number"] - 1] = round(max(budgets[week["week_number"] - 1], miles), 1)
     draft.load = json.dumps(load) if active.load else None
     what = [f"{old.days_per_week} → {new.days_per_week} run days" if old.days_per_week != new.days_per_week else None,
             "rest days " + (", ".join(d.title() for d in new.rest_days) or "none") if old.rest_days != new.rest_days else None,
@@ -452,7 +454,9 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
             day = revised[r.date]
             for key in SCHEDULE_FIELDS:
                 setattr(row, key, day.get(key))
-            row.prescription = day["prescription"] if day.get("prescription") else json.dumps(day_prescription(day))
+            # fit_availability leaves the prescription as a dict; rows store JSON text.
+            spec = day.get("prescription") or day_prescription(day)
+            row.prescription = spec if isinstance(spec, str) else json.dumps(spec)
         db.add(row)
         draft_rows.append(row)
     db.flush()
