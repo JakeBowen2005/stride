@@ -197,3 +197,28 @@ def test_guard_judges_a_schedule_change_only_by_what_it_touched():
     rev = revise_for_schedule(before, prefs(6, ["sunday"]), prefs(7), experience="advanced", easy_desc=EASY)
     assert review_change(before, rev.weeks, prefs(7), kind="schedule") == []
     assert any("isn't worth the trip" in p for p in review_change(before, rev.weeks, prefs(7), kind="rebuild"))
+
+
+def test_api_schedule_change_after_a_week_is_locked_still_drafts():
+    # Week 1 has nothing left to edit (the trail-100k demo hit this mid-block): its budget comes from its days.
+    client, active = _approved_block()
+    with SessionLocal() as db:
+        from app.models.plan import PlannedWorkout
+        db.query(PlannedWorkout).filter_by(plan_id=active['id'], week_number=1).update({'session_status': 'skipped'})
+        db.commit()
+    assert client.put('/api/users/1/profile', json={'days_per_week': 7, 'rest_days': [], 'long_run_day': 'sunday'}).status_code == 200
+    r = client.post('/api/plans/1/preview', json={'scope': 'current', 'mode': 'schedule'})
+    assert r.status_code in (200, 409), r.text
+
+
+def test_api_time_limits_redraft_stores_the_fitted_prescription_as_json():
+    # fit_availability rewrites a capped day's prescription as a dict; the draft row must still save.
+    client, active = _approved_block()
+    limits = {d: 25 for d in WEEKDAYS[:5]}  # weekdays only: a schedule change may not shorten the long run
+    assert client.put('/api/users/1/profile', json={'day_time_budgets': limits}).status_code == 200
+    r = client.post('/api/plans/1/preview', json={'scope': 'current', 'mode': 'schedule'})
+    assert r.status_code == 200, r.text
+    with SessionLocal() as db:
+        from app.models.plan import PlannedWorkout
+        fitted = [w for w in db.query(PlannedWorkout).filter_by(plan_id=r.json()['id']) if w.adjustment_note == 'Fit the saved daily availability.']
+        assert fitted and all(isinstance(w.prescription, str) for w in fitted)
