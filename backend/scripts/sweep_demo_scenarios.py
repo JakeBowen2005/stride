@@ -137,9 +137,20 @@ def worker(seed: Path, work: Path, offsets: list[int]) -> dict:
             stats["switch targets ok"] += len(ok)
             stats["switch targets refused"] += len(r.json()["targets"]) - len(ok)
             if ok:
-                done = call(c, case, "post", f"/api/plans/1/sessions/{d['date']}", json={"action": "switch", "target_date": ok[0]["date"]})
+                done = call(c, case, "post", f"/api/plans/1/sessions/{d['date']}", json={"action": "switch", "target_date": ok[0]["date"], "switch_token": ok[0]['token']})
                 if done.status_code != 200:  # the preview said yes, so the switch itself must succeed
                     failures.append(f"{case}: previewed switch to {ok[0]['date']} refused: {done.text[:200]}")
+                elif done.json()['changes'] != ok[0]['changes']:
+                    failures.append(f"{case}: applied switch differed from its approved preview")
+                else:
+                    # A valid switch must leave ordinary edits usable, including after a rest-day override.
+                    candidates = [day for day in upcoming(c) if day['type'] == 'easy' and not day.get('actual')
+                                  and day.get('prescribed') is not False and not day.get('session_status')]
+                    if candidates:
+                        day = candidates[0]['date']
+                        skipped = call(c, case, 'post', f'/api/plans/1/sessions/{day}', json={'action': 'skip'})
+                        if skipped.status_code != 200:
+                            failures.append(f"{case}: unrelated skip after switch refused: {skipped.text[:200]}")
             reads(c, case)
 
     def guarded(name, body):

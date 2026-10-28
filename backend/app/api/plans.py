@@ -826,6 +826,7 @@ class SessionAction(BaseModel):
     target_date: date | None = None
     replacement: Literal["easy", "rest", "threshold", "intervals", "long_run"] | None = None
     option_id: str | None = Field(default=None, max_length=64)
+    switch_token: str | None = Field(default=None, max_length=64)
     distance_miles: float | None = Field(default=None, gt=0, le=30, allow_inf_nan=False)
     reason: str = Field(default="Changed by athlete", max_length=500)
 
@@ -843,7 +844,7 @@ def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None
     """Validate mutations against real runs, rest preferences and stored budgets.
 
     `allow_rest_dates`: days the athlete explicitly chose (a switch) may hold a run on a preferred rest day."""
-    from app.core.plan_validator import validate_plan
+    from app.core.plan_validator import LONG_RUN_SPACING_DAYS, validate_plan
 
     user = db.get(User, plan.user_id)
     names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -851,8 +852,9 @@ def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None
     rest_days = schedule['rest_days'] if schedule is not None else (user.rest_days or '').split(',')
     rest = [names.index(d.strip()) for d in rest_days if d.strip() in names]
     rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
-    acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=1)).isoformat(), plan.end_date, db)
+    acts = _activities_by_date(plan.user_id, (date.fromisoformat(plan.start_date) - timedelta(days=LONG_RUN_SPACING_DAYS)).isoformat(), plan.end_date, db)
     load = json.loads(plan.load or "{}")
+    allow_rest_dates = set(allow_rest_dates) | set(load.get("rest_date_overrides", []))
     budgets = load.get("weekly_budgets", [])
     baseline = load.get("baseline")
     if baseline is None:
@@ -892,7 +894,9 @@ def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None
             # day offsets a long one, so no new room is created.
             w["overrun"] = w.get("overrun", 0.0) + sum(a.distance_meters for a in actuals) / 1609.34 - row.distance_miles
         # Completed work cannot be altered to make a proposed change fit.
-        w["days"].append({"date": row.date, "type": "workout" if any(_is_hard_activity(a, baseline) for a in actuals) else row.type,
+        actual_type = ('long_run' if any(_is_long_activity(a, baseline) for a in actuals) else
+                       'workout' if any(_is_hard_activity(a, baseline) for a in actuals) else 'easy') if actuals else row.type
+        w["days"].append({"date": row.date, "type": actual_type,
                            "distance_miles": sum(a.distance_meters for a in actuals) / 1609.34 if actuals else row.distance_miles,
                            "b2b": bool(row.b2b),
                            "prescribed": not actuals and row.date >= (plan.prescribed_from or plan.start_date)})
@@ -901,7 +905,8 @@ def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None
             w["budget_miles"] += max(0.0, w.pop("overrun", 0.0))
         w.pop("overrun", None)
     prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
-    errors = [e for e in validate_plan(list(weeks.values()), rest, prior)
+    prior_longs = {d for d, runs in acts.items() if d < plan.start_date and any(_is_long_activity(a, baseline) for a in runs)}
+    errors = [e for e in validate_plan(list(weeks.values()), rest, prior, prior_longs)
               if not (e["code"] == "rest_day_run" and e["date"] in allow_rest_dates)]
     if errors:
         raise HTTPException(409, detail="; ".join(e["message"] for e in errors))
@@ -1020,6 +1025,10 @@ def _resolve_switch(plan: Plan, source_date: str, target_date: str, db: Session)
         source, target = by_date[source_date], by_date[target_date]
         if source.week_number != target.week_number:
             raise HTTPException(409, "Switch within the same week; next week is rebuilt from how this one goes.")
+        phases = json.loads(trial_plan.phases or '[]')
+        phase = phases[source.week_number - 1].get('phase') if source.week_number <= len(phases) else None
+        if phase in {'taper', 'race_week'}:
+            raise HTTPException(409, "During taper and race week, sessions can only be eased, shortened or skipped. Use Replace or Skip instead.")
         for row in (source, target):
             problem = _session_lock(trial_plan, row, trial)
             if problem:
@@ -1067,10 +1076,21 @@ def _resolve_switch(plan: Plan, source_date: str, target_date: str, db: Session)
             raise direct_error
 
 
+def _switch_token(plan: Plan, source: PlannedWorkout, target: PlannedWorkout, layout: dict, db: Session) -> str:
+    """Bind approval to the exact proposed layout and the state it was validated against."""
+    data = {'context': _preview_fingerprint(plan.user_id, db), 'plan': {c.name: getattr(plan, c.name) for c in Plan.__table__.columns},
+            'source': source.id, 'target': target.id, 'layout': layout,
+            'activity_types': [(a.id, a.workout_type, a.event_type) for a in db.query(Activity)
+                               .filter(Activity.user_id == plan.user_id, runs_only()).order_by(Activity.id)]}
+    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def _apply_switch(plan: Plan, rows: list[PlannedWorkout], source: PlannedWorkout, target: PlannedWorkout,
-                  reason: str, db: Session) -> list[dict]:
+                  reason: str, db: Session, token: str | None) -> list[dict]:
     """Apply the switch `_resolve_switch` found and validate it for real. Caller owns the transaction."""
     layout, allow, _ = _resolve_switch(plan, source.date, target.date, db)
+    if not token or token != _switch_token(plan, source, target, layout, db):
+        raise HTTPException(409, "This switch preview is out of date. Reload the days and review the changes before applying.")
     by_id = {r.id: r for r in rows}
     before = {i: _session_minutes(plan, by_id[i]) for i in layout}
     changes = []
@@ -1086,6 +1106,10 @@ def _apply_switch(plan: Plan, rows: list[PlannedWorkout], source: PlannedWorkout
             setattr(row, key, value)
         row.session_status = None  # the session here now came from another day; its old "replaced" tag doesn't apply
     _validate_schedule(plan, db, changed=before, allow_rest_dates=allow)
+    load = json.loads(plan.load or '{}')
+    # The exception belongs to these approved calendar dates in this block, not every Friday.
+    load['rest_date_overrides'] = sorted(set(load.get('rest_date_overrides', [])) | allow)
+    plan.load = json.dumps(load)
     return changes
 
 
@@ -1114,7 +1138,8 @@ def switch_targets(user_id: int, session_date: date, db: Session = Depends(get_d
             by_id = {r.id: r for r in rows}
             entry["changes"] = [{"date": by_id[i].date, "before": by_id[i].title, "after": c["title"], "distance_miles": c["distance_miles"]}
                                 for i, c in sorted(layout.items(), key=lambda item: by_id[item[0]].date)]
-            entry.update(ok=True, rearranged=kind == "rearranged", pair=kind == "pair")
+            entry.update(ok=True, rearranged=kind == "rearranged", pair=kind == "pair",
+                         token=_switch_token(plan, source, target, layout, db))
         except HTTPException as e:
             reason = e.detail if isinstance(e.detail, str) else "Not allowed"
             entry.update(ok=False, reason=re.sub(r"\d{4}-\d{2}-\d{2}", lambda m: _day_label(m.group()), reason))
@@ -1156,7 +1181,7 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             target = next((r for r in rows if req.target_date and r.date == req.target_date.isoformat()), None)
             if not target or target.id == source.id:
                 raise HTTPException(422, "Choose another day in this block")
-            changes = _apply_switch(plan, rows, source, target, req.reason, db)
+            changes = _apply_switch(plan, rows, source, target, req.reason, db, req.switch_token)
             db.commit()
             return {"date": source.date, "session_status": source.session_status, "changes": changes}
         if req.action == 'replace' and req.replacement in {'threshold','intervals','long_run'}:
@@ -1667,6 +1692,12 @@ def _find_safe_slot(db_plan: Plan, after_date: str, db: Session) -> tuple[Planne
 
 HARD_ACTIVITY_TYPES = {"workout", "race", "long_run"}
 ASSESSMENT_MAX_GAP_DAYS = 7  # assess the previous block only if it ended within a week of the new one
+
+
+def _is_long_activity(a: Activity, baseline_mpw: float) -> bool:
+    miles = (a.distance_meters or 0) / 1609.34
+    return a.workout_type == 'long_run' or (a.workout_type not in {'race', 'workout', 'development'}
+            and a.event_type != 'race' and miles >= 8 and miles >= 0.25 * baseline_mpw)
 
 
 def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:

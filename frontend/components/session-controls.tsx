@@ -20,7 +20,7 @@ interface Option {
 interface Menu { category: string; options: Option[]; reasons: string[]; quality_stage: string }
 
 interface SwitchTarget {
-  date: string; label: string; type: string; title: string; distance_miles: number; ok: boolean; reason?: string; rearranged?: boolean; pair?: boolean;
+  date: string; label: string; type: string; title: string; distance_miles: number; ok: boolean; token?: string; reason?: string; rearranged?: boolean; pair?: boolean;
   changes?: { date: string; before: string; after: string; distance_miles: number }[];
 }
 
@@ -107,12 +107,13 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
   const [loadingOptions, setLoadingOptions] = useState(false);
   const needsOptions = action === "replace" && ["threshold", "intervals", "long_run"].includes(replacement);
   const [targets, setTargets] = useState<SwitchTarget[] | null>(null);
+  const [switchRevision, setSwitchRevision] = useState(0);
 
   useEffect(() => {
     if (action !== "switch" || past) return;
     const abort = new AbortController();
     const timer = setTimeout(async () => {
-      setTargets(null); setTarget(""); setError(null);
+      setTargets(null); setTarget("");
       try {
         const res = await fetch(apiUrl(`/plans/${USER_ID}/sessions/${workout.date}/switch-targets`), { signal: abort.signal });
         const data = await res.json();
@@ -121,7 +122,7 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
       } catch (e) { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : "Could not load days"); }
     }, 0);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [action, past, workout.date]);
+  }, [action, past, workout.date, switchRevision]);
   const chosen = targets?.find((t) => t.date === target);
 
   useEffect(() => {
@@ -148,17 +149,21 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
       const res = await fetch(apiUrl(`/plans/${USER_ID}/sessions/${workout.date}`), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: past ? "skip" : action, target_date: action === "switch" ? target : null,
+          switch_token: action === "switch" ? chosen?.token : null,
           replacement: action === "replace" ? replacement : null,
           option_id: needsOptions ? optionId : null, reason: reason || "Changed by athlete" }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Couldn't change this session");
+      if (!res.ok) {
+        if (action === "switch" && res.status === 409) { setTargets(null); setTarget(""); setSwitchRevision((r) => r + 1); }
+        throw new Error(typeof data.detail === "string" ? data.detail : "Couldn't change this session");
+      }
       onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : "Couldn't reach Stride"); }
     finally { setBusy(false); }
   }
 
-  const canApply = !busy && !(action === "switch" && !chosen?.ok) && !(needsOptions && (!currentMenu || !optionId || loadingOptions));
+  const canApply = !busy && !(action === "switch" && (!chosen?.ok || !chosen.token)) && !(needsOptions && (!currentMenu || !optionId || loadingOptions));
 
   if (past) {
     // Only "didn't run it" makes sense for a past day; a run you did gets logged instead.

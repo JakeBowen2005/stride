@@ -150,6 +150,10 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
   direct swap, shifts a back-to-back long-run pair together, or finds the smallest same-week
   rearrangement (long runs stay put) that passes `_validate_schedule`. Nothing is written until applied.
   Long-run spacing lives in `validate_plan` for every plan.
+  Switch applies only with the returned `switch_token`, which binds the exact layout to the plan,
+  preferences, activity evidence and athlete date; stale approvals return 409 and the UI reloads choices.
+  Taper/race weeks remain reduce-only. `load.rest_date_overrides` persists approved date-specific
+  rest exceptions within the block, and validation includes completed long runs before its start.
 - **Running hours** (`docs/aerobic-hours.md`): `/analysis/{id}/mileage` returns moving, elapsed and
   planned seconds; `services/aerobic_hours.shadow` records hours budgets and a longest-session guard on
   each new block (`load.shadow_hours`) without enforcing them.

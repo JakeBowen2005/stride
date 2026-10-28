@@ -227,6 +227,7 @@ def validate_plan(
     weeks: list[dict],
     rest_indices: list[int] | None = None,
     prior_hard_dates: frozenset[str] | set[str] = frozenset(),
+    prior_long_dates: frozenset[str] | set[str] = frozenset(),
 ) -> list[dict]:
     """Return a list of violations ({code, date, message}); empty means valid."""
     problems: list[dict] = []
@@ -258,6 +259,8 @@ def validate_plan(
                                  "message": f"Hard day {d['date']} directly follows another hard day"})
     # Long runs need most of a week between them (ultra back-to-back weekends excepted).
     longs = [d for d in all_days if d["type"] == "long_run" and d.get("distance_miles", 0) > 0 and not d.get("b2b")]
+    longs = sorted(longs + [{"date": d, "prescribed": False} for d in prior_long_dates
+                            if d not in by_date], key=lambda d: d["date"])
     for a, b in zip(longs, longs[1:]):
         gap = (date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days
         if gap < LONG_RUN_SPACING_DAYS and (a.get("prescribed", True) or b.get("prescribed", True)):
