@@ -144,14 +144,12 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
 
 ## Plain-language plan changes, running hours, multi-user prep (Oct 2026)
 
-- **Plan changes** (`docs/plain-language-plan-changes.md`): `plan_change_requests` stores each request,
-  its proposal, rejections, before/after row snapshots and a plan fingerprint. The AI returns only
-  constraints and move/swap/shorten/easy/skip ops (`plan_change_ai.PlanChangeProposal`); Stride applies
-  them in `read_only_trial` and runs `_validate_schedule` plus `request_ops.request_violations` (volume
-  never rises, no added workouts, long runs ≥5 days apart, reduce-only in taper/race week and when sick or
-  hurt, the request's own constraints). One retry, then the brute-force solver; the quick picker is
-  solver-only and costs nothing. Approve re-validates under `_begin_schedule_write`; undo restores
-  snapshots only when nothing changed since. Long-run spacing now lives in `validate_plan` for every plan.
+- **Plan changes** were built and then removed (Oct 28 2026; see `docs/plain-language-plan-changes.md`).
+  Athletes rearrange by hand with **Switch** (`POST /api/plans/{id}/sessions/{date}` with
+  `action: switch`; `GET …/switch-targets` previews every same-week day). `_resolve_switch` tries the
+  direct swap, shifts a back-to-back long-run pair together, or finds the smallest same-week
+  rearrangement (long runs stay put) that passes `_validate_schedule`. Nothing is written until applied.
+  Long-run spacing lives in `validate_plan` for every plan.
 - **Running hours** (`docs/aerobic-hours.md`): `/analysis/{id}/mileage` returns moving, elapsed and
   planned seconds; `services/aerobic_hours.shadow` records hours budgets and a longest-session guard on
   each new block (`load.shadow_hours`) without enforcing them.

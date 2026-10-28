@@ -4,7 +4,7 @@ For each scenario: seed a fresh synthetic DB, then for each clock offset (days f
 plans are tested mid-block, a week in and after the block ended) run every case from a fresh
 copy of that DB. A case changes settings or the goal, redrafts the block for the new schedule,
 approves it, rebuilds, previews the next block, and reads every page's API. Session actions
-(skip, replace, move) and quick plan-change requests (apply, undo) run on the seeded plan.
+(skip, replace, switch) and every switch-target preview (each valid one applied) run on the seeded plan.
 
 Refusals (409/422) are expected and counted; only server errors fail the sweep. Uses temporary
 databases with Garmin and AI disabled; never opens backend/stride.db. Takes a few minutes.
@@ -31,7 +31,7 @@ SCENARIOS = sorted(p.stem for p in (ROOT / "demo/scenarios").glob("*.json"))
 DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 READS = ["/api/plans/1/current", "/api/plans/1/outlook", "/api/plans/1/goal", "/api/plans/1/draft", "/api/users/1",
          "/api/analysis/1/weekly-mileage", "/api/analysis/1/mileage", "/api/analysis/1/mileage?include=walks",
-         "/api/analysis/1/history", "/api/analysis/1/trends", "/api/analysis/1/activities", "/api/plans/1/requests",
+         "/api/analysis/1/history", "/api/analysis/1/trends", "/api/analysis/1/activities",
          "/api/coaching/1/status", "/api/wellness/1", "/api/analysis/1/calibrated-paces"]
 
 
@@ -123,21 +123,24 @@ def worker(seed: Path, work: Path, offsets: list[int]) -> dict:
                 call(c, case, "get", f"/api/plans/1/sessions/{d['date']}/options?category={category}")
             later = (date.fromisoformat(d["date"]) + timedelta(days=1)).isoformat()
             for body in [{"action": "skip"}, {"action": "replace", "replacement": "easy"}, {"action": "replace", "replacement": "rest"},
-                         {"action": "replace", "replacement": "long_run"}, {"action": "move", "target_date": later}]:
+                         {"action": "replace", "replacement": "long_run"}, {"action": "switch", "target_date": later}]:
                 call(c, case, "post", f"/api/plans/1/sessions/{d['date']}", json=body)
             reads(c, case)
 
-    def request_case(c, prefix):
+    def switch_case(c, prefix):
         for d in upcoming(c):
-            for kind in ("no_run", "no_hard", "prefer_rest", "max_minutes"):
-                case = f"{prefix} {d['date']} {kind}"
-                body = {"constraints": [{"date": d["date"], "kind": kind, "minutes": 30 if kind == "max_minutes" else None}]}
-                r = call(c, case, "post", "/api/plans/1/requests", json=body)
-                if r.status_code == 200 and r.json().get("status") == "proposed":
-                    rid = r.json()["id"]
-                    if call(c, case, "post", f"/api/plans/1/requests/{rid}/apply").status_code == 200:
-                        call(c, case, "post", f"/api/plans/1/requests/{rid}/undo")
-            reads(c, prefix)
+            case = f"{prefix} {d['date']} {d['type']}"
+            r = call(c, case, "get", f"/api/plans/1/sessions/{d['date']}/switch-targets")
+            if r.status_code != 200:
+                continue
+            ok = [t for t in r.json()["targets"] if t["ok"]]
+            stats["switch targets ok"] += len(ok)
+            stats["switch targets refused"] += len(r.json()["targets"]) - len(ok)
+            if ok:
+                done = call(c, case, "post", f"/api/plans/1/sessions/{d['date']}", json={"action": "switch", "target_date": ok[0]["date"]})
+                if done.status_code != 200:  # the preview said yes, so the switch itself must succeed
+                    failures.append(f"{case}: previewed switch to {ok[0]['date']} refused: {done.text[:200]}")
+            reads(c, case)
 
     def guarded(name, body):
         reset()
@@ -153,7 +156,7 @@ def worker(seed: Path, work: Path, offsets: list[int]) -> dict:
                 name = f"+{offset}d {name}"
                 guarded(name, lambda c: settings_case(c, name, dict(profile)))
             guarded(f"+{offset}d session actions", lambda c: session_case(c, f"+{offset}d session"))
-            guarded(f"+{offset}d plan-change requests", lambda c: request_case(c, f"+{offset}d request"))
+            guarded(f"+{offset}d switches", lambda c: switch_case(c, f"+{offset}d switch"))
     return {"failures": failures, "stats": dict(sorted(stats.items()))}
 
 

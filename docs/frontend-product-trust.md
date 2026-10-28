@@ -6,7 +6,7 @@ Reviews always show scope (run or block), status, review timestamp, provider/mod
 
 Distance and pace presentation on Home, History, run detail, lap tables, charts and session choices follow the saved display units. Canonical API data remains miles/seconds per mile. Authored workout descriptions and historical notes retain their explicitly labeled original units rather than being rewritten by a formatter. Profile updates publish a display-preference event.
 
-Plan options → Schedule conflict → Move a session opens the existing Move controls on the selected eligible session or next unrun session. The athlete still picks a destination and confirms Apply; the backend checks actual training, dates, spacing and budget. The model is not asked to invent a reschedule. Approved blocks show their saved baseline and as-of date; changed schedule preferences prompt a revised preview without rewriting active sessions.
+Plan options → Switch two days opens the Switch controls on the selected eligible session or next unrun session. The athlete picks a day from the checked list and confirms Apply; the backend checks actual training, dates, spacing and budget. The model is not asked to invent a reschedule. Approved blocks show their saved baseline and as-of date; changed schedule preferences prompt a revised preview without rewriting active sessions.
 
 Settings Operations distinguishes configured backup/export from successful backup/export and restore verification. A missing status is unknown, not a success. Stride's load ratio displays the actual complete-calendar-week windows and numerator/denominator; it is not an injury probability.
 

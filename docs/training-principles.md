@@ -36,6 +36,10 @@ the runner felt good afterward; it is a separate scale.
 - When a new step is introduced, hold mileage that week and repeat the workout while
   building easy volume the next week. No preview of a harder workout in week two.
 - Preserve run frequency with shorter easy runs instead of imposing 2-3 mile floors.
+- Replacing a session with **threshold** offers continuous or cruise-rep shapes at ~6/10 with short
+  (~1 min) jogs. **Intervals** are a different stimulus: 1-3 min reps at ~8/10 (roughly 5K effort)
+  with jogs at least as long as the rep, about 60% of the threshold step's hard time, and they never
+  move the progression ladder.
 - Established intermediates with demonstrated full-quality tolerance keep their existing
   program. Advanced/expert and ultra programs retain their existing rules.
 
@@ -177,6 +181,8 @@ Taper: reduce volume, maintain sharpness
 - Introductory half/marathon programs use the upper end (35%) to develop endurance.
   On low-frequency 5K schedules the long run may exceed the usual percentage so it is
   at least as long as the easy days; consistency and an affordable total take priority.
+- A long run is at least 60 min (beginner), 75 (intermediate) or 90 (advanced) and longer than the
+  week's easy runs; shorter is just another easy run (Stride coaching choice)
 - Long runs should NOT always be easy — they should evolve with the training phase
 - But recovery long runs (pure easy) should alternate with quality long runs
 

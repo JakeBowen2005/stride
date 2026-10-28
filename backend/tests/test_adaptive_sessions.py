@@ -111,9 +111,15 @@ def test_new_run_invalidates_old_option_even_without_current_plan_get():
 
 def test_long_run_has_lengths_but_cannot_add_second_main_long_run():
     _,day=seed()
-    assert menu(day+timedelta(days=3),'long_run').json()['options']==[]
+    second=menu(day+timedelta(days=3),'long_run').json()
+    assert second['options']==[] and 'use Switch' in second['reasons'][0]
     options=menu(day+timedelta(days=5),'long_run').json()['options']
-    assert len(options)>=2 and all(o['distance_miles']<=35*.35 for o in options)
+    # Durations, never past the cap, never shorter than an hour or than the week's easy runs.
+    plan=client.get('/api/plans/1/current').json()
+    week=next(w for w in plan['weeks'] if any(d['date']==options[0]['date'] for d in w['days']))
+    longest_easy=max(d['distance_miles'] for d in week['days'] if d['type']=='easy')
+    assert options and all(o['distance_miles']<=35*.35 and o['distance_miles']>longest_easy for o in options)
+    assert all(o['title'].endswith('min Easy Long Run') and int(o['title'].split('min')[0])>=75 for o in options)
 
 
 def test_recovery_feedback_removes_hard_and_long_options():
