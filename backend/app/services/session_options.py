@@ -207,14 +207,23 @@ def _quality_candidates(category, row, week, ctx, poor):
         from app.core.workout_ladders import program_key
         approved = loads(row.prescription) or {}
         level = min(ctx['development_state'].get('current_level', 1), approved.get('level') or 1)
-        shapes = ('continuous', 'long', 'short') if category == 'threshold' else ('short', 'long', 'continuous')
         options = []
-        for shape in shapes:
-            wo = developmental.workout(level, ctx['paces']['long_run_pace'], week.budget,
-                program=program_key(ctx['program']), phase=week.phase, reduced=week.deload or week.phase == 'taper', shape=shape)
+        reduced = week.deload or week.phase == 'taper'
+        if category == 'threshold':
+            for shape in ('continuous', 'cruise', 'cruise_short'):
+                wo = developmental.workout(level, ctx['paces']['long_run_pace'], week.budget, program=program_key(ctx['program']),
+                                           phase=week.phase, reduced=reduced, shape=shape)
+                if wo:
+                    options.append((shape, _as_patch(wo)))
+            return options, ['Threshold: comfortably hard (about 6/10), run continuously or as longer reps with short jogs. '
+                             'Alternative shapes hold your earned progression level; effort guides the pace.']
+        for shape in ('short', 'medium', 'long'):
+            wo = developmental.intro_intervals(level, ctx['paces']['long_run_pace'], week.budget, program=program_key(ctx['program']),
+                                               phase=week.phase, reduced=reduced, shape=shape)
             if wo:
-                options.append((shape, _as_patch(wo)))
-        return options, ['One controlled effort session with easy bookends. Alternative shapes hold the earned progression level; pace is guided by effort.']
+                options.append((f'intervals_{shape}', _as_patch(wo)))
+        return options, ['Intervals: short hard reps (about 8/10, roughly 5K effort) with full jog recoveries. Less total hard '
+                         'time than a threshold session, and it does not move your progression level.']
     pace = ctx['paces']['broken_threshold_pace' if category == 'threshold' else 'interval_pace']
     volume = max(ctx['baseline'], week.budget or 0)
     band = dose_band(category, ctx['experience'], volume, pace, week.phase, week.deload)
@@ -262,19 +271,38 @@ def _support_candidates(row, week, ctx, poor):
     return candidates, ['Full intervals open up once you reach the two-workout stage. These light sessions fit alongside this week’s main workout.']
 
 
+# A long run is at least this long (Stride coaching choice): shorter is just another easy run.
+LONG_RUN_MIN_MINUTES = {'beginner': 60, 'intermediate': 75, 'advanced': 90, 'expert': 90}
+LONG_RUN_DURATIONS = (60, 75, 90, 105, 120, 135, 150, 180)
+
+
 def _long_run_candidates(row, week, ctx, poor):
     from app.core.plan_engine import _long_run_structure
     if poor:
         return [], ['Recovery feedback does not support prescribing a long run right now. Choose easy running or rest.']
-    if row.b2b or any(r.type == 'long_run' for r in week.others):
-        return [], ['Keep one main long run per week. Planned ultra back-to-backs need their coordinated structure.']
+    if row.b2b:
+        return [], ['This day is part of a back-to-back long-run weekend. Use Switch to move the weekend instead.']
+    current = next((r for r in week.others if r.type == 'long_run'), None)
+    if current:
+        day = date.fromisoformat(current.date).strftime('%A')
+        return [], [f'This week already has its long run on {day}. To run it here instead, use Switch with {day}.']
     cap = min(week.budget * .35, max(6, ctx['recent_long'] * 1.1))
     if week.phase == 'taper':
         cap = min(cap, 10)
     if week.phase in {'recovery', 'race_week'}:
         cap = min(cap, 6)
-    top = math.floor(cap * 2) / 2
-    lengths = [m for m in (top, top - 2, top - 4) if m >= max(2, cap * .5)]
+    pace = ctx['paces'].get('long_run_pace') or ctx['paces']['easy_pace_high']
+    longest_easy = max((r.distance_miles for r in week.others if r.type == 'easy' and r.distance_miles), default=0)
+    floor_minutes = LONG_RUN_MIN_MINUTES.get(ctx['experience'], 75)
+    # Never shorter than the time floor, and clearly longer than this week's easy runs.
+    floor = max(floor_minutes * 60 / pace, longest_easy + .5)
+    fits = [(m, math.floor(m * 60 / pace * 2) / 2) for m in LONG_RUN_DURATIONS]
+    fits = [(m, miles) for m, miles in fits if floor - .25 <= miles <= cap + .001]
+    lengths = [(m, miles) for m, miles in reversed(fits)][:3]
+    if not lengths:
+        return [], [f'A long run here would need at least {floor_minutes} minutes and to be longer than this week’s '
+                    f'{longest_easy:g} mi easy runs, which is more than this week supports (about {cap:.1f} mi). '
+                    'Keep the planned long run, or use Switch to move it.']
     steady_ok = (ctx['program'] in {'marathon', 'half'} and week.phase in {'build', 'peak'} and ctx['quality'].stage == 'dual'
                  and week.hard_count < 1 and ctx['baseline'] >= 40 and not poor)
     from app.core.goal_pace import allows_goal_pace
@@ -282,9 +310,11 @@ def _long_run_candidates(row, week, ctx, poor):
     mp_ok = (steady_ok and ctx['program'] == 'marathon' and ctx['paces'].get('specific_pace')
              and allows_goal_pace('marathon', week.phase, deload=week.deload))
     candidates = []
-    for miles in lengths:
+    for minutes, miles in lengths:
         patch = {'type': 'long_run', 'distance_miles': miles, 'warmup': None, 'cooldown': None, 'b2b': False,
                  **_long_run_structure(miles, 'easy', ctx['paces'])}
+        patch['title'] = f'{minutes}min Easy Long Run'
+        patch['description'] = f'{minutes} minutes easy (about {miles:g} mi). ' + patch['description']
         if ctx['program'] in ULTRA_PROGRAMS:
             from app.core.periodization import week_phase
             from app.core.special_weeks import ultra_long_run
@@ -292,10 +322,10 @@ def _long_run_candidates(row, week, ctx, poor):
             info = week_phase(date.fromisoformat(row.date), 'race', ctx['program'], race_date)
             ultra = ultra_long_run(date.fromisoformat(row.date), ctx['program'], miles / .35, info, ctx['paces'], ctx['goal'].terrain)
             patch.update({k: v for k, v in ultra.items() if k in patch})
-        if patch['distance_miles'] > cap + .001:
-            continue  # a helper's minimum duration must not override the athlete's dose cap
+        if patch['distance_miles'] > cap + .001 or patch['distance_miles'] < floor - .25:
+            continue  # a helper's own duration must not override the athlete's dose cap or the long-run floor
         patch['prescription'] = json.dumps(day_prescription(patch))
-        candidates.append((f'easy-{miles}', patch))
+        candidates.append((f'easy-{minutes}', patch))
         if mp_ok and miles >= 12 and not any(f.startswith('mp-') for f, _ in candidates):
             for run_type in ('mp_finish', 'mp_block') if week.phase == 'peak' and miles >= 14 else ('mp_finish',):
                 mp = copy.deepcopy(patch)
@@ -309,7 +339,8 @@ def _long_run_candidates(row, week, ctx, poor):
             steady['prescription'] = json.dumps(day_prescription(steady))
             # Marathon-pace options lead for marathoners; steady stays the half-marathon choice.
             candidates.insert(len(candidates) if mp_ok else 1, (f'steady-{miles}', steady))
-    return candidates, ['Long-run length is bounded by your recent longest run, the phase and 35% of this week’s budget (a Stride heuristic).']
+    return candidates, [f'Long runs here are at least {floor_minutes} minutes and longer than your easy days, bounded by your '
+                        'recent longest run, the phase and 35% of this week’s budget (Stride heuristics).']
 
 
 @contextmanager

@@ -31,7 +31,7 @@ All options sit inside one **dose band** (minutes of hard work, excluding warmup
 
 The top of the band is Daniels' per-session volume guidance (threshold ≈ 10% and I-pace ≈ 8% of weekly mileage, converted to minutes at the athlete's work pace), never below floor + 5 min. Low current volume pulls the floor down so a comeback is not overloaded. Taper and deload weeks keep pace but cut the dose; base weeks keep intervals short. Floors and ceilings are Stride heuristics so that a trained runner never sees a token 2×3min dose; they are not validated safety limits. Examples: an advanced runner at ~40 mi/week sees a 20–30 min threshold band (e.g. 3mi tempo / 3×1mi / 5×5min); a beginner sees 10–16 min.
 
-Unchanged gates: earned single/support/dual stage limits substantial weekly work (support offers up to three light second-stimulus sessions of different families instead of full intervals); phase max-workouts, deload, inexperienced base and ultra back-to-back caps take precedence; a demanding long run or completed quality day consumes a slot; low feel or a failed session removes hard options. Long runs offer up to three lengths (cap, cap−2, cap−4 mi) capped at 110% of the recent 28-day longest run and 35% of the weekly budget, plus a gated steady finish for established half/marathon athletes. Pace is unchanged by the menu: cruise reps use the broken-threshold pace and continuous tempo the slower tempo pace (deliberate relationship). Menu sessions hold the ladder level (`progression_eligible=False`).
+Unchanged gates: earned single/support/dual stage limits substantial weekly work (support offers up to three light second-stimulus sessions of different families instead of full intervals); phase max-workouts, deload, inexperienced base and ultra back-to-back caps take precedence; a demanding long run or completed quality day consumes a slot; low feel or a failed session removes hard options. Long runs offer up to three durations (60-180 min) of at least 60/75/90 min for beginner/intermediate/advanced and longer than the week's easy runs, capped at 110% of the recent 28-day longest run and 35% of the weekly budget, plus a gated steady finish for established half/marathon athletes. Pace is unchanged by the menu: cruise reps use the broken-threshold pace and continuous tempo the slower tempo pace (deliberate relationship). Menu sessions hold the ladder level (`progression_eligible=False`).
 
 These choices interpret the personal Long Game research plus existing goal/phase/quality policies. They are intentionally explicit product policy and require future longitudinal evaluation; neither a fast PR nor an experience label removes recovery needs.
 
@@ -120,7 +120,7 @@ cd backend && venv/bin/python scripts/sweep_demo_scenarios.py
 venv/bin/python scripts/sweep_demo_scenarios.py --database ../.demo/trail-100k/stride.db
 ```
 
-It runs ~60 settings and goal changes, session actions and quick plan-change requests at several clock offsets (mid-block, a week in, after the block ends) and exits non-zero on any 5xx.
+It runs ~60 settings and goal changes, session actions (skip, replace, switch) and every switch preview at several clock offsets (mid-block, a week in, after the block ends) and exits non-zero on any 5xx.
 
 ## Verification
 

@@ -29,7 +29,9 @@ interface PlanDayProps {
   pinned?: boolean;
   onPlanChanged?: () => void;
   readOnly?: boolean;
-  sessionAction?: "move";
+  sessionAction?: "switch";
+  /** After Replace/Switch/Skip; defaults to onPlanChanged */
+  onSessionChanged?: () => void;
   /** The run's numbers are shown alongside (Plan day sheet): skip the duplicate metrics grid */
   hideRunStats?: boolean;
 }
@@ -74,7 +76,7 @@ function actualIsWorkout(description: string | null): boolean {
   return /\d+x\d+|threshold|tempo|intervals|fartlek|hill|progression/i.test(description);
 }
 
-export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, readOnly, sessionAction, hideRunStats, units = "miles" }: PlanDayProps) {
+export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanChanged, onSessionChanged, readOnly, sessionAction, hideRunStats, units = "miles" }: PlanDayProps) {
   const formatDistance = (miles: number) => distanceInUnits(miles, units);
   const unit = unitLabel(units);
   const today = localDateStr();
@@ -406,7 +408,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
             <p className="text-sm">Status: {workout.session_status.replace("_", " ")}{workout.moved_to ? ` to ${workout.moved_to}` : ""}</p>
           )}
           {!readOnly && !hasActual && isPrescribed && workout.type !== "race" && !["skipped", "moved"].includes(workout.session_status ?? "") && (
-            <SessionControls workout={workout} onChanged={onPlanChanged} initialAction={sessionAction} />
+            <SessionControls workout={workout} onChanged={onSessionChanged ?? onPlanChanged} initialAction={sessionAction} />
           )}
           {/* Feedback form for completed days without feedback */}
           {(showFeedbackForm || (editing && !readOnly)) && expanded && runTab === "primary" && (
