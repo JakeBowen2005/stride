@@ -822,7 +822,7 @@ def get_active_goal(user_id: int, db: Session = Depends(get_db)):
 
 
 class SessionAction(BaseModel):
-    action: Literal["skip", "replace", "move"]
+    action: Literal["skip", "replace", "move", "switch"]
     target_date: date | None = None
     replacement: Literal["easy", "rest", "threshold", "intervals", "long_run"] | None = None
     option_id: str | None = Field(default=None, max_length=64)
@@ -838,8 +838,11 @@ def _session_minutes(plan: Plan, row: PlannedWorkout) -> float:
     return estimated_minutes({'prescription': row.prescription, 'distance_miles': row.distance_miles}, easy)
 
 
-def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None = None):
-    """Validate mutations against real runs, rest preferences and stored budgets."""
+def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None = None,
+                       allow_rest_dates: set[str] | frozenset = frozenset()):
+    """Validate mutations against real runs, rest preferences and stored budgets.
+
+    `allow_rest_dates`: days the athlete explicitly chose (a switch) may hold a run on a preferred rest day."""
     from app.core.plan_validator import validate_plan
 
     user = db.get(User, plan.user_id)
@@ -898,9 +901,225 @@ def _validate_schedule(plan: Plan, db: Session, changed: dict[int, float] | None
             w["budget_miles"] += max(0.0, w.pop("overrun", 0.0))
         w.pop("overrun", None)
     prior = {d for d, runs in acts.items() if d < plan.start_date and any(_is_hard_activity(a, baseline) for a in runs)}
-    errors = validate_plan(list(weeks.values()), rest, prior)
+    errors = [e for e in validate_plan(list(weeks.values()), rest, prior)
+              if not (e["code"] == "rest_day_run" and e["date"] in allow_rest_dates)]
     if errors:
         raise HTTPException(409, detail="; ".join(e["message"] for e in errors))
+
+
+SESSION_CONTENT = ("type", "title", "description", "purpose", "distance_miles", "warmup", "cooldown", "prescription", "b2b")
+WEEKDAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _day_label(iso: str) -> str:
+    day = date.fromisoformat(iso)
+    return f"{WEEKDAY[day.weekday()]} {day.strftime('%b')} {day.day}"
+
+
+def _session_lock(plan: Plan, row: PlannedWorkout, db: Session) -> str | None:
+    """Why this day can't be rearranged, or None."""
+    if row.date < max(athlete_today().isoformat(), plan.prescribed_from or plan.start_date):
+        return "Past days can't be rearranged."
+    if row.type == "race":
+        return "Race day stays put."
+    if row.activity_id or _get_activities_for_date(row.date, plan.user_id, db):
+        return "This day already has a run."
+    if row.session_status in {"skipped", "moved"} or row.moved_to:
+        return "This session was already skipped or moved."
+    return None
+
+
+def _b2b_pair(rows: list[PlannedWorkout], row: PlannedWorkout) -> list[PlannedWorkout] | None:
+    """The consecutive back-to-back long runs this row belongs to."""
+    if not (row.b2b and row.type == "long_run"):
+        return None
+    pair = sorted((r for r in rows if r.week_number == row.week_number and r.b2b and r.type == "long_run"), key=lambda r: r.date)
+    if len(pair) == 2 and (date.fromisoformat(pair[1].date) - date.fromisoformat(pair[0].date)).days == 1 and row in pair:
+        return pair
+    return None
+
+
+def _switch_layout(rows: list[PlannedWorkout], source: PlannedWorkout, target: PlannedWorkout) -> dict[int, dict]:
+    """New content per row id when `source` and `target` swap sessions.
+
+    A back-to-back weekend moves as a pair: the day you pick lands where you asked, its partner keeps
+    its side, and whatever was on the destination days fills the days the pair left."""
+    content = {r.id: {k: getattr(r, k) for k in SESSION_CONTENT} for r in rows}
+    by_date = {r.date: r for r in rows}
+    pair_s, pair_t = _b2b_pair(rows, source), _b2b_pair(rows, target)
+    if pair_s and pair_t:
+        raise HTTPException(409, "Both days are back-to-back long runs already." if pair_s == pair_t
+                            else "Choose a day outside the other back-to-back weekend.")
+    pair = pair_s or pair_t
+    if not pair:
+        return {source.id: content[target.id], target.id: content[source.id]}
+    anchor, other = (source, target) if pair_s else (target, source)
+    shift = (date.fromisoformat(other.date) - date.fromisoformat(anchor.date)).days
+    landing = [by_date.get((date.fromisoformat(p.date) + timedelta(days=shift)).isoformat()) for p in pair]
+    if any(r is None or r.week_number != pair[0].week_number for r in landing):
+        raise HTTPException(409, "Back-to-back long runs move together and stay in their week. Pick a day that keeps both inside it.")
+    vacated = [p for p in pair if p not in landing]
+    displaced = [r for r in landing if r not in pair]
+    layout = {r.id: content[p.id] for p, r in zip(pair, landing)}
+    layout.update({v.id: content[d.id] for v, d in zip(vacated, displaced)})
+    return layout
+
+
+REARRANGE_TRIALS = 8  # most rearrangements fully validated per target
+
+
+def _session_content(row: PlannedWorkout) -> dict:
+    return {k: getattr(row, k) for k in SESSION_CONTENT}
+
+
+def _rearrangements(rows: list[PlannedWorkout], source: PlannedWorkout, target: PlannedWorkout, open_ids: set[int]):
+    """Same-week layouts that put the source session on the target day and keep every session,
+    fewest days moved first. Long runs (and back-to-back pairs) stay put. Only hard-day spacing is
+    screened here; the full validator decides."""
+    from itertools import permutations
+    from app.core.plan_validator import is_hard
+
+    content = {r.id: _session_content(r) for r in rows}
+    week = sorted((r for r in rows if r.week_number == source.week_number), key=lambda r: r.date)
+    # Long runs stay where they are unless the athlete picked one: a coach doesn't move your long run
+    # to make room for a workout.
+    free = [r for r in week if r.id in open_ids and r.id != target.id and (r.type != "long_run" or r.id == source.id)]
+    if source not in free or len(free) > 7:
+        return []
+    owners = [target] + [r for r in free if r.id != source.id]
+    order = {r.id: i for i, r in enumerate(week)}
+    dated = sorted(rows, key=lambda r: r.date)
+    hard = lambda c: is_hard({"type": c["type"], "distance_miles": c["distance_miles"] or 0})
+    found, seen = [], set()
+    for perm in permutations(owners):
+        layout = {target.id: content[source.id], **{pos.id: content[owner.id] for pos, owner in zip(free, perm)}}
+        signature = tuple(json.dumps(layout[r.id], sort_keys=True, default=str) for r in free)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        day = lambda r: layout.get(r.id, content[r.id])
+        if any(hard(day(a)) and hard(day(b)) and not (day(a)["b2b"] and day(b)["b2b"])
+               and (date.fromisoformat(b.date) - date.fromisoformat(a.date)).days == 1 for a, b in zip(dated, dated[1:])):
+            continue
+        moved = [pos for pos, owner in zip(free, perm) if owner.id != pos.id]
+        disorder = sum(abs(order[pos.id] - order[owner.id]) for pos, owner in zip(free, perm))
+        found.append((len(moved), disorder, {i: c for i, c in layout.items() if c != content[i]}))
+    found.sort(key=lambda f: (f[0], f[1]))
+    return [layout for *_, layout in found[:REARRANGE_TRIALS]]
+
+
+def _resolve_switch(plan: Plan, source_date: str, target_date: str, db: Session) -> tuple[dict[int, dict], set[str], str]:
+    """The layout a switch will apply (row id -> new content), the dates allowed on rest days, and
+    how it was found: "direct", "pair" (a back-to-back weekend shifted) or "rearranged".
+
+    The direct switch first; if it breaks a rule, the smallest same-week rearrangement that passes
+    every check. Nothing is written: each candidate is tried in a rollback-only session."""
+    from app.services.session_options import read_only_trial
+    with read_only_trial(plan, db) as (trial_plan, rows, trial):
+        by_date = {r.date: r for r in rows}
+        source, target = by_date[source_date], by_date[target_date]
+        if source.week_number != target.week_number:
+            raise HTTPException(409, "Switch within the same week; next week is rebuilt from how this one goes.")
+        for row in (source, target):
+            problem = _session_lock(trial_plan, row, trial)
+            if problem:
+                raise HTTPException(409, f"{_day_label(row.date)}: {problem}")
+        direct = _switch_layout(rows, source, target)
+        content = {r.id: _session_content(r) for r in rows}
+        if all(content[i] == c for i, c in direct.items()):
+            raise HTTPException(409, "Those days hold the same session; switching changes nothing.")
+        open_ids = {r.id for r in rows if r.week_number == source.week_number and not _session_lock(trial_plan, r, trial)}
+        by_id = {r.id: r for r in rows}
+
+        def attempt(layout, allow):
+            before = {i: _session_minutes(trial_plan, by_id[i]) for i in layout}  # time limits judge what the switch adds
+            try:
+                for i, c in layout.items():
+                    for key, value in c.items():
+                        setattr(by_id[i], key, value)
+                _validate_schedule(trial_plan, trial, changed=before, allow_rest_dates=allow)
+                return True
+            finally:
+                for i in layout:
+                    for key, value in content[i].items():
+                        setattr(by_id[i], key, value)
+
+        changed_direct = {i: c for i, c in direct.items() if c != content[i]}
+        for i in changed_direct:
+            problem = None if i in open_ids else _session_lock(trial_plan, by_id[i], trial)
+            if problem:
+                raise HTTPException(409, f"{_day_label(by_id[i].date)} would have to change: {problem}")
+        kind = "pair" if len(changed_direct) > 2 else "direct"
+        try:
+            attempt(changed_direct, {by_id[i].date for i in changed_direct})
+            return changed_direct, {by_id[i].date for i in changed_direct}, kind
+        except HTTPException as direct_error:
+            if _b2b_pair(rows, source) or _b2b_pair(rows, target):
+                raise
+            for layout in _rearrangements(rows, source, target, open_ids):
+                if not set(layout) <= open_ids:
+                    continue
+                try:
+                    attempt(layout, {source_date, target_date})
+                    return layout, {source_date, target_date}, "rearranged"
+                except HTTPException:
+                    continue
+            raise direct_error
+
+
+def _apply_switch(plan: Plan, rows: list[PlannedWorkout], source: PlannedWorkout, target: PlannedWorkout,
+                  reason: str, db: Session) -> list[dict]:
+    """Apply the switch `_resolve_switch` found and validate it for real. Caller owns the transaction."""
+    layout, allow, _ = _resolve_switch(plan, source.date, target.date, db)
+    by_id = {r.id: r for r in rows}
+    before = {i: _session_minutes(plan, by_id[i]) for i in layout}
+    changes = []
+    for i, new in sorted(layout.items(), key=lambda item: by_id[item[0]].date):
+        row = by_id[i]
+        changes.append({"date": row.date, "before": row.title, "after": new["title"], "distance_miles": new["distance_miles"]})
+        if row.id in (source.id, target.id):
+            note = f"Switched with {_day_label(target.date if row.id == source.id else source.date)}"
+        else:
+            note = f"Moved to make room for {source.title} on {_day_label(target.date)}"
+        _mark_changed(row, f"{note}: {reason}" if reason and reason != "Changed by athlete" else f"{note}.")
+        for key, value in new.items():
+            setattr(row, key, value)
+        row.session_status = None  # the session here now came from another day; its old "replaced" tag doesn't apply
+    _validate_schedule(plan, db, changed=before, allow_rest_dates=allow)
+    return changes
+
+
+@router.get("/{user_id}/sessions/{session_date}/switch-targets")
+def switch_targets(user_id: int, session_date: date, db: Session = Depends(get_db)):
+    """Every open day this week the session could go to, each checked against the rules."""
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if not plan:
+        raise HTTPException(404, "No active plan")
+    rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
+    source = next((r for r in rows if r.date == session_date.isoformat()), None)
+    if not source:
+        raise HTTPException(404, "Session not found")
+    problem = _session_lock(plan, source, db)
+    if problem:
+        raise HTTPException(409, problem)
+    targets = []
+    for target in rows:
+        if (target.id == source.id or target.week_number != source.week_number or _session_lock(plan, target, db)
+                or _session_content(target) == _session_content(source)):
+            continue
+        entry = {"date": target.date, "label": _day_label(target.date), "type": target.type, "title": target.title,
+                 "distance_miles": target.distance_miles}
+        try:
+            layout, _, kind = _resolve_switch(plan, source.date, target.date, db)
+            by_id = {r.id: r for r in rows}
+            entry["changes"] = [{"date": by_id[i].date, "before": by_id[i].title, "after": c["title"], "distance_miles": c["distance_miles"]}
+                                for i, c in sorted(layout.items(), key=lambda item: by_id[item[0]].date)]
+            entry.update(ok=True, rearranged=kind == "rearranged", pair=kind == "pair")
+        except HTTPException as e:
+            reason = e.detail if isinstance(e.detail, str) else "Not allowed"
+            entry.update(ok=False, reason=re.sub(r"\d{4}-\d{2}-\d{2}", lambda m: _day_label(m.group()), reason))
+        targets.append(entry)
+    return {"date": source.date, "title": source.title, "targets": targets}
 
 
 @router.get("/{user_id}/sessions/{session_date}/options")
@@ -929,9 +1148,17 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
     if source.session_status in {"skipped", "moved"}:
         raise HTTPException(409, "This session has already been skipped or moved")
     if req.action != "skip" and source.date < athlete_today().isoformat():
-        raise HTTPException(409, "Only today's or future sessions can be replaced or moved")
+        raise HTTPException(409, "Past days can only be marked as skipped. If you ran, log the run instead.")
     before = {source.id: _session_minutes(plan, source)}  # time limits judge what this edit adds
     try:
+        if req.action == "switch":
+            rows = db.query(PlannedWorkout).filter_by(plan_id=plan.id).order_by(PlannedWorkout.date).all()
+            target = next((r for r in rows if req.target_date and r.date == req.target_date.isoformat()), None)
+            if not target or target.id == source.id:
+                raise HTTPException(422, "Choose another day in this block")
+            changes = _apply_switch(plan, rows, source, target, req.reason, db)
+            db.commit()
+            return {"date": source.date, "session_status": source.session_status, "changes": changes}
         if req.action == 'replace' and req.replacement in {'threshold','intervals','long_run'}:
             from app.services.session_options import apply_option, build_session_options
             option_id = req.option_id
@@ -965,10 +1192,13 @@ def change_session(user_id: int, session_date: date, req: SessionAction, db: Ses
             source.type = req.replacement
             source.title = "Rest Day" if source.type == "rest" else "Easy Run"
             source.description = "Rest and recover." if source.type == "rest" else "Conversational effort, truly easy."
-            source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, 6)
+            # An easy day is never the week's longest run: cap it at the week's other easy days.
+            easy_days = [r.distance_miles for r in db.query(PlannedWorkout).filter_by(plan_id=plan.id, week_number=source.week_number)
+                         if r.id != source.id and r.type == "easy" and r.distance_miles]
+            cap = min(6, max(easy_days, default=3))
+            source.distance_miles = 0 if source.type == "rest" else req.distance_miles or min(source.distance_miles or 3, cap)
             source.warmup = source.cooldown = None
             source.prescription = json.dumps(day_prescription({"type": source.type, "distance_miles": source.distance_miles, "description": source.description}))
-            source.b2b = False
             source.b2b = False
             source.session_status = "replaced"
         if req.action in {"skip", "move"}:

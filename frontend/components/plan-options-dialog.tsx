@@ -5,10 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { PlanChangeRequest } from "@/components/plan-change-request";
 import { cn } from "@/lib/utils";
-import type { Units } from "@/lib/units";
-import type { Workout } from "@/lib/types";
 
 // Life events go through "What's coming up?"; these are about the training itself.
 const REASONS = ["Too much volume", "Too hard", "Too easy", "Want more speed", "Feeling run down"];
@@ -20,24 +17,20 @@ export function concernText(reasons: string[], note: string): string {
 }
 
 /**
- * One entry point for changing the block: describe what's coming up (Stride rearranges the
- * week), tell the coach what isn't working, move one session, or rebuild the block.
+ * One entry point for changing the block: switch two days by hand, tell the coach what isn't
+ * working, or rebuild the block.
  */
-export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, days, today, units, onPlanChanged,
-  onAskCoach, onLighter, onRevise, onNextBlock, onMoveSession }: {
+export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel,
+  onAskCoach, onLighter, onRevise, onNextBlock, onSwitchSession }: {
   aiConfigured: boolean | null;
   busy: boolean;
   /** Set when the next block can be previewed, e.g. "Starts after Nov 2" */
   nextBlockLabel: string | null;
-  days: Workout[];
-  today: string;
-  units: Units;
-  onPlanChanged: () => void;
   onAskCoach: (concern: string) => void;
   onLighter: () => void;
   onRevise: () => void;
   onNextBlock: () => void;
-  onMoveSession?: () => void;
+  onSwitchSession?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [reasons, setReasons] = useState<string[]>([]);
@@ -55,10 +48,16 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, days, to
         <DialogContent className="max-h-[92dvh] overflow-y-auto max-sm:top-auto max-sm:bottom-0 max-sm:max-w-full max-sm:translate-y-0 max-sm:rounded-b-none sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Plan options</DialogTitle>
-            <DialogDescription>Fit training around your life, tell the coach what isn&apos;t working, or rebuild the block.</DialogDescription>
+            <DialogDescription>Rearrange your week, tell the coach what isn&apos;t working, or rebuild the block.</DialogDescription>
           </DialogHeader>
 
-          <PlanChangeRequest days={days} today={today} units={units} onChanged={onPlanChanged} />
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Need a different day?</p>
+            <p className="text-xs text-muted-foreground">
+              Pick a session and the day you want it on. Stride shows which days work with your hard-day spacing and long run, and swaps the two.
+            </p>
+            <Button className="h-10 w-full sm:h-9" disabled={!onSwitchSession || busy} onClick={() => run(() => onSwitchSession?.())}>Switch two days</Button>
+          </div>
 
           <details className="group space-y-3 border-t pt-3">
             <summary className="cursor-pointer list-none text-sm font-medium">
@@ -94,9 +93,8 @@ export function PlanOptionsDialog({ aiConfigured, busy, nextBlockLabel, days, to
           </details>
 
           <div className="space-y-2 border-t pt-3">
-            <p className="stat-label">Or change it by hand</p>
+            <p className="stat-label">Or rebuild the block</p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" disabled={!onMoveSession || busy} onClick={() => run(() => onMoveSession?.())}>Move a session</Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onLighter)}>Make it lighter</Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onRevise)}>Revise with latest runs</Button>
               {nextBlockLabel && <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onNextBlock)}>Preview next block</Button>}

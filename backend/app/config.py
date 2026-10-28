@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     openai_auto_reviews: bool = True
     # Plain-language plan changes: a slim ~3k-token request, so a separate, smaller cap
     # (docs/plain-language-plan-changes.md §3). Empty model = use openai_coach_model.
-    openai_plan_change_model: str = ""
-    openai_plan_change_daily_limit: int = 10
     # Monthly dollar caps (docs/multi-user-design.md §2.6); daily attempt limits stay as a burst guard.
     openai_monthly_budget_usd: float = 15.0  # app-wide; the owner's allowance is reserved inside it
     openai_athlete_monthly_budget_usd: float = 1.0

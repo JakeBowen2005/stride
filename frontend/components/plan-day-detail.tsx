@@ -12,13 +12,15 @@ import type { Activity, Workout } from "@/lib/types";
  * notes, run review) with the plan comparison and the day's feedback in the right-hand column.
  * Days not run yet keep the plain planned-session view.
  */
-export function PlanDayDetail({ workout, units, readOnly, isToday, sessionAction, onPlanChanged, revision }: {
+export function PlanDayDetail({ workout, units, readOnly, isToday, sessionAction, onPlanChanged, onSessionChanged, revision }: {
   workout: Workout;
   units: Units;
   readOnly?: boolean;
   isToday: boolean;
-  sessionAction?: "move";
+  sessionAction?: "switch";
   onPlanChanged?: () => void;
+  /** After Replace/Switch/Skip; defaults to onPlanChanged */
+  onSessionChanged?: () => void;
   /** Changes whenever the plan is re-fetched, so the run (comment, laps, review) re-loads too */
   revision?: number;
 }) {
@@ -35,7 +37,7 @@ export function PlanDayDetail({ workout, units, readOnly, isToday, sessionAction
   const activity = loaded && loaded.id === activityId ? loaded : null;
 
   const day = <PlanDay workout={workout} units={units} sessionAction={sessionAction} readOnly={readOnly}
-    isToday={isToday} expanded pinned hideRunStats={!!activity} onPlanChanged={onPlanChanged} />;
+    isToday={isToday} expanded pinned hideRunStats={!!activity} onPlanChanged={onPlanChanged} onSessionChanged={onSessionChanged} />;
   if (!activity) return day;
   return <RunDetailBody activity={activity} aside={<section aria-label="Planned and ran">{day}</section>}
     showFeedback={false} onChanged={onPlanChanged} className="px-0 sm:px-0" />;
