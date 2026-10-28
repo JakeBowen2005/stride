@@ -199,7 +199,7 @@ function subscribeDesktop(onChange: () => void) {
 export default function PlanPage() {
   const today=useAthleteToday();
   const [currentPreferences, setCurrentPreferences] = useState<AthletePreferences | null>(null);
-  const [moveRequest, setMoveRequest] = useState<{ date: string; nonce: number } | null>(null);
+  const [switchRequest, setSwitchRequest] = useState<{ date: string; nonce: number } | null>(null);
   const [units, setUnits] = useState<Units>("miles");
   const [plan, setPlan] = useState<ApiPlan | null>(null);
   const [activePlan, setActivePlan] = useState<ApiPlan | null>(null);
@@ -369,9 +369,11 @@ export default function PlanPage() {
     planned: week.target_mileage,
     actual: week.days.reduce((sum, d) => sum + (d.actual?.total_distance_miles ?? d.actual?.distance_miles ?? 0), 0),
   }));
-  const refresh = () => { setMoveRequest(null); setLoading(true); fetchPlan(); };
-  const movable = (w: Workout) => w.date >= today && !w.actual && w.prescribed !== false && !w.skipped && !w.moved_to && !["race", "rest"].includes(w.type);
-  const moveTarget = selected && movable(selected) ? selected : allDays.find(movable);
+  const refresh = () => { setSwitchRequest(null); setLoading(true); fetchPlan(); };
+  // A changed session returns to the plan: the sheet closes so the updated week is what you see.
+  const sessionChanged = () => { setInspectorOpen(false); refresh(); };
+  const switchable = (w: Workout) => w.date >= today && !w.actual && w.prescribed !== false && !w.skipped && !w.moved_to && w.type !== "race";
+  const switchSource = selected && switchable(selected) ? selected : allDays.find(switchable);
   const openDay = (date: string) => {
     setSelectedDate(date);
     if (isDesktop) setInspectorOpen(true);
@@ -379,14 +381,15 @@ export default function PlanPage() {
   };
   const inspector = selected && (
     <PlanDayDetail
-      key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${moveRequest?.nonce ?? ""}`}
+      key={`${selected.date}-${selected.title}-${selected.session_status ?? ""}-${switchRequest?.nonce ?? ""}`}
       workout={selected}
       units={units}
-      sessionAction={moveRequest?.date === selected.date ? "move" : undefined}
+      sessionAction={switchRequest?.date === selected.date ? "switch" : undefined}
       readOnly={!!plan.preview}
       isToday={selected.date === today}
       revision={planRevision}
       onPlanChanged={refresh}
+      onSessionChanged={sessionChanged}
     />
   );
   // Compare with the block on screen: a draft built from the new settings already resolves it.
@@ -416,16 +419,12 @@ export default function PlanPage() {
             aiConfigured={aiConfigured}
             busy={generating}
             nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
-            days={allDays}
-            today={today}
-            units={units}
-            onPlanChanged={() => fetchPlan()}
             onAskCoach={(concern) => {
               setCoachRequest({ concern, nonce: Date.now() });
               setCoachOpen(true);
               requestAnimationFrame(() => document.getElementById("plan-coach")?.scrollIntoView({ behavior: "smooth", block: "start" }));
             }}
-            onMoveSession={moveTarget ? () => { setMoveRequest({ date: moveTarget.date, nonce: Date.now() }); openDay(moveTarget.date); } : undefined}
+            onSwitchSession={switchSource ? () => { setSwitchRequest({ date: switchSource.date, nonce: Date.now() }); openDay(switchSource.date); } : undefined}
             onLighter={() => generatePlan(true)}
             onRevise={() => generatePlan()}
             onNextBlock={() => generatePlan(false, "next")}
