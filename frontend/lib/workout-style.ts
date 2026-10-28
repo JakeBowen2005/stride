@@ -19,12 +19,13 @@ export function sessionKind(type: string, title = "", category?: string | null):
   if (type === "long_run") return "long";
   if (type !== "workout") return "easy";
   if (category === "speed_support") return "support";
-  if (category === "development") return "controlled";
+  // Introductory sessions: threshold-style reps stay "controlled"; short hard reps are intervals.
+  if (category === "development") return /\bintervals$/i.test(title) ? "intervals" : "controlled";
   if (category === "hills") return "hills";
   if (category === "threshold") return "threshold";
   if (category === "intervals") return "intervals";
   const t = title.toLowerCase();
-  if (/controlled (effort|intervals)/.test(t)) return "controlled";
+  if (/controlled (effort|intervals|reps)/.test(t)) return "controlled";
   if (/light (fartlek|pickups|steady)|relaxed (repetitions|strides)|controlled short hills/.test(t)) return "support";
   if (/hill|climb/.test(t)) return "hills";
   if (/tempo|threshold|cruise|sandwich|mp|pace run/.test(t)) return "threshold";

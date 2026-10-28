@@ -45,6 +45,10 @@ def workout(level, easy_pace, weekly_miles, *, program=None, phase='general', re
         reps, minutes, recovery = dose, 1, 1
     elif shape == 'long':
         reps, minutes, recovery = max(1, dose // 3), 3, 2
+    elif shape in {'cruise', 'cruise_short'}:
+        # Threshold reps: long enough to settle into the effort, with short (~4-5:1) jogs.
+        minutes = 3 if shape == 'cruise_short' or dose < 10 else 5
+        reps, recovery = max(2, dose // minutes), 1
     elif shape == 'continuous':
         reps, minutes, recovery = 1, dose, 0
     elif dose < work_minutes:
@@ -59,7 +63,7 @@ def workout(level, easy_pace, weekly_miles, *, program=None, phase='general', re
         total = (2 * bookend * 60 + max(0, reps - 1) * recovery * 60) / easy_pace + dose * 60 / estimate
     if total > weekly_miles * .4 or total < .1:
         return None
-    name = f'{reps}x{minutes}min Controlled Intervals' if reps > 1 else f'{minutes}min Controlled Effort'
+    name = f'{reps}x{minutes}min Controlled Reps' if reps > 1 else f'{minutes}min Controlled Effort'
     cue = ('Short phrases are possible. Finish able to do a little more; slow down if breathing or form gets ragged. '
            + ('Jog or walk the recoveries. ' if reps > 1 else '') + 'Effort is the target, not a pace test.')
     data = prescription('development', 'time_intervals' if reps > 1 else 'continuous',
@@ -74,6 +78,46 @@ def workout(level, easy_pace, weekly_miles, *, program=None, phase='general', re
             'total_miles': math.ceil(total * 10) / 10,
             'warmup': f'{bookend}min easy', 'cooldown': f'{bookend}min easy',
             'purpose': 'Build sustained aerobic effort and pacing control before longer or harder workouts.'}
+
+
+# Introductory intervals (VO2max): (rep minutes, jog minutes). Recoveries are at least as long as
+# the rep, unlike threshold reps (docs/5k-training-science.md: 3-5 min reps, ~1:1 jog, for trained runners).
+INTERVAL_SHAPES = {'short': (1, 2), 'medium': (2, 2), 'long': (3, 3)}
+INTERVAL_SHARE = .6  # hard rep time vs the threshold step's work: harder effort, smaller dose
+
+
+def intro_intervals(level, easy_pace, weekly_miles, *, program=None, phase='general', reduced=False, shape='short'):
+    """Short reps at about 8/10 (roughly 5K effort) with full jog recoveries. Effort-guided like
+    `workout`; never a pace test and never a progression step (an alternative to the ladder)."""
+    base = workout(level, easy_pace, weekly_miles, program=program, phase=phase, reduced=reduced, shape='continuous')
+    if not base:
+        return None
+    rep, jog = INTERVAL_SHAPES[shape]
+    hard = min(12, max(4, round(base['prescription']['segments'][0]['duration_seconds'] / 60 * INTERVAL_SHARE)))
+    reps = hard // rep
+    if reps < 3:
+        return None
+    estimate = easy_pace * .85
+    bookend = 10
+    total = (2 * bookend * 60 + (reps - 1) * jog * 60) / easy_pace + reps * rep * 60 / estimate
+    if total > weekly_miles * .4:
+        bookend = 5
+        total = (2 * bookend * 60 + (reps - 1) * jog * 60) / easy_pace + reps * rep * 60 / estimate
+    if total > weekly_miles * .4:
+        return None
+    cue = ('Hard but controlled: only a few words at a time, roughly the effort you could hold for a 5K. '
+           'Every rep should feel the same, so start a touch easier than you think. Jog or walk the recoveries fully. '
+           'Effort is the target, not a pace test.')
+    data = prescription('development', 'time_intervals', [segment(reps, seconds=rep * 60, recovery_seconds=jog * 60)],
+                        program=program, phase=phase, level=level, note=cue)
+    data.update(warmup=segment(seconds=bookend * 60), cooldown=segment(seconds=bookend * 60),
+                easy_pace_sec_per_mile=easy_pace, estimated_work_pace_sec_per_mile=estimate,
+                progression_eligible=False, stimulus='vo2max', total_distance_meters=round(total * MI, 2))
+    data['segments'][0]['effort'] = 'hard effort (about 8/10)'
+    return {'name': f'{reps}x{rep}min Intervals', 'structure': render(data), 'prescription': data,
+            'total_miles': math.ceil(total * 10) / 10, 'warmup': f'{bookend}min easy', 'cooldown': f'{bookend}min easy',
+            'purpose': 'Introduces faster running: short hard reps raise your aerobic ceiling (VO2max) and teach '
+                       'relaxed form at speed, with full recoveries so every rep stays controlled.'}
 
 
 def ready_for_workout(history, run_days, weekly_miles, evidence, assessment, fatigue):
