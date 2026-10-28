@@ -1,6 +1,6 @@
 "use client";
 
-import { useUnits } from "@/components/unit-preferences";
+import { useAthleteToday, useUnits } from "@/components/unit-preferences";
 import { distanceInUnits, unitLabel } from "@/lib/units";
 import { useEffect, useState } from "react";
 import { apiUrl, USER_ID } from "@/lib/api";
@@ -19,11 +19,16 @@ interface Option {
 }
 interface Menu { category: string; options: Option[]; reasons: string[]; quality_stage: string }
 
-type Action = "skip" | "replace" | "move";
+interface SwitchTarget {
+  date: string; label: string; type: string; title: string; distance_miles: number; ok: boolean; reason?: string; rearranged?: boolean; pair?: boolean;
+  changes?: { date: string; before: string; after: string; distance_miles: number }[];
+}
+
+type Action = "skip" | "replace" | "switch";
 type Replacement = "easy" | "rest" | "threshold" | "intervals" | "long_run";
 
 const ACTIONS: { value: Action; label: string }[] = [
-  { value: "replace", label: "Replace" }, { value: "move", label: "Move" }, { value: "skip", label: "Skip" },
+  { value: "replace", label: "Replace" }, { value: "switch", label: "Switch" }, { value: "skip", label: "Skip" },
 ];
 const REPLACEMENTS: { value: Replacement; label: string; kind: Parameters<typeof kindColor>[0] }[] = [
   { value: "threshold", label: "Threshold", kind: "threshold" },
@@ -35,10 +40,11 @@ const REPLACEMENTS: { value: Replacement; label: string; kind: Parameters<typeof
 const SHAPE_LABEL: Record<string, string> = {
   cruise_time: "Time reps", cruise_distance: "Distance reps", continuous: "Continuous", ladder: "Ladder",
   short_reps: "Short reps", middle_reps: "800m–1K reps", long_reps: "Long reps", time_reps: "Time reps",
-  pyramid: "Pyramid", hills: "Hills",
+  pyramid: "Pyramid", hills: "Hills", cruise: "Cruise reps", cruise_short: "Short cruise reps",
+  intervals_short: "1-min reps", intervals_medium: "2-min reps", intervals_long: "3-min reps",
 };
 const shapeLabel = (shape?: string) =>
-  !shape ? null : SHAPE_LABEL[shape] ?? (shape.startsWith("easy-") ? "Easy long" : shape.startsWith("steady-") ? "Steady finish" : shape.replace(/_/g, " "));
+  !shape ? null : SHAPE_LABEL[shape] ?? (shape.startsWith("easy-") ? `${shape.slice(5)} min` : shape.startsWith("steady-") ? "Steady finish" : shape.replace(/_/g, " "));
 
 function Segmented<T extends string>({ label, value, options, onChange, disabled }: {
   label: string; value: T; options: { value: T; label: string; kind?: Parameters<typeof kindColor>[0] }[];
@@ -82,8 +88,12 @@ function defaultReplacement(workout: Workout): Replacement {
   return kind === "intervals" ? "intervals" : kind === "long" ? "long_run" : "threshold";
 }
 
+const shortDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
 export function SessionControls({ workout, onChanged, initialAction = "replace" }: { workout: Workout; onChanged?: () => void; initialAction?: Action }) {
   const units = useUnits();
+  const today = useAthleteToday();
+  const past = workout.date < today;
   const unit = unitLabel(units);
   const distance = (miles: number) => distanceInUnits(miles, units);
   const [action, setAction] = useState<Action>(initialAction);
@@ -96,6 +106,23 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
   const [optionId, setOptionId] = useState("");
   const [loadingOptions, setLoadingOptions] = useState(false);
   const needsOptions = action === "replace" && ["threshold", "intervals", "long_run"].includes(replacement);
+  const [targets, setTargets] = useState<SwitchTarget[] | null>(null);
+
+  useEffect(() => {
+    if (action !== "switch" || past) return;
+    const abort = new AbortController();
+    const timer = setTimeout(async () => {
+      setTargets(null); setTarget(""); setError(null);
+      try {
+        const res = await fetch(apiUrl(`/plans/${USER_ID}/sessions/${workout.date}/switch-targets`), { signal: abort.signal });
+        const data = await res.json();
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not load days");
+        if (!abort.signal.aborted) setTargets(data.targets);
+      } catch (e) { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : "Could not load days"); }
+    }, 0);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [action, past, workout.date]);
+  const chosen = targets?.find((t) => t.date === target);
 
   useEffect(() => {
     if (!needsOptions) return;
@@ -120,7 +147,7 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
     try {
       const res = await fetch(apiUrl(`/plans/${USER_ID}/sessions/${workout.date}`), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, target_date: action === "move" ? target : null,
+        body: JSON.stringify({ action: past ? "skip" : action, target_date: action === "switch" ? target : null,
           replacement: action === "replace" ? replacement : null,
           option_id: needsOptions ? optionId : null, reason: reason || "Changed by athlete" }),
       });
@@ -131,7 +158,18 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
     finally { setBusy(false); }
   }
 
-  const canApply = !busy && !(action === "move" && !target) && !(needsOptions && (!currentMenu || !optionId || loadingOptions));
+  const canApply = !busy && !(action === "switch" && !chosen?.ok) && !(needsOptions && (!currentMenu || !optionId || loadingOptions));
+
+  if (past) {
+    // Only "didn't run it" makes sense for a past day; a run you did gets logged instead.
+    return (
+      <div className="space-y-2 border-t border-[var(--glass-border)] pt-3" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <p className="text-sm text-muted-foreground">This day has passed. If you didn&apos;t run, mark it skipped so the plan reflects it.</p>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Button size="sm" variant="outline" disabled={busy} onClick={submit}>{busy ? "Saving…" : "I didn't run this"}</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 border-t border-[var(--glass-border)] pt-3" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
@@ -139,7 +177,41 @@ export function SessionControls({ workout, onChanged, initialAction = "replace" 
         <span className="stat-label">Change this session</span>
         <Segmented label="Change type" value={action} options={ACTIONS} disabled={busy} onChange={(v) => { setAction(v); setOptionId(""); }} />
       </div>
-      {action === "move" && <Input autoFocus={initialAction === "move"} aria-label="Move to date" type="date" min={workout.date} value={target} onChange={(e) => setTarget(e.target.value)} />}
+      {action === "switch" && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Swap {workout.title} with another day. Days that would break hard-day spacing or your long-run rules are greyed out.</p>
+          {!targets && !error && <div className="h-16 animate-pulse rounded-2xl bg-muted" role="status" aria-label="Loading days" />}
+          <div role="radiogroup" aria-label="Switch with" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {targets?.map((t) => {
+              const kind = sessionKind(t.type, t.title);
+              const checked = target === t.date;
+              return (
+                <button key={t.date} type="button" role="radio" aria-checked={checked} aria-disabled={!t.ok} disabled={busy} title={t.reason}
+                  onClick={() => setTarget(t.date)}
+                  className={cn("min-h-14 rounded-2xl border-[1.5px] px-3 py-2 text-left text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary",
+                    t.ok ? "hover:bg-[var(--row-hover)]" : "opacity-45")}
+                  style={{ borderColor: checked ? kindColor(kind).color : "var(--glass-border)", background: checked ? kindColor(kind).tint : undefined,
+                    boxShadow: checked ? `0 0 0 2px ${kindColor(kind).color}` : undefined }}>
+                  <span className="block font-semibold">{t.label}</span>
+                  <span className="block truncate text-muted-foreground">{t.type === "rest" ? "Rest" : `${t.title} · ${distance(t.distance_miles)} ${unit}`}</span>
+                  {t.ok && (t.rearranged || t.pair) && <span className="block text-[11px]" style={{ color: "var(--warn)" }}>also moves {(t.changes?.length ?? 3) - 2} more</span>}
+                </button>
+              );
+            })}
+          </div>
+          {chosen && !chosen.ok && <p role="status" className="text-xs" style={{ color: "var(--warn)" }}>Can&apos;t switch with {chosen.label}: {chosen.reason}</p>}
+          {chosen?.ok && chosen.changes && (
+            <ul className="space-y-1 rounded-2xl bg-[var(--glass-inner)] p-3 text-xs" aria-label="What changes">
+              {chosen.rearranged && <li className="text-muted-foreground">A straight swap would put two hard days together, so Stride also shifts another session:</li>}
+              {chosen.pair && <li className="text-muted-foreground">Back-to-back long runs move together:</li>}
+              {chosen.changes.map((c) => (
+                <li key={c.date}><span className="font-medium">{shortDay(c.date)}:</span> <span className="text-muted-foreground line-through">{c.before}</span> → {c.after}{c.distance_miles ? ` · ${distance(c.distance_miles)} ${unit}` : ""}</li>
+              ))}
+            </ul>
+          )}
+          {targets && targets.every((t) => !t.ok) && <p className="text-xs text-muted-foreground">No day in this block can take this session without breaking a training rule. {targets[0]?.reason ?? ""}</p>}
+        </div>
+      )}
       {action === "replace" && (
         <Segmented label="Replacement session" value={replacement} options={REPLACEMENTS} disabled={busy}
           onChange={(v) => { setReplacement(v); setOptionId(""); }} />

@@ -1,4 +1,7 @@
-"""An athlete's plain-language request to rearrange their week, and what came of it."""
+"""An athlete's plain-language request to rearrange their week, and what came of it.
+
+The feature was removed in Oct 2026 (docs/plain-language-plan-changes.md). The table stays for
+history and for this month's AI spend in services/ai_budget."""
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text

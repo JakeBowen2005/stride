@@ -10,7 +10,6 @@ from app.api.coaching import router as coaching_router
 from app.api.analysis import router as analysis_router
 from app.api.garmin import router as garmin_router, _sync_in_new_session
 from app.api.plans import router as plans_router
-from app.api.plan_changes import router as plan_changes_router
 from app.api.wellness import router as wellness_router
 from app.api.users import router as users_router
 from app.database import Base, add_missing_columns, engine
@@ -117,7 +116,6 @@ app.include_router(coaching_router)
 app.include_router(analysis_router)
 app.include_router(garmin_router)
 app.include_router(plans_router)
-app.include_router(plan_changes_router)
 app.include_router(users_router)
 app.include_router(wellness_router)
 
