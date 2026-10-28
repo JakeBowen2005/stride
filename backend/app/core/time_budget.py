@@ -101,7 +101,7 @@ def fit_availability(weeks,limits,easy,*,developing=False,prior_hard_dates=None)
                     segment=max(data['segments'],key=lambda s:s.get('reps',1)*(s.get('duration_seconds') or (s.get('distance_meters') or 0)/MI*easy))
                     if segment.get('reps',1)>1:
                         segment['reps']-=1
-                    elif segment.get('duration_seconds',0)>180:
+                    elif (segment.get('duration_seconds') or 0)>180:  # distance segments carry duration_seconds=None
                         segment['duration_seconds']-=60
                     else:
                         data=None;break

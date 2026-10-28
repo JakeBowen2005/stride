@@ -104,11 +104,23 @@ After checking out a branch:
 
 Open **http://localhost:3100**. Backend uses **127.0.0.1:8100**. Your regular app can keep running at 3000/8000. A prominent banner identifies synthetic data.
 
-Data lives in `.demo/<scenario>/stride.db`, never `backend/stride.db`. First start automatically seeds it; subsequent starts preserve demo experiments. Dates are anchored to the local day the DB was first created, with no randomness. A separate temporary frontend source/build copy keeps Next's generated files out of the real frontend; each run's copy stays under `.demo/<scenario>/`. Both services bind only loopback. Garmin tokens, polling, AI keys and the AI worker are explicitly disabled; the demo has no password because it contains synthetic data and is loopback-only. Real app credentials/config are not copied. Never use `start.sh` to inspect a demo.
+Data lives in `.demo/<scenario>/stride.db`, never `backend/stride.db`. First start automatically seeds it; subsequent starts preserve demo experiments. Dates are anchored to the local day the DB was first created, with no randomness. A separate temporary frontend source/build copy keeps Next's generated files out of the real frontend; each run's copy stays under `.demo/<scenario>/`. Both services bind only loopback. Garmin tokens, polling, AI keys and the AI worker are explicitly disabled by default; the demo has no password because it contains synthetic data and is loopback-only. Real app credentials/config are not copied. Never use `start.sh` to inspect a demo.
 
 To reset, stop the demo, rename its `.demo/<scenario>` directory to a saved name, then run the launcher again. The seed CLI refuses any existing file or the personal DB, including resolved symlinks. No data files or credentials are committed: scenario JSON plus the deterministic loader is the preload.
 
 Backend dependencies/venv and frontend node_modules must already be installed as for normal Stride. Ctrl+C stops only the demo's child processes.
+
+To try the AI features (plain-language plan changes, coach reviews) on a demo, add `--ai`: `./start-demo.sh sub17-5k --ai`. It uses the OpenAI key from `backend/.env`, records AI consent for the synthetic athlete, and the banner shows "AI on". Calls are real and cost money; they count against the demo database's own monthly budget and daily request limit. Run several demos side by side with `--port 3110` (API on port + 5000).
+
+Before shipping plan or settings changes, sweep every scenario for server errors (about 2-3 minutes):
+
+```sh
+cd backend && venv/bin/python scripts/sweep_demo_scenarios.py
+# a demo you have been playing with (copied, never modified):
+venv/bin/python scripts/sweep_demo_scenarios.py --database ../.demo/trail-100k/stride.db
+```
+
+It runs ~60 settings and goal changes, session actions and quick plan-change requests at several clock offsets (mid-block, a week in, after the block ends) and exits non-zero on any 5xx.
 
 ## Verification
 
