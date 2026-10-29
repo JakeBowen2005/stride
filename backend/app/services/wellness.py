@@ -68,7 +68,7 @@ def flatten_summary(v2: dict | None) -> dict | None:
     }
 
 
-def parse_day(summary, sleep, hrv, readiness, status, predictions) -> dict:
+def parse_day(summary, sleep, hrv) -> dict:
     """Map raw Garmin payloads to DailyWellness fields. Pure — unit tested."""
     out: dict = {}
     if summary:
@@ -107,37 +107,8 @@ def parse_day(summary, sleep, hrv, readiness, status, predictions) -> dict:
             hrv_baseline_low=base.get("balancedLow"),
             hrv_baseline_high=base.get("balancedUpper"),
         )
-    if readiness:
-        tr = readiness[0] if isinstance(readiness, list) else readiness
-        if tr:
-            out.update(
-                readiness_score=tr.get("score"),
-                readiness_level=tr.get("level"),
-                readiness_feedback=tr.get("feedbackShort"),
-                recovery_time_min=tr.get("recoveryTime"),
-            )
-            if not out.get("sleep_score") and tr.get("sleepScore"):
-                out["sleep_score"] = tr.get("sleepScore")
-    if status:
-        ts = _first_device_value(((status.get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData")))
-        acute = ts.get("acuteTrainingLoadDTO") or {}
-        lb = _first_device_value(((status.get("mostRecentTrainingLoadBalance") or {}).get("metricsTrainingLoadBalanceDTOMap")))
-        vo2 = (((status.get("mostRecentVO2Max") or {}).get("generic")) or {})
-        out.update(
-            training_status=ts.get("trainingStatusFeedbackPhrase"),
-            acute_load=acute.get("dailyTrainingLoadAcute"),
-            chronic_load=acute.get("dailyTrainingLoadChronic"),
-            acwr=acute.get("dailyAcuteChronicWorkloadRatio"),
-            load_balance_feedback=lb.get("trainingBalanceFeedbackPhrase"),
-            vo2max=vo2.get("vo2MaxPreciseValue") or vo2.get("vo2MaxValue"),
-        )
-    if predictions:
-        out.update(
-            predicted_5k=predictions.get("time5K"),
-            predicted_10k=predictions.get("time10K"),
-            predicted_half=predictions.get("timeHalfMarathon"),
-            predicted_marathon=predictions.get("timeMarathon"),
-        )
+    # Readiness, training status/load, VO2max and race predictions aren't in the official
+    # Personal API; Stride stores none of them (privacy policy, section 1).
     return {k: v for k, v in out.items() if v is not None}
 
 
@@ -167,7 +138,7 @@ def fetch_range(client, start: date, end: date, *, user_id=None, db=None) -> dic
     if db is not None:
         coverage(user_id, 'wellness', start, end, 'checked' if complete else 'failed', db)
         db.info['wellness_range_complete'] = complete
-    return {day: parse_day(parts.get('summary'), parts.get('sleep'), parts.get('hrv'), None, None, None)
+    return {day: parse_day(parts.get('summary'), parts.get('sleep'), parts.get('hrv'))
             for day, parts in by_day.items()}
 
 

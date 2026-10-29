@@ -14,7 +14,7 @@ export default function PrivacyPage() {
     <article className="glass mx-auto w-full max-w-3xl space-y-6 p-5 text-sm leading-relaxed sm:p-8 [&_h2]:pt-2 [&_h2]:text-base [&_h2]:font-bold [&_li]:ml-5 [&_li]:list-disc [&_ul]:space-y-1.5">
       <header className="space-y-2">
         <h1 className="display">Privacy Policy</h1>
-        <p className="text-muted-foreground">Effective {LEGAL.effectiveDate}</p>
+        <p className="text-muted-foreground">Effective {LEGAL.privacyEffectiveDate}</p>
       </header>
 
       <p>
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         <p><strong>Garmin Connect data</strong>, if you connect your Garmin account:</p>
         <ul>
           <li><em>Activities:</em> your runs, including date, distance, duration, pace, heart rate, elevation, cadence, running form metrics, training effect and load, laps from the activity file, and the post-run feel and effort rating from your watch.</li>
-          <li><em>Health:</em> daily summaries, including resting heart rate, sleep (duration, stages, score), heart-rate variability, stress, Body Battery, steps, pulse oximetry and respiration. Stride doesn&apos;t receive Garmin&apos;s training readiness or training status.</li>
+          <li><em>Health:</em> daily summaries, including resting heart rate, sleep (duration, stages, score), heart-rate variability, stress, Body Battery, steps, pulse oximetry and respiration. Stride doesn&apos;t receive or keep Garmin&apos;s training readiness, training status, daily training load, VO2max estimate or race predictions.</li>
         </ul>
         <p>We read only running activities for training; Stride doesn&apos;t use other sports. We receive data only for the periods Garmin makes available, and only while you stay connected.</p>
         <p><strong>Files you upload.</strong> Activity (.FIT) files you import yourself.</p>
@@ -82,6 +82,7 @@ export default function PrivacyPage() {
               <tr><td><strong>Garmin</strong></td><td>Source of your activity and health data, at your request</td><td>Your Garmin data, and the request for it</td></tr>
               <tr><td><strong>Render</strong> (United States)</td><td>Hosts the app and its database</td><td>Everything stored in Stride</td></tr>
               <tr><td><strong>OpenAI</strong> (only if you opt in)</td><td>Writes coaching explanations</td><td>The training summary described in section 3</td></tr>
+              <tr><td><strong>Sentry</strong> (only when error reporting is enabled)</td><td>Receives reports when the app hits an error</td><td>Technical error details only: no request content, run comments, health data or personal information</td></tr>
               <tr><td><strong>Amazon Web Services S3</strong> (United States, only when off-site storage is enabled)</td><td>Encrypted backups and stored activity files</td><td>Database backups; .FIT files</td></tr>
             </tbody>
           </table>
