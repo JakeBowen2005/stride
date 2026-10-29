@@ -82,3 +82,22 @@ def test_manual_sync_reports_backoff_immediately_instead_of_queuing_a_disabled_s
     assert response.json()['message'] == 'Garmin rejected the API key'
     with SessionLocal() as db:
         assert db.get(SyncJob, 1) is None
+
+
+def test_in_process_worker_starts_job_loop_inside_api(monkeypatch):
+    import asyncio
+    from app.services import worker
+    started = []
+
+    async def fake_run():
+        started.append(True)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(settings, 'embedded_workers', False)
+    monkeypatch.setattr(settings, 'in_process_worker', True)
+    monkeypatch.setattr(settings, 'garmin_poll_minutes', 0)
+    monkeypatch.setattr(settings, 'openai_auto_reviews', False)
+    monkeypatch.setattr(worker, 'run', fake_run)
+    with TestClient(app):
+        pass
+    assert started == [True]

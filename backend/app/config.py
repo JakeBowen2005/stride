@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     public_app_url: str = Field(default="", validation_alias="STRIDE_PUBLIC_URL")
     schema_auto_upgrade: bool = True
     embedded_workers: bool = True
+    # Render: run the durable job loop inside the API process (saves a second ~150MB Python
+    # process on a 512MB instance) while manual syncs still go through the queue.
+    in_process_worker: bool = Field(default=False, validation_alias="STRIDE_IN_PROCESS_WORKER")
     provider_encryption_keys: str = Field(default="", validation_alias="STRIDE_PROVIDER_ENCRYPTION_KEYS")
     fit_blob_bucket: str = ""
     fit_blob_prefix: str = "stride"

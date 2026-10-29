@@ -51,8 +51,21 @@ def delete_blobs():
 
 
 
+def log_memory():
+    """Current/peak RSS of this process, so a creep toward Render's 512MB limit shows in the logs."""
+    try:
+        status=dict(line.split(':',1) for line in open('/proc/self/status') if line.startswith(('VmRSS','VmHWM')))
+    except OSError:
+        return  # not Linux
+    logging.getLogger('stride.worker').info('Memory rss=%s peak=%s',status['VmRSS'].strip(),status['VmHWM'].strip())
+
+
 async def run():
+    last_memory_log=0.0
     while True:
+        if asyncio.get_running_loop().time()-last_memory_log>=600:
+            last_memory_log=asyncio.get_running_loop().time()
+            log_memory()
         worked=False
         for operation in (schedule_due,sync_jobs.process_one,coaching_jobs.process_one,delete_blobs):
             try:

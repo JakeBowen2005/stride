@@ -92,7 +92,7 @@ async def garmin_auto_sync():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task=None
-    if settings.embedded_workers and (settings.garmin_poll_minutes>0 or settings.openai_auto_reviews):
+    if settings.in_process_worker or (settings.embedded_workers and (settings.garmin_poll_minutes>0 or settings.openai_auto_reviews)):
         from app.services.worker import run
         task=asyncio.create_task(run())
     yield
