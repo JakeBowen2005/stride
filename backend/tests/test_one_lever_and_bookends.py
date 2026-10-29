@@ -43,8 +43,11 @@ def test_new_marathon_pace_long_run_holds_that_weeks_volume(monkeypatch):
     first = next(i for i, miles in enumerate(mp) if miles)
     assert first >= 1 and mp[first] >= 9, mp
     before, held = plan["weeks"][first - 1], plan["weeks"][first]
-    assert held["budget_miles"] <= before["budget_miles"] + MILES_TOLERANCE
-    assert held["target_mileage"] <= before["budget_miles"] + MILES_TOLERANCE
+    # Held = no growth past the week before or the demonstrated level (the week before
+    # may be a midweek-prorated partial week).
+    level = max(before["budget_miles"], max(completed[-2:]))
+    assert held["budget_miles"] <= level + MILES_TOLERANCE
+    assert held["target_mileage"] <= level + MILES_TOLERANCE
     if first + 1 < len(mp) and not race_pace_step(mp[first + 1], mp[first]):
         assert plan["weeks"][first + 1]["budget_miles"] > held["budget_miles"]  # volume grows the week after
     assert any("race pace in the long run: holding" in r for r in plan["load"]["reasons"])

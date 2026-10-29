@@ -162,3 +162,19 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
   required in every mode, the owner included.
 - **Garmin attribution**: `activities.device_name`, "Garmin <device>" on run views, a derived-data line
   on AI reviews, and an attribution field in the export. `/terms` acceptance is recorded at registration.
+
+## Season safety (Oct 28 2026)
+
+- **Post-race rest** (`special_weeks.apply_post_race_rest`, `periodization.POST_RACE_REST_DAYS`): no running for
+  1 (5K) to 14 (100 mi) days after the race, on whatever weekday it falls, and no long run or workout in the
+  week after that. Only prescribed days change; the week total only goes down.
+- **Road long-run caps** (`plan_engine.ROAD_LONG_RUN_CAP`): 5K 15 mi/120 min, 10K 16/135, half 18/150,
+  marathon 22/210, whatever share of a big week the long run would otherwise get.
+- **Midweek starts** prescribe the remaining days at their normal size (prorated, when that cuts the week by
+  more than 10%) and later weeks ramp from that week or the demonstrated level, never from the full week.
+- **Road readiness**: `check_readiness` projects the half/marathon long run and volume with the same safe-ramp
+  estimate as the goal route (`outlook._weeks_to_grow`) and warns, with an override, when they can't be
+  reached before taper.
+- **Season simulator** (`tests/season_sim.py`, `tests/test_season_matrix.py`): seeds an athlete, runs every
+  prescribed session, and generates and approves each block to race day, then checks season-level rules.
+  A subset runs in CI; `STRIDE_SEASON_FULL=1` runs every athlete × distance.

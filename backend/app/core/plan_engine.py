@@ -27,6 +27,7 @@ from app.core.plan_validator import enforce_no_back_to_back_hard, fit_week_to_bu
 from app.core.special_weeks import (
     back_to_back_day,
     build_race_week,
+    apply_post_race_rest,
     hill_session,
     ultra_long_run,
 )
@@ -36,6 +37,9 @@ DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 
 DEFAULT_WORKOUT_DAYS = [1, 3]
 DEFAULT_LONG_RUN_DAY = 5
+# Longest single run by road goal (miles, minutes at easy pace): Daniels caps the long run
+# near 150 min; 5K/10K need endurance support, not marathon-length runs.
+ROAD_LONG_RUN_CAP = {"5k": (15, 120), "10k": (16, 135), "half": (18, 150), "marathon": (22, 210)}
 DEFAULT_REST_DAY = 6
 
 
@@ -269,6 +273,8 @@ def generate_plan(
         f"if you can't, slow down. ({easy_range}/mi or slower)"
     )
 
+    prorated: dict[int, float] = {}  # week index → its midweek-prorated total
+
     def compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning):
         """Build one week at a weekly target: sessions, already-run days, then fit to the budget."""
         wk_num, wk_start, wk_phase = wk + 1, start_date + timedelta(days=wk * 7), phases[wk]
@@ -315,6 +321,16 @@ def generate_plan(
                 d["prescribed"] = True
 
         locked_miles = sum(d['distance_miles'] for d in week_days if not d.get('prescribed', True))
+        run_weekdays = [i for i in range(7) if i not in rest_indices]
+        open_weekdays = [i for i in run_weekdays if wk_start + timedelta(days=i) >= fpd]
+        if (run_weekdays and 0 < len(open_weekdays) < len(run_weekdays) and wk_phase.phase != 'race_week'
+                and locked_miles + wk_target * len(open_weekdays) / len(run_weekdays) < wk_target * .9):
+            # A midweek start prescribes the rest of the week at its normal size; it never
+            # crams the whole week's target into the days that are left.
+            wk_target = round(locked_miles + wk_target * len(open_weekdays) / len(run_weekdays), 1)
+            prorated[wk] = wk_target
+            notes.append("This week started midweek: the remaining days are planned at their normal size, "
+                         "not squeezed to reach the full weekly total.")
         if not any(d.get('prescribed', True) for d in week_days):
             wk_target = locked_miles
         elif locked_miles > wk_target:
@@ -384,6 +400,11 @@ def generate_plan(
         long_cap = None
         if developing and goal_distance in developmental.LONG_RUN_SHARE:
             long_cap = developmental.long_run_cap(wk_target, longest_long, easy_pace_seconds)
+        if goal_distance in ROAD_LONG_RUN_CAP:
+            # A share of a big week is not a 5K/10K/half long run: cap miles and time.
+            cap_miles, cap_minutes = ROAD_LONG_RUN_CAP[goal_distance]
+            road_cap = _round_half(min(cap_miles, cap_minutes * 60 / easy_pace_seconds))
+            long_cap = min(long_cap, road_cap) if long_cap is not None else road_cap
         if (goal_distance in {'half', 'marathon'} and longest_long > 0
                 and weeks_before_taper(wk_phase, goal_distance) == 1):
             # The longest run comes three weeks out; the last pre-taper week repeats, never extends, it.
@@ -403,6 +424,18 @@ def generate_plan(
             race_pace = max([race_pace_miles(d) for d in week_days if d['type'] == 'long_run'], default=0)
             load.reasons.append(f'Week {wk_num} adds {race_pace:g} mi at race pace in the long run: holding '
                                 f'{held:g} mi/week that week, then building again.')
+        if wk in prorated:
+            # Later weeks grow from what this week actually prescribes (or the baseline),
+            # not from the full week it would have been.
+            ramp_from = max(prorated[wk], current_weekly_mileage, load.training_level or 0, load.planning_anchor or 0)
+            for later in range(wk + 1, num_weeks):
+                load.weekly_budgets[later] = min(load.weekly_budgets[later],
+                                                 round(ramp_from * (1 + load.rate) ** (later - wk), 1))
+        rest_notes = apply_post_race_rest(week_days, race_date, goal_distance)
+        if rest_notes:
+            notes.extend(rest_notes)
+            wk_target = round(min(wk_target, sum(d['distance_miles'] for d in week_days)), 1)
+            load.weekly_budgets[wk] = wk_target
         fit_notes.extend(notes)
         recent_race_pace = max(recent_race_pace, race_pace)
         longest_long = max([longest_long] + [d['distance_miles'] for d in week_days if d['type'] == 'long_run'])
