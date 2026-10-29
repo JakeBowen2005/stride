@@ -19,6 +19,25 @@ import app.models  # noqa: F401 — registers all models so create_all picks the
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("stride")
 
+
+def _init_error_tracking() -> bool:
+    """Send unhandled errors to Sentry when SENTRY_DSN is set; otherwise import nothing.
+
+    No athlete data leaves with an error: no PII, request bodies (run comments) or local
+    variables (which can hold keys), and no performance tracing.
+    """
+    import os
+    dsn = os.environ.get("SENTRY_DSN", "").strip()
+    if not dsn:
+        return False
+    import sentry_sdk
+    sentry_sdk.init(dsn=dsn, send_default_pii=False, max_request_body_size="never", include_local_variables=False,
+                    traces_sample_rate=0, environment=os.environ.get("STRIDE_ENV") or ("render" if os.environ.get("RENDER") else "local"))
+    return True
+
+
+_init_error_tracking()
+
 # Protect existing data BEFORE schema migration or stored-data reclassification,
 # including direct uvicorn/local startup. Tests point settings at disposable files.
 def _protect_existing_database():
