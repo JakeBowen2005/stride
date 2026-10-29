@@ -424,7 +424,7 @@ def _seconds_to_pace(seconds_per_unit: float) -> str:
 
 class GoalDecision(BaseModel):
     goal_id: int
-    choice: Literal['keep', 'completion', 'later_race', 'shorter']
+    choice: Literal['completion', 'later_race', 'shorter']
     race_date: date | None = None
     race_distance: str | None = None
 
@@ -439,16 +439,6 @@ def decide_goal(user_id: int, data: GoalDecision, db: Session = Depends(get_db))
     if goal.goal_type != 'race':
         raise HTTPException(422, 'Choose a race goal first.')
     before = {'race_date': goal.race_date, 'distance': goal.race_distance, 'target_time': goal.target_time_seconds}
-    if data.choice == 'keep':
-        # Only answers the falling-behind question; a required volume decision can't be waved off.
-        from app.api.plans import falling_behind_decision
-        if not falling_behind_decision(user_id, goal, db):
-            raise HTTPException(422, 'Choose how to change the goal.')
-        previous = json.loads(goal.decision) if goal.decision else None
-        goal.decision = json.dumps({'choice': 'keep', 'at': athlete_today().isoformat(), 'before': before, 'previous': previous})
-        db.commit()
-        return {'outlook': _outlook(user_id, None, db),
-                'message': 'Keeping your goal. Blocks stay sized to what you complete and grow again as you catch up.'}
     if data.choice == 'completion':
         goal.intent, goal.target_time_seconds = 'completion', None
     elif data.choice == 'later_race':

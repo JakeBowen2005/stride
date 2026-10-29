@@ -527,7 +527,7 @@ export default function PlanPage() {
       {(plan.review || plan.outlook) && (
         <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
           {plan.review && <BlockReviewPanel review={plan.review} />}
-          {plan.outlook && <GoalRoute key={plan.outlook.decision?.key ?? "none"} outlook={plan.outlook} />}
+          {plan.outlook && <GoalRoute outlook={plan.outlook} />}
         </div>
       )}
       {/* Reference panels under the coach. */}

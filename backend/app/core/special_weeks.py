@@ -233,45 +233,22 @@ def _developmental_race_week(start, phase, distance, target_time, budget, rest_i
 
 # ── Ultra long runs, back-to-backs, hills ──────────────────────
 
-DRESS_REHEARSAL_WEEKS_BEFORE_TAPER = 2
-
 def ultra_long_run(
     day_date: date, distance: str, target_mileage: float, phase: WeekPhase, paces: dict, terrain: str | None,
-    before_taper: int | None = None,
 ) -> dict:
-    """Time-on-feet long run with fueling target.
-
-    Peak weeks vary instead of repeating one session: two weeks before the taper is the
-    dress rehearsal (the longest run, race kit and fueling, no back-to-back day); other
-    back-to-back peak weeks rehearse the terrain; the rest run the race-effort middle third.
-    """
+    """Time-on-feet long run with fueling target."""
     trail = terrain in ("trail", "mountain")
     pace = paces["easy_pace_high"] * (1.12 if trail else 1.0)  # trail miles are slower
     miles = target_mileage * ULTRA_LONG_RUN_SHARE.get(distance, 0.33)
     cap = ULTRA_LONG_RUN_CAP_MIN.get(distance, 300)
     if phase.phase in ("taper", "race_week"):
         cap *= 0.6
-    rehearsal = phase.phase == "peak" and before_taper == DRESS_REHEARSAL_WEEKS_BEFORE_TAPER
-    terrain_run = phase.phase == "peak" and phase.back_to_back and not rehearsal
     minutes = min(miles * pace / 60, cap)
-    if rehearsal:
-        minutes = min(cap, minutes * 1.15)
-    elif terrain_run:
-        minutes *= 0.9
     minutes = max(minutes, 75)
     miles = _round_half(minutes * 60 / pace)
 
     where = "on trail" if trail else "on road/flat"
-    if rehearsal:
-        parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi): your dress rehearsal. Race kit, race-day food and "
-                 "drink at your race fueling rate, and race-day pacing from the first step (conversational for an ultra)."]
-        if distance in ("100k", "100mi"):
-            parts.append("Start before dawn or finish after dark with your headlamp: night miles are a race skill.")
-    elif terrain_run:
-        parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi), easy effort on terrain like the race's: "
-                 + ("power-hike the steep climbs and run the descents smooth and controlled." if trail
-                    else "steady and relaxed, practising race fueling and pacing restraint.")]
-    elif phase.phase == "peak":
+    if phase.phase == "peak":
         parts = [f"{_fmt_duration(minutes)} {where} (~{miles:g}mi): easy conversational effort for the first and last thirds, "
                  "goal race effort for the middle third on race-like terrain."]
     else:
@@ -280,11 +257,10 @@ def ultra_long_run(
         parts.append("Power-hike grades steeper than ~15% — practice it, it's a race skill.")
     if phase.fueling_g_per_hr:
         parts.append(f"Fuel {phase.fueling_g_per_hr}g carbs/hr + 300-600mg sodium/hr with race-day products.")
-    title = ("Dress-Rehearsal Long Run" if rehearsal else "Terrain Long Run" if terrain_run
-             else "Race-Effort Long Run" if phase.phase == "peak" else "Ultra Long Run")
+    title = "Ultra Long Run" if phase.phase != "peak" else "Race-Effort Long Run"
     day = _day(day_date, "long_run", title, " ".join(parts),
                "Builds durability and time on feet, and trains the gut to take in fuel while running.", miles)
-    if phase.phase == "peak" and not (rehearsal or terrain_run):
+    if phase.phase == "peak":
         # The race-effort middle third as numbers (effort-based, so distance is what's checked).
         from app.core.workout_data import long_run_prescription
         third = _round_half(miles / 3)

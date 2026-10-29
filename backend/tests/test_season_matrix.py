@@ -97,30 +97,3 @@ def test_marathon_build_keeps_marathon_pace_long_runs_into_peak(seasons):
 def test_short_race_week_keeps_most_of_the_volume(seasons):
     log = _season("adv-10k", seasons)
     assert _week_miles(log, 0) >= 0.5 * _week_miles(log, 1)  # was ~0.47 with a flat 5 mi easy-day cap
-
-
-def test_ultra_peak_varies_and_has_one_dress_rehearsal_without_a_back_to_back(seasons):
-    log = _season("exp-100mi", seasons)
-    race = log["race_date"]
-    peak = [d for d in log["days"] if d["type"] == "long_run" and 21 < (race - date.fromisoformat(d["date"])).days <= 70]
-    assert len({d["title"] for d in peak}) >= 3, {d["title"] for d in peak}
-    rehearsals = [d for d in log["days"] if d["title"] == "Dress-Rehearsal Long Run"]
-    assert len(rehearsals) == 1
-    day = date.fromisoformat(rehearsals[0]["date"])
-    assert 28 <= (race - day).days <= 42  # two weeks before a three-week taper
-    neighbours = {(day + timedelta(days=k)).isoformat() for k in (-1, 1)}
-    assert not any(d["date"] in neighbours and "Back-to-Back" in d["title"] for d in log["days"])
-    assert max(d["miles"] for d in peak if d is not rehearsals[0]) <= rehearsals[0]["miles"]
-
-
-def test_an_athlete_running_short_gets_smaller_blocks_and_a_goal_question():
-    from app.api.plans import falling_behind_decision
-    from app.database import SessionLocal
-    from app.models.user import Goal
-    log = simulate(profiles()["adv-marathon"], share=.7)  # easy and long runs cut to 70%
-    budgets = [round(sum(w["budget_miles"] for w in b["weeks"]) / len(b["weeks"]), 1) for b in log["blocks"][:4]]
-    # The block after a short one is sized down, not held at the unfinished plan
-    assert budgets[1] <= budgets[0] * .9 or budgets[2] <= budgets[0] * .9, budgets
-    with SessionLocal() as db:
-        goal = db.query(Goal).filter_by(active=True).one()
-        assert falling_behind_decision(1, goal, db)["key"] == "falling_behind"

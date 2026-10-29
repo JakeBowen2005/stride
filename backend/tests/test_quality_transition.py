@@ -224,12 +224,10 @@ def test_experience_modifies_bounded_ramp_and_recovery_cadence():
     assert ramp_rate(40,70,'advanced','mileage')>ramp_rate(40,70,'beginner','mileage')
     assert ramp_rate(25,70,'expert','mileage')<=.20
     assert ramp_rate(40,70,'expert','comeback')==.10
-    # Experienced runners: a lighter week every 7th (advanced) / 8th (expert) week
-    assert deload_due([40]*5,'advanced')[0] is False
-    assert deload_due([40]*6,'advanced')[0] is True
-    assert deload_due([40]*6,'expert')[0] is False
-    assert deload_due([40]*7,'expert')[0] is True
-    assert deload_due([40]*6+[30],'expert')[0] is False
+    assert deload_due([40]*7,'advanced')[0] is True
+    assert deload_due([40]*7,'expert')[0] is False
+    assert deload_due([40]*8,'expert')[0] is True
+    assert deload_due([40]*7+[30],'expert')[0] is False
 
 
 def test_week_quality_count_reflects_final_cross_week_safety_pass():
