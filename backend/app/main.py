@@ -30,9 +30,17 @@ def _init_error_tracking() -> bool:
     dsn = os.environ.get("SENTRY_DSN", "").strip()
     if not dsn:
         return False
-    import sentry_sdk
-    sentry_sdk.init(dsn=dsn, send_default_pii=False, max_request_body_size="never", include_local_variables=False,
-                    traces_sample_rate=0, environment=os.environ.get("STRIDE_ENV") or ("render" if os.environ.get("RENDER") else "local"))
+    try:
+        import sentry_sdk
+        # Auto-enabled framework integrations are off: sentry-sdk's Starlette integration
+        # needs jinja2 with Starlette 1.0. Unhandled request errors still arrive through the
+        # logging integration (uvicorn logs them at ERROR).
+        sentry_sdk.init(dsn=dsn, send_default_pii=False, max_request_body_size="never", include_local_variables=False,
+                        traces_sample_rate=0, auto_enabling_integrations=False,
+                        environment=os.environ.get("STRIDE_ENV") or ("render" if os.environ.get("RENDER") else "local"))
+    except Exception as exc:  # error tracking must never stop the app from starting
+        logger.warning("Error tracking disabled (%s)", type(exc).__name__)
+        return False
     return True
 
 

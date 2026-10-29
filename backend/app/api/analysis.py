@@ -371,7 +371,8 @@ def operations(user_id: int, db: Session = Depends(get_db)):
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
                        'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
                        'last_error_type':info.get('last_error_type'), 'storage':info.get('storage')}, 'app': {'policy_version':VERSION},
-            'beta_readiness': beta_readiness()}
+            # Server configuration is the owner's concern; other athletes don't see it.
+            'beta_readiness': beta_readiness() if user_id == settings.default_user_id else None}
 
 
 def beta_readiness() -> list[dict]:
