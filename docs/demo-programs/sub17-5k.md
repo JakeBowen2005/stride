@@ -9,10 +9,10 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 
 ## How each block was decided
 
-- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (49 → 51 mi/week). Why: Ran 93 of 93 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (51 → 53 mi/week). Why: Ran 88 of 88 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 3** (Nov 16–Nov 29): **build** → hold. Deload suppressed: the taper starts within 2 weeks and is the recovery. Holding 51 mi/week until then instead of building. Why: Ran 104 of 104 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Building up to 10% over the block (54 → 57 mi/week). Why: Ran 102 of 102 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (49 → 51 mi/week). Why: Ran 93 of 93 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (51 → 53 mi/week). Why: Ran 88 of 88 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 3** (Nov 16–Nov 29): **build** → hold. Deload suppressed: the taper starts within 2 weeks and is the recovery. Holding 51 mi/week until then instead of building. Why: Ran 104 of 104 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 4** (Nov 30–Dec 13): **build** → build. Building up to 10% over the block (54 → 57 mi/week). Why: Ran 102 of 102 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
 

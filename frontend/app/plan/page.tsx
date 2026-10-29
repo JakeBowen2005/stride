@@ -175,17 +175,22 @@ const MODE_LABEL: Record<string, string> = {
   deload: "Deload included", start: "Getting started",
 };
 
-/** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026. */
-function pacingRows(g: Record<string, string>): [string, string, string][] {
-  const rows: [string, string, string | undefined][] = [
-    ["Easy", "conversational", g.easy],
-    ["Steady", "long-run finishes", g.steady],
-    ["Tempo", "continuous", g.tempo ?? g.current_tempo],
-    ["Threshold reps", "e.g. 2x10min", g.threshold_reps ?? g.current_threshold],
-    ["Intervals", "800m-mile reps", g.intervals ?? g.current_interval],
-    ["Goal race", "target", g.goal_race_pace],
+/** Rows for the pacing guide; falls back to the old keys on plans generated before Oct 2026.
+ * Only the zones this block actually uses (every zone on legacy plans with no prescriptions). */
+function pacingRows(g: Record<string, string>, weeks: ApiWeek[]): [string, string, string][] {
+  const days = weeks.flatMap((w) => w.days);
+  const categories = new Set(days.map((d) => d.prescription?.category).filter(Boolean));
+  const legacy = categories.size === 0;
+  const steady = legacy || categories.has("long_run") || days.some((d) => /steady|progress/i.test(d.title));
+  const rows: [string, string, string | undefined, boolean][] = [
+    ["Easy", "conversational", g.easy, true],
+    ["Steady", "long-run finishes", g.steady, steady],
+    ["Tempo", "continuous", g.tempo ?? g.current_tempo, legacy || categories.has("threshold")],
+    ["Threshold reps", "e.g. 2x10min", g.threshold_reps ?? g.current_threshold, legacy || categories.has("threshold")],
+    ["Intervals", "800m-mile reps", g.intervals ?? g.current_interval, legacy || categories.has("intervals")],
+    ["Goal race", "target", g.goal_race_pace, true],
   ];
-  return rows.filter((r): r is [string, string, string] => !!r[2]);
+  return rows.filter((r) => !!r[2] && r[3]).map(([label, hint, value]) => [label, hint, value as string]);
 }
 
 // Desktop shows the selected day in a side sheet; phones keep it inline under the calendar.
@@ -396,6 +401,43 @@ export default function PlanPage() {
   const builtFor = plan.athlete.schedule_preferences;
   const preferenceMismatch = !!currentPreferences && !!builtFor && scheduleChanged(builtFor, currentPreferences);
 
+  // A week that began before the plan only prescribes its remaining days: no % comparison.
+  const firstWeekPartial = !!plan.weeks[0]?.days.some((d) => d.prescribed === false);
+  const stats = (
+    <>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {weekTotals.slice(0, 2).map((t, i) => (
+          <div key={i} className="glass rounded-[22px]"><StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
+            sub={i === 1 && weekTotals[0].planned > 0 && !firstWeekPartial ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} /></div>
+        ))}
+        <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
+        {/* The goal tile is the one solid accent, as in the wireframes */}
+        <div className="rounded-[22px] border border-white/30 bg-primary text-primary-foreground shadow-[var(--glass-shadow)] [&_.stat-label]:text-primary-foreground/85 [&_.text-muted-foreground]:text-primary-foreground/85">
+          <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
+            sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} />
+        </div>
+      </div>
+
+      {plan.load?.shadow_hours && (
+        <details className="glass rounded-[22px] px-4 py-3 text-sm">
+          <summary className="cursor-pointer">
+            <span className="stat-label">Running time</span>{" "}
+            <span className="text-muted-foreground">
+              {plan.load.shadow_hours.weeks.map((w) => `W${w.week_number} ≈ ${hoursLabel(w.planned_minutes * 60)}`).join(" · ")}
+              {" · "}recent {hoursLabel(plan.load.shadow_hours.hours_baseline * 3600)}/week
+            </span>
+          </summary>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>Only you (the owner) see this. Time check in shadow mode: Stride records where a weekly hours budget or the longest-run guard would limit this block, but doesn&apos;t apply them yet.</p>
+            {plan.load.shadow_hours.notes.length ? <ul className="list-disc pl-4">{plan.load.shadow_hours.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+              : <p>Nothing in this block would be limited.</p>}
+            {plan.load.shadow_hours.sustainable_hours > 0 && <p>Highest weekly time you&apos;ve held for 6 straight weeks (last 2 years): {hoursLabel(plan.load.shadow_hours.sustainable_hours * 3600)}.</p>}
+          </div>
+        </details>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
@@ -453,36 +495,7 @@ export default function PlanPage() {
         </div>
       </Panel>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {weekTotals.slice(0, 2).map((t, i) => (
-          <div key={i} className="glass rounded-[22px]"><StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
-            sub={i === 1 && weekTotals[0].planned > 0 ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} /></div>
-        ))}
-        <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
-        {/* The goal tile is the one solid accent, as in the wireframes */}
-        <div className="rounded-[22px] border border-white/30 bg-primary text-primary-foreground shadow-[var(--glass-shadow)] [&_.stat-label]:text-primary-foreground/85 [&_.text-muted-foreground]:text-primary-foreground/85">
-          <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
-            sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} />
-        </div>
-      </div>
-
-      {plan.load?.shadow_hours && (
-        <details className="glass rounded-[22px] px-4 py-3 text-sm">
-          <summary className="cursor-pointer">
-            <span className="stat-label">Running time</span>{" "}
-            <span className="text-muted-foreground">
-              {plan.load.shadow_hours.weeks.map((w) => `W${w.week_number} ≈ ${hoursLabel(w.planned_minutes * 60)}`).join(" · ")}
-              {" · "}recent {hoursLabel(plan.load.shadow_hours.hours_baseline * 3600)}/week
-            </span>
-          </summary>
-          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-            <p>Only you (the owner) see this. Time check in shadow mode: Stride records where a weekly hours budget or the longest-run guard would limit this block, but doesn&apos;t apply them yet.</p>
-            {plan.load.shadow_hours.notes.length ? <ul className="list-disc pl-4">{plan.load.shadow_hours.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-              : <p>Nothing in this block would be limited.</p>}
-            {plan.load.shadow_hours.sustainable_hours > 0 && <p>Highest weekly time you&apos;ve held for 6 straight weeks (last 2 years): {hoursLabel(plan.load.shadow_hours.sustainable_hours * 3600)}.</p>}
-          </div>
-        </details>
-      )}
+      {isDesktop && stats}
 
       <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
         <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />
@@ -493,6 +506,9 @@ export default function PlanPage() {
           <Panel label={`Selected · ${formatDateShort(selected.date)}`} accent="var(--type-easy)" bodyClassName="p-2">{inspector}</Panel>
         </div>
       )}
+
+      {/* Phones see the week first; block numbers follow it. */}
+      {!isDesktop && stats}
 
       <div id="plan-coach" className="panel min-w-0 scroll-mt-24">
         <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
@@ -516,7 +532,7 @@ export default function PlanPage() {
       )}
       {/* Reference panels under the coach. */}
       <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">
-        {changes.length === 0 && !plan.assessment?.reasons?.length ? (
+        {changes.length === 0 && (plan.review || !plan.assessment?.reasons?.length) ? (
           <Panel label="Change log" meta="No changes yet" bodyClassName="hidden">{null}</Panel>
         ) : <Panel label="Change log" meta={changes.length ? `${changes.length}` : undefined} bodyClassName="px-3 py-2">
           <ul className="space-y-1.5 text-sm">
@@ -529,11 +545,12 @@ export default function PlanPage() {
               </li>
             ))}
           </ul>
-          {plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
+          {/* The block review panel already lists these reasons; repeat them only without it. */}
+          {!plan.review && plan.assessment?.reasons?.map((reason, i) => <p key={reason} className={cn("text-xs text-muted-foreground", (changes.length > 0 || i > 0) && "mt-2 border-t pt-2")}>{reason}</p>)}
         </Panel>}
         <Panel label="Pacing guide" meta={`per ${unit}`} bodyClassName="px-3 py-2">
           <div className="space-y-1 text-[13px]">
-            {pacingRows(plan.pacing_guide).map(([label, hint, value]) => (
+            {pacingRows(plan.pacing_guide, plan.weeks).map(([label, hint, value]) => (
               <div key={label} className="glass-tile flex items-baseline justify-between gap-3 rounded-xl px-3 py-2">
                 <span className="text-muted-foreground">{label} <span className="text-xs">· {hint}</span></span>
                 <span className="num shrink-0 font-bold">{paceInUnits(value, units)}/{unit}</span>

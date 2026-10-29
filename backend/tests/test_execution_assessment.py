@@ -77,7 +77,7 @@ def test_easy_mileage_cannot_claim_completed_quality():
     assert result.completion == 1 and result.quality_done == 0
     assert result.quality_unknown == 2 and result.decision == 'hold'
     assert result.long_runs_done == 1
-    assert any('mileage alone' in reason for reason in result.reasons)
+    assert any('had no laps to check' in reason for reason in result.reasons)
 
 
 def test_complete_quality_without_feel_is_unknown_recovery_not_bad_feel():
