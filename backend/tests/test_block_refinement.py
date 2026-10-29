@@ -54,8 +54,11 @@ def test_calendar_history_and_profile_experience_feed_preview():
     data = r.json()
     assert data['athlete']['experience_level'] == 'advanced'
     assert not data['is_deload']
-    # 2 weeks Mon-Wed, 3 weeks Thu-Sun (calculate_plan_params)
-    assert data['load']['weekly_budgets'] == [40] * calculate_plan_params()['num_weeks']
+    # 2 weeks Mon-Wed, 3 weeks Thu-Sun (calculate_plan_params). A midweek start with no
+    # runs yet this week prescribes only the remaining days at their normal size.
+    budgets = data['load']['weekly_budgets']
+    assert budgets[1:] == [40] * (calculate_plan_params()['num_weeks'] - 1)
+    assert budgets[0] == 40 if date.today().weekday() == 0 else budgets[0] <= 40
     assert data['violations'] == []
 
 

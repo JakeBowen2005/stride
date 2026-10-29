@@ -10,6 +10,7 @@ import math
 
 from app.core.pacing import format_pace, pace_range
 from app.core.periodization import (
+    POST_RACE_REST_DAYS,
     RACE_DISTANCE_MILES,
     ULTRA_LONG_RUN_CAP_MIN,
     ULTRA_LONG_RUN_SHARE,
@@ -149,6 +150,40 @@ def build_race_week(
             days.append(_day(d, "easy", "Easy Run", f"Easy and short. ({easy_range}/mi or slower)",
                              "Stay loose while the taper does its work.", per_easy))
     return days
+
+
+def apply_post_race_rest(days: list[dict], race_date: date | None, distance: str | None) -> list[str]:
+    """Rest after the race, and no long run in the first week after it. Mutates ``days``.
+
+    Days after the race are fixed by the race, not by the weekly budget, so a Sunday
+    race (the last day of race week) still gets its days off in the following week.
+    Only prescribed days change; the week total can only go down.
+    """
+    if not race_date or distance not in POST_RACE_REST_DAYS:
+        return []
+    rest_days = POST_RACE_REST_DAYS[distance]
+    notes = []
+    for d in days:
+        if not d.get("prescribed", True) or d["type"] == "race":
+            continue
+        after = (date.fromisoformat(d["date"]) - race_date).days
+        if 1 <= after <= rest_days and d["distance_miles"] > 0:
+            d.update(_rest(date.fromisoformat(d["date"]), "Post-race rest. Walk, eat, sleep. No running yet."))
+            d["prescribed"] = True
+            d.pop("prescription", None)
+            d.pop("b2b", None)
+            if not notes:
+                notes.append(f"No running for {rest_days} day{'s' if rest_days > 1 else ''} after the race: "
+                             "recovery comes first.")
+        elif rest_days < after <= 7 + rest_days and d["type"] in ("long_run", "workout"):
+            easy = [x["distance_miles"] for x in days if x["type"] == "easy" and x["distance_miles"] > 0]
+            miles = min(d["distance_miles"], max(easy) if easy else 3.0)
+            d.update({"type": "easy", "title": "Easy Run", "distance_miles": miles,
+                      "description": "Short and easy; no long run in the first week back from the race.",
+                      "purpose": "Easing back in after the race.", "warmup": None, "cooldown": None})
+            d.pop("prescription", None)
+            d.pop("b2b", None)
+    return notes
 
 
 def _developmental_race_week(start, phase, distance, target_time, budget, rest_indices, paces, state, days_per_week, include_workouts):

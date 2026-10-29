@@ -242,7 +242,12 @@ def _readiness(user_id: int, data: GoalData, db: Session) -> dict:
         longest = (analysis.get("long_runs") or {}).get("longest_run_miles") or 0.0
         current = analysis["current_fitness"]["weekly_mileage_4w_avg"]
     race_date = date.fromisoformat(data.race_date) if data.race_date else None
-    return check_readiness(data.race_distance, race_date, longest, current)
+    from app.models.user import User
+    user = db.get(User, user_id)
+    if not current and user and user.current_weekly_mileage:
+        current = user.current_weekly_mileage  # onboarding: reported until runs sync (no long-run history yet)
+    return check_readiness(data.race_distance, race_date, longest, current,
+                           experience=(analysis.get("overview") or {}).get("experience_level") or (user.experience_level if user else None))
 
 
 def _describe_goal(data: GoalData) -> str:

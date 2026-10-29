@@ -49,6 +49,9 @@ RECOVERY_WEEKS = {"5k": 1, "10k": 1, "half": 1, "marathon": 2, "50k": 2, "50mi":
 TAPER_VOLUME = {1: [], 2: [0.75], 3: [0.8, 0.65]}
 RACE_WEEK_VOLUME = 0.55  # race week, excluding the race itself
 RECOVERY_VOLUME = [0.45, 0.6, 0.7, 0.8]  # post-race week 1, 2, 3, 4
+# Days with no running after the race, whatever weekday it falls on; the first
+# post-race week also has no long run (its "long" day is a short easy run).
+POST_RACE_REST_DAYS = {"5k": 1, "10k": 2, "half": 3, "marathon": 5, "50k": 7, "50mi": 10, "100k": 10, "100mi": 14}
 
 # Ultra fueling target (g carbs/hr) practiced on long runs, by phase
 FUELING_G_PER_HR = {"base": 45, "build": 60, "peak": 75, "taper": 75}
@@ -218,6 +221,7 @@ def check_readiness(
     longest_run_miles: float,
     current_weekly_miles: float,
     today: date | None = None,
+    experience: str | None = None,
 ) -> dict:
     """Is this race goal realistic and safe? Fail safe: suggest a stepping stone instead.
 
@@ -260,5 +264,24 @@ def check_readiness(
         min_weeks = {"5k": 4, "10k": 6, "half": 8, "marathon": 12}.get(distance, 4)
         if weeks < min_weeks:
             reasons.append(f"Only {weeks:.0f} weeks to race — tight for a full {distance} build; the plan will be mostly taper.")
+        elif distance in ("half", "marathon"):
+            # The same safe-ramp projection the plan's route uses: weeks of growth to the
+            # goal's long run and volume, against the weeks left before taper.
+            from app.core.outlook import LONG_RUN_TARGETS, TAPER_WEEKS, VOLUME_TARGETS, _weeks_to_grow
+            band = 1 if experience in ("advanced", "expert") else 0
+            usable = weeks - TAPER_WEEKS[distance]
+            deload_every = 6 if band else 4
+            label = {"half": "half marathon", "marathon": "marathon"}[distance]
+            long_target, mpw_target = LONG_RUN_TARGETS[distance][band], VOLUME_TARGETS[distance][band]
+            if longest_run_miles > 0 and _weeks_to_grow(longest_run_miles, long_target, .08, deload_every) > usable:
+                reasons.append(f"Longest run so far is {longest_run_miles:.1f} mi. Building safely to the "
+                               f"~{long_target:g} mi a {label} needs takes longer than the {max(0, round(usable))} "
+                               f"weeks before taper.")
+            if _weeks_to_grow(current_weekly_miles, mpw_target, .08, deload_every) > usable:
+                reasons.append(f"Current volume is {current_weekly_miles:.0f} mpw. Building safely to the "
+                               f"~{mpw_target:g} mpw a {label} needs takes longer than the weeks before taper.")
+            if reasons:
+                suggestion = ("Pick a race further out, or a shorter distance first (a half before a marathon). "
+                              "You can keep this date as a completion goal; Stride won't cram the missing miles.")
 
     return {"ready": not reasons, "reasons": reasons, "suggestion": suggestion}

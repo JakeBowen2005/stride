@@ -176,7 +176,9 @@ def plan_invariant_violations(
     # 4. Taper: volume never rises from the first taper week through race week.
     for a, b in zip(weeks, weeks[1:]):
         if _phase(b) in TAPERING and _phase(a) in TAPERING | PRE_TAPER:
-            if b["budget_miles"] > a["budget_miles"] + MILES_TOLERANCE:
+            # A week that began before the plan carries a prorated budget (completed days +
+            # the remaining days at normal size), not a full week's volume to taper from.
+            if _fully_prescribed(a) and b["budget_miles"] > a["budget_miles"] + MILES_TOLERANCE:
                 problems.append(f"taper: week {b['week_number']} ({_phase(b)}) budget {b['budget_miles']} "
                                 f"rises over week {a['week_number']} ({_phase(a)}) {a['budget_miles']}")
             if _fully_prescribed(a) and _fully_prescribed(b) and _training_miles(b) > _training_miles(a) + MILES_TOLERANCE:
