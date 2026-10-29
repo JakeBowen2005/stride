@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE, validAuthSession } from "@/lib/auth";
 
+// Signed-out visitors to the home URL see the public landing page; the address stays "/".
+const landing = (request: NextRequest) =>
+  request.nextUrl.pathname === "/" ? NextResponse.rewrite(new URL("/welcome", request.url)) : null;
+
 // Password gate for the whole app (pages AND the /api proxy to the backend), because
 // start.sh serves on the LAN and the data is personal health data. Disabled when
 // STRIDE_PASSWORD is unset (e.g. local dev on localhost only) — except on Render
@@ -11,7 +15,7 @@ export function proxy(request: NextRequest) {
     // athlete ownership on every API request, including numeric URLs.
     if (request.cookies.get("stride_account")?.value) return NextResponse.next();
     if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({detail:"Not signed in"},{status:401});
-    return NextResponse.redirect(new URL("/login",request.url));
+    return landing(request) ?? NextResponse.redirect(new URL("/login",request.url));
   }
   const password = process.env.STRIDE_PASSWORD;
   if (!password) {
@@ -27,13 +31,15 @@ export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ detail: "Not signed in" }, { status: 401 });
   }
+  const home = landing(request);
+  if (home) return home;
   const login = new URL("/login", request.url);
   login.searchParams.set("next", request.nextUrl.pathname);
   return NextResponse.redirect(login);
 }
 
 export const config = {
-  // Everything except the login flow, the public privacy policy and about page, the Render
+  // Everything except the login flow, the public landing, privacy policy and about pages, the Render
   // health check, Next internals and install assets (icon and manifest load before sign-in).
-  matcher: ["/((?!login|auth|privacy|terms|about|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
+  matcher: ["/((?!login|auth|welcome|privacy|terms|about|healthz|livez|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|pwa-icon).*)"],
 };

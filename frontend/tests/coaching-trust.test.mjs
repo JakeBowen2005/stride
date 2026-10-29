@@ -72,7 +72,7 @@ test('sign-in route issues expiring secure sessions, rejects external redirects 
     constructor(body, init) { super(body, init); this.savedCookies = []; this.cookies = { set: (...args) => this.savedCookies.push(args) }; }
   }
   const limiter = load('../lib/login-limiter.ts');
-  const route = load('../app/auth/route.ts', {
+  const route = load('../app/(app)/auth/route.ts', {
     'next/server': { NextResponse }, '@/lib/auth': auth, '@/lib/login-limiter': limiter,
   }, { process: { env: { STRIDE_PASSWORD: 'test-password' } } });
   const request = (password, next, ip = 'first') => ({ headers: new Headers({ 'x-forwarded-for': ip, 'x-forwarded-proto': 'https' }), formData: async () => new Map([['password', password], ['next', next]]) });
@@ -93,7 +93,7 @@ test('sign-out expires only the Stride session cookie and redirects to login', a
   class NextResponse extends Response {
     constructor(body, init) { super(body, init); this.savedCookies = []; this.cookies = { set: (...args) => this.savedCookies.push(args) }; }
   }
-  const route = load('../app/auth/logout/route.ts', { 'next/server': { NextResponse }, '@/lib/auth': auth });
+  const route = load('../app/(app)/auth/logout/route.ts', { 'next/server': { NextResponse }, '@/lib/auth': auth });
   const response = await route.POST();
   assert.equal(response.headers.get('location'), '/login');
   assert.equal(response.savedCookies[0][0], auth.AUTH_COOKIE);
