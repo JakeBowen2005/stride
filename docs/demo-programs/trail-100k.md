@@ -9,11 +9,11 @@ Synthetic experienced trail athlete in a 100K build, nine weeks out, with climbi
 
 ## How each block was decided
 
-- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 12% over the block (64 → 68 mi/week). Why: Ran 120 of 120 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Baseline 60.6 mi/week (4-week average of completed runs). Why: Ran 110 of 110 planned miles (100%). Verified 2 of 2 prescribed quality sessions from execution evidence. Completed the distance of 3 of 3 long runs; this is endurance adherence, not rep evidence.
-- **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 128 of 128 planned miles (100%). Verified 5 of 5 prescribed quality sessions from execution evidence. Completed the distance of 3 of 3 long runs; this is endurance adherence, not rep evidence.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 63.5 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 110 of 110 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 3 of 3 long runs; this is endurance adherence, not rep evidence.
-- **Block 5** (Dec 14–Dec 27): **build** → build. Training level 65.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 115 of 115 planned miles (100%). Verified 5 of 5 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 12% over the block (64 → 68 mi/week). Why: Ran 120 of 120 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Baseline 60.6 mi/week (4-week average of completed runs). Why: Ran 110 of 110 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
+- **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 128 of 128 planned miles (100%). Hit 5 of 5 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
+- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 63.5 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 110 of 110 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
+- **Block 5** (Dec 14–Dec 27): **build** → build. Training level 65.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 115 of 115 planned miles (100%). Hit 5 of 5 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
 

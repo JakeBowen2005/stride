@@ -36,9 +36,9 @@ def expectations(weeks,easy=600):
             'planned_miles':round(sum(d['distance_miles'] for d in days),1),
             'completed_days':len(done),'ran_miles':round(sum(d['actual']['total_distance_miles'] for d in done),1),
             'priority_sessions':[_priority_session(d,by_date,easy) for d in priority],
-            'expectation':'Complete the scheduled frequency, keep easy days conversational, and execute the priority sessions at the prescribed effort.',
-            'advance_when':'Complete full primary doses with controlled effort and recover well. Progression follows demonstrated consistency; a reduced session does not earn a higher workout level.',
-            'hold_when':'Repeat the dose when execution is incomplete or recovery is uncertain. Missing laps or a missing rating call for clarification, not an invented failure.',
-            'reduce_when':'Repeated poor recovery, pain, or excessive effort warrants a lighter session and reassessment.',
+            'expectation':'Run the planned days, keep easy days conversational, and hit the key sessions at the prescribed effort.',
+            'advance_when':'Finish the key sessions in full, in control, and recover well. Consistency moves you up; a shortened session repeats the level.',
+            'hold_when':'A session is repeated when it was cut short or recovery is unclear. Missing laps or a missing rating just mean we ask, not that you failed.',
+            'reduce_when':'Repeated poor recovery, pain, or sessions that felt too hard mean a lighter session and a fresh look.',
             'next_step':'Your block review explains what was earned and whether the next change is volume, work duration, or pace.'})
     return result

@@ -517,7 +517,7 @@ export default function OnboardingPage() {
           ) : (
             <>
               <div className="glass-tile w-full max-w-sm space-y-2 p-4 text-sm">
-                <p className="font-medium">Garmin connection</p><p>Separate athlete connections await Business API approval. You can import original FIT files or continue without recorded history.</p>
+                <p className="font-medium">Garmin connection</p><p>Garmin sync for your account isn&apos;t available yet. You can upload FIT files exported from Garmin Connect, or continue without recorded history.</p>
                 <p className="text-muted-foreground">The owner connection is managed in Settings. No Garmin password is collected by Stride.</p>
               </div>
               <Button className="h-11 w-full max-w-sm" onClick={next}>

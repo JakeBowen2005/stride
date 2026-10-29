@@ -108,7 +108,7 @@ def _block_with_mp_long_run(mp_pace_run: float):
 def test_mp_long_run_run_on_target_counts_as_verified_quality():
     assessment = _block_with_mp_long_run(412)
     assert assessment.decision == "build", assessment.reasons
-    assert any("Verified 1 of 1" in r for r in assessment.reasons)
+    assert any("Hit 1 of 1 workouts" in r for r in assessment.reasons)
 
 
 def test_mp_long_run_run_far_too_slow_is_not_verified():

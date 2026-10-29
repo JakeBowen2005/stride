@@ -94,15 +94,15 @@ def assess_block(days: list[DayRecord]) -> BlockAssessment:
     )
     a.reasons.append(f"Ran {completed:.0f} of {planned:.0f} planned miles ({completion:.0%}).")
     if quality:
-        a.reasons.append(f"Verified {quality_done} of {len(quality)} prescribed quality sessions from execution evidence.")
+        a.reasons.append(f"Hit {quality_done} of {len(quality)} workouts as prescribed (checked against your laps).")
         if substituted:
-            a.reasons.append(f"{substituted} different quality session(s) logged separately; prescribed ladder progress is unproven.")
+            a.reasons.append(f"{substituted} workout(s) were a different session than planned: good training, but they don't move your workout level up.")
         if unknown:
-            a.reasons.append(f"{unknown} quality session(s) lack sufficient execution evidence; mileage alone does not prove the work.")
+            a.reasons.append(f"{unknown} workout(s) had no laps to check, so they don't count toward moving up yet.")
         if incomplete:
-            a.reasons.append(f"{incomplete} quality session(s) were incomplete, missed or not controlled.")
+            a.reasons.append(f"{incomplete} workout(s) were cut short, missed or run harder than prescribed.")
     if longs:
-        a.reasons.append(f"Completed the distance of {long_done} of {len(longs)} long runs; this is endurance adherence, not rep evidence.")
+        a.reasons.append(f"Ran {long_done} of {len(longs)} long runs in full.")
     if feels:
         a.reasons.append(f"Average feel {avg:.1f}/10 over {len(feels)} rated runs" + (f", {low} rated 4 or lower." if low else "."))
 

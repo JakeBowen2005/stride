@@ -108,7 +108,7 @@ export function GarminConnectionCard() {
           } catch (error) { setConnectionMessage(error instanceof Error ? error.message : "Could not reconnect Garmin."); }
           finally { setReconnecting(false); }
         }}>{reconnecting ? "Reconnecting…" : "Reconnect Garmin using server key"}</Button>}
-        {status?.business_pending && <p className="text-sm">Separate Garmin connections are awaiting Business API approval. Import your original FIT files below to build your history now.</p>}
+        {status?.business_pending && <p className="text-sm">Garmin sync for your account isn&apos;t available yet. Upload FIT files exported from Garmin Connect below to build your history now.</p>}
         {status && !status.api_key_present && !status.business_pending && (
           <div className="space-y-2 glass-tile rounded-xl p-3.5 text-sm">
             <p className="font-medium">Connect Garmin with a Personal API key.</p>

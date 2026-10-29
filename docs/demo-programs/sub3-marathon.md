@@ -9,9 +9,9 @@ Synthetic experienced marathoner in race shape, five weeks from race day.
 
 ## How each block was decided
 
-- **Block 1** (Oct 19–Nov 01): **build** → build. Week 2 adds 10 mi at race pace in the long run: holding 60.8 mi/week that week, then building again. Why: Ran 121 of 121 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (62 → 65 mi/week). Why: Ran 104 of 104 planned miles (100%). Verified 3 of 3 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
-- **Block 3** (Nov 16–Nov 29): **build** → build. Building up to 10% over the block (64 → 67 mi/week). Why: Ran 127 of 127 planned miles (100%). Verified 4 of 4 prescribed quality sessions from execution evidence. Completed the distance of 2 of 2 long runs; this is endurance adherence, not rep evidence.
+- **Block 1** (Oct 19–Nov 01): **build** → build. Week 2 adds 10 mi at race pace in the long run: holding 60.8 mi/week that week, then building again. Why: Ran 121 of 121 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (62 → 65 mi/week). Why: Ran 104 of 104 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 3** (Nov 16–Nov 29): **build** → build. Building up to 10% over the block (64 → 67 mi/week). Why: Ran 127 of 127 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
 

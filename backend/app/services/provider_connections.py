@@ -30,7 +30,7 @@ def connection_issue(user_id, db):
     if row and row.revoked_at:
         return 'Garmin was disconnected in Stride. Reconnect in Settings to resume syncing.'
     if user_id != settings.default_user_id:
-        return 'Separate Garmin accounts require Business API approval. Import FIT files in the meantime.'
+        return 'Garmin sync for your account isn\'t available yet. Meanwhile, upload FIT files exported from Garmin Connect in Settings.'
     if row and row.kind == 'garmin_personal' and row.ciphertext:
         if row.expires_at and row.expires_at <= datetime.now(timezone.utc).replace(tzinfo=None):
             return 'The saved Garmin credential has expired. Reconnect in Settings.'
