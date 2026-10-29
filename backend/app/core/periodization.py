@@ -48,6 +48,11 @@ RECOVERY_WEEKS = {"5k": 1, "10k": 1, "half": 1, "marathon": 2, "50k": 2, "50mi":
 # from the furthest-out taper week to the week before race week.
 TAPER_VOLUME = {1: [], 2: [0.75], 3: [0.8, 0.65]}
 RACE_WEEK_VOLUME = 0.55  # race week, excluding the race itself
+# Shorter races keep more of the week: a 5K is raced off near-normal volume, a
+# marathon or ultra off a deep cut.
+RACE_WEEK_VOLUME_BY_DISTANCE = {"5k": 0.7, "10k": 0.65, "half": 0.6}
+# Longest easy day in race week (miles): short races keep ordinary easy days.
+RACE_WEEK_MAX_EASY = {"5k": 8.0, "10k": 8.0, "half": 7.0}
 RECOVERY_VOLUME = [0.45, 0.6, 0.7, 0.8]  # post-race week 1, 2, 3, 4
 # Days with no running after the race, whatever weekday it falls on; the first
 # post-race week also has no long run (its "long" day is a short easy run).
@@ -122,7 +127,7 @@ def week_phase(
         return WeekPhase(
             phase="race_week",
             weeks_to_race=0,
-            volume_multiplier=RACE_WEEK_VOLUME,
+            volume_multiplier=RACE_WEEK_VOLUME_BY_DISTANCE.get(distance, RACE_WEEK_VOLUME),
             max_workouts=1,
             race_date=race_date,
             fueling_g_per_hr=FUELING_G_PER_HR["taper"] if is_ultra(distance) else None,

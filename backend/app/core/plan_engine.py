@@ -247,7 +247,10 @@ def generate_plan(
     adding_hard_session = quality.stage == 'dual' and (quality_evidence or {}).get('dual_weeks',0) < 2
     if adding_hard_session and (quality_evidence or {}).get('dual_weeks',0) < 2:
         # Change intensity distribution first; don't increase weekly volume too.
-        anchor = min(current_weekly_mileage, (completed_weeks or [current_weekly_mileage])[-1])
+        # Demonstrated volume is the training level (a deload week drags the 4-week
+        # average under it), but never more than was actually run in the last two weeks.
+        recent = (completed_weeks or [current_weekly_mileage])[-2:]
+        anchor = min(max(current_weekly_mileage, load.training_level or 0), max(recent))
         load.weekly_budgets = [min(b,anchor) for b in load.weekly_budgets]
         load.mode = 'hold'
         load.reasons.append('Introducing a second substantial session: hold demonstrated weekly volume while testing recovery.')
@@ -836,7 +839,10 @@ def _build_week(
         num_workouts = min(num_workouts,1)  # paired ultra long runs already add substantial stress
 
     long_wo = _pick_long_run(workout_lib, include_workouts, week_num, current_mileage, block_start)
-    if not (goal_distance in {'half','marathon'} and phase.phase in {'build','peak'} and quality_stage=='dual'):
+    # Race-pace long runs are the marathon's key session: any established quality stage
+    # (two substantial sessions, or one plus light support) keeps them in build and peak.
+    structured_stages = {'dual', 'support'} if goal_distance == 'marathon' else {'dual'}
+    if not (goal_distance in {'half','marathon'} and phase.phase in {'build','peak'} and quality_stage in structured_stages):
         long_wo = None
     elif goal_distance == 'marathon' and phase.phase == 'peak':
         before = weeks_before_taper(phase, goal_distance)

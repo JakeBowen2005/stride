@@ -24,7 +24,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 | 4 | Nov 09 | Peak | 53.5 | 15 | 3x2K at 5K Goal Pace, 3x11min Threshold |
 | 5 | Nov 16 | Peak | 50.5 | 14.5 | 4x1mi at 5K Goal Pace, 4x8min Threshold |
 | 6 | Nov 23 | Peak | 51.5 | 14.5 | 5x1K at 5K Goal Pace, 4x9min Threshold |
-| 7 | Nov 30 | Race Week | 30.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
+| 7 | Nov 30 | Race Week | 38.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
 
 ## Week by week
 
@@ -82,11 +82,11 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Sat Nov 28** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 29** · Rest
 
-### Week 7 · Nov 30–Dec 06 · Race Week · 30.1 mi
-- **Mon Nov 30** · Easy Run · 5 mi — Easy and short.
-- **Tue Dec 01** · Easy Run · 5 mi — Easy and short.
-- **Wed Dec 02** · Easy Run · 5 mi — Easy and short.
+### Week 7 · Nov 30–Dec 06 · Race Week · 38.1 mi
+- **Mon Nov 30** · Easy Run · 7 mi — Easy and short.
+- **Tue Dec 01** · Easy Run · 7 mi — Easy and short.
+- **Wed Dec 02** · Easy Run · 7 mi — Easy and short.
 - **Thu Dec 03** · Race-Week Sharpener: 4x400m · 5 mi — 4x400m at 5:26/mi (goal 5K pace) with 2min jog (warm up 2mi easy + 4 strides, cool down 1.5mi easy). *Why:* Keeps the legs sharp during the taper without adding fatigue.
-- **Fri Dec 04** · Easy Run · 5 mi — Easy and short.
+- **Fri Dec 04** · Easy Run · 7 mi — Easy and short.
 - **Sat Dec 05** · Pre-Race Shakeout · 2 mi — 15-20min very easy + 4x15sec relaxed strides.
 - **Sun Dec 06** · RACE DAY — 5K · 3.1 mi — Goal pace 5:26/mi. *Why:* Everything has been building to this.

@@ -178,3 +178,7 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
 - **Season simulator** (`tests/season_sim.py`, `tests/test_season_matrix.py`): seeds an athlete, runs every
   prescribed session, and generates and approves each block to race day, then checks season-level rules.
   A subset runs in CI; `STRIDE_SEASON_FULL=1` runs every athlete × distance.
+- **Season quality**: introducing a second hard session holds the training level (capped by the last two
+  completed weeks), not the deload-dragged 4-week average, so peak no longer drops below build. Marathon
+  race-pace long runs stay in build/peak at the `support` stage too. Race week keeps more volume for short
+  races (`RACE_WEEK_VOLUME_BY_DISTANCE`, `RACE_WEEK_MAX_EASY`).
