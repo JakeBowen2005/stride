@@ -15,7 +15,6 @@ import { activityKind } from "@/lib/workout-style";
 import { WeeklyMileageChartWrapper } from "@/components/charts-wrapper";
 import { GarminSync, SYNC_EVENT } from "@/components/garmin-sync";
 import { MetricTiles } from "@/components/home/metric-tiles";
-import { RacePredictions } from "@/components/home/race-predictions";
 import { TodayCard, type PlanDayLite } from "@/components/home/today-card";
 import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
@@ -53,7 +52,6 @@ export default function TodayPage() {
   const [goal, setGoal] = useState<GoalData | null>(null);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [wellness, setWellness] = useState<WellnessResponse | null>(null);
-  const [prs, setPrs] = useState<Record<string, number>>({});
   const [selectedRun, setSelectedRun] = useState<Activity | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
   // Each saved comment queues a run review: remount the coach panel so it sees the job and polls
@@ -62,13 +60,12 @@ export default function TodayPage() {
   const load = useCallback(async () => {
     try {
     setError(null);
-    const [acts, mileage, goalData, planData, wellnessData, prList, user] = await Promise.all([
+    const [acts, mileage, goalData, planData, wellnessData, user] = await Promise.all([
       getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
       getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
       getJson<GoalData>(`/plans/${USER_ID}/goal`),
       getJson<PlanResponse>(`/plans/${USER_ID}/current`, { allowNotFound: true }),
       getJson<WellnessResponse>(`/wellness/${USER_ID}?days=28`),
-      getJson<{ distance: string; time_seconds: number }[]>(`/analysis/${USER_ID}/prs`),
       getJson<{ name: string | null }>(`/users/${USER_ID}`),
     ]);
     setFirstName(user?.name?.split(" ")[0] ?? null);
@@ -78,7 +75,6 @@ export default function TodayPage() {
     setGoal(goalData);
     setPlan(planData);
     setWellness(wellnessData);
-    setPrs(Object.fromEntries((prList ?? []).map((p) => [p.distance, p.time_seconds])));
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load your dashboard"); }
     finally { setLoading(false); }
   }, []);
@@ -227,9 +223,6 @@ export default function TodayPage() {
               </Section>
               <Section label="Weekly mileage" accent="var(--type-long)" className="order-4" meta="12 weeks">
                 <WeeklyMileageChartWrapper data={weeklyMileage} showTitle={false} />
-              </Section>
-              <Section label="Race predictions" accent="var(--type-race)" className="order-5" meta="Garmin · current fitness">
-                <RacePredictions wellness={wellness?.latest ?? null} prs={prs} goal={goal} />
               </Section>
             </div>
           </div>

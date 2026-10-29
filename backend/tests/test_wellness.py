@@ -19,16 +19,21 @@ PRED = {"time5K": 1280, "time10K": 2784, "timeHalfMarathon": 6387, "timeMarathon
 
 
 def test_parse_day_real_shapes():
-    d = parse_day(SUMMARY, SLEEP, HRV, READINESS, STATUS, PRED)
+    d = parse_day(SUMMARY, SLEEP, HRV)
     assert d["resting_hr"] == 41 and d["sleep_score"] == 89 and d["hrv_last_night"] == 103
-    assert d["readiness_score"] == 70 and d["training_status"] == "PRODUCTIVE_3"
-    assert d["acwr"] == 1.2 and d["vo2max"] == 53.3 and d["predicted_5k"] == 1280
     assert d["body_battery_wake"] == 95 and d["steps"] == 11996
 
 
+def test_parse_day_stores_no_unofficial_metrics():
+    # Readiness, training status/load, VO2max and predictions came only from the unofficial
+    # library; even if a payload carried them, Stride doesn't keep them.
+    d = parse_day(SUMMARY | {"trainingReadiness": READINESS, "trainingStatus": STATUS, "racePredictions": PRED}, SLEEP, HRV)
+    assert not {"readiness_score", "training_status", "acwr", "vo2max", "predicted_5k"} & set(d)
+
+
 def test_parse_day_tolerates_missing_endpoints():
-    assert parse_day(None, None, None, None, None, None) == {}
-    assert parse_day({"averageStressLevel": -1}, {}, {}, [], {}, None).get("stress_avg") is None
+    assert parse_day(None, None, None) == {}
+    assert parse_day({"averageStressLevel": -1}, {}, {}).get("stress_avg") is None
 
 
 def test_recovery_signals():

@@ -71,21 +71,6 @@ const METRICS: MetricDef[] = [
     sub: (w) => (w.step_goal ? `goal ${w.step_goal.toLocaleString()}` : ""),
     help: "Daily steps, runs included.",
   },
-  {
-    key: "vo2", label: "VO2max", unit: "",
-    value: (w) => w.vo2max,
-    display: (w) => (w.vo2max != null ? w.vo2max.toFixed(1) : "—"),
-    sub: () => "Garmin estimate",
-    help: "Garmin's aerobic-capacity estimate from your runs. Trend matters more than the number.",
-  },
-  {
-    key: "load", label: "Garmin Load", unit: "ratio", neutralTrend: true,
-    value: (w) => w.acwr,
-    display: (w) => (w.acwr != null ? w.acwr.toFixed(2) : "—"),
-    sub: (w) => (w.acwr == null ? "acute:chronic" : w.acwr > 1.5 ? "High risk" : w.acwr < 0.8 ? "Detraining" : "Optimal"),
-    band: () => [0.8, 1.3],
-    help: "Acute (7-day) vs chronic (28-day) training load. 0.8-1.3 is the sweet spot; above 1.5 injury risk climbs fast.",
-  },
 ];
 
 function Sparkline({ data }: { data: { v: number }[] }) {

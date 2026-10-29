@@ -169,7 +169,6 @@ def parse_activity(raw: dict) -> dict | None:
         "anaerobic_training_effect": raw.get("anaerobicTrainingEffect"),
         "training_effect_label": raw.get("trainingEffectLabel"),
         "training_load": raw.get("activityTrainingLoad"),
-        "vo2max": raw.get("vO2MaxValue"),
         "avg_ground_contact_time": raw.get("avgGroundContactTime"),
         "avg_vertical_oscillation": raw.get("avgVerticalOscillation"),
         "calories": raw.get("calories"),
