@@ -74,7 +74,7 @@ Every workout includes a prescribed warmup and cooldown (distance or time-based 
 ### Mileage Building
 - Beginners: 10% weekly increase rule, strictly enforced
 - Experienced runners (50+ mpw history): Can ramp slightly faster but still gradual
-- Deload weeks: Every 4th week for amateur runners; every 7th (advanced) / 8th (expert) week for experienced
+- Deload weeks: Every 4th week for amateur runners, every 5-7 weeks for experienced
 - Deload = reduced volume, not zero running
 
 ### Injury Risk
