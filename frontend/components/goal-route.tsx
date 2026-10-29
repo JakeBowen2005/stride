@@ -50,7 +50,7 @@ function weeks(n: number) {
 
 /** Where the rolling blocks are heading: milestones, not a fixed 16-week plan. */
 export function GoalRoute({ outlook }: { outlook: Outlook }) {
-  const [choice, setChoice] = useState("completion");
+  const [choice, setChoice] = useState(outlook.decision?.options[0]?.key ?? "completion");
   const [raceDate, setRaceDate] = useState("");
   const [distance, setDistance] = useState("5k");
   const [message, setMessage] = useState("");
