@@ -370,7 +370,25 @@ def operations(user_id: int, db: Session = Depends(get_db)):
             'backup': {'configured': bool(info.get('last_local_success')), 'offsite_configured':bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET')),
                        'last_success_at':info.get('last_local_success'), 'offsite_last_success_at':info.get('last_remote_success'),
                        'offsite_error_type':info.get('last_remote_error_type'), 'restore_verified':bool(info.get('restore_verified')),
-                       'last_error_type':info.get('last_error_type'), 'storage':info.get('storage')}, 'app': {'policy_version':VERSION}}
+                       'last_error_type':info.get('last_error_type'), 'storage':info.get('storage')}, 'app': {'policy_version':VERSION},
+            # Server configuration is the owner's concern; other athletes don't see it.
+            'beta_readiness': beta_readiness() if user_id == settings.default_user_id else None}
+
+
+def beta_readiness() -> list[dict]:
+    """What inviting other athletes needs (docs/beta-runbook.md). Booleans only, never values."""
+    import os
+    from app.config import settings
+    checks = [
+        ('accounts', 'Account mode on (each athlete signs in)', settings.accounts_enabled),
+        ('invite', 'Invite code set for sign-up', bool(settings.signup_invite_code)),
+        ('encryption', 'Provider encryption keys set', bool(settings.provider_encryption_keys)),
+        ('public_url', 'Public app URL set', bool(settings.public_app_url)),
+        ('fit_storage', 'FIT files stored in S3, not the database', bool(settings.fit_blob_bucket)),
+        ('offsite_backup', 'Offsite (S3) database backups', bool(os.environ.get('STRIDE_BACKUP_S3_BUCKET'))),
+        ('error_tracking', 'Error tracking (Sentry)', bool(os.environ.get('SENTRY_DSN', '').strip())),
+    ]
+    return [{'key': key, 'label': label, 'ready': ready} for key, label, ready in checks]
 
 
 @router.get("/{user_id}/history")

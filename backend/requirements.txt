@@ -29,6 +29,8 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.0
 boto3>=1.35,<2
+# Error tracking, initialized only when SENTRY_DSN is set (app.main._init_error_tracking)
+sentry-sdk==2.19.2
 
 pwdlib[argon2]==0.3.1
 cryptography==48.0.1

@@ -24,7 +24,7 @@ interface PR {
 }
 
 interface Workload { acute_week_start?: string; acute_week_end?: string; acute_miles?: number; chronic_week_starts?: string[]; baseline_miles?: number; ratio?: number | null; label?: string; as_of?: string }
-interface Operations { ai_usage?:{attempts_today:number;input_tokens_today:number;output_tokens_today:number;mean_latency_ms:number|null}; queue: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; backup: { configured: boolean; offsite_configured: boolean; last_success_at: string | null; restore_verified: boolean; offsite_last_success_at?: string | null; offsite_error_type?: string | null; last_error_type: string | null; storage?:{database_bytes:number;backup_bytes:number;free_bytes:number;warning:boolean;budget_exceeded?:boolean} }; app: { policy_version: string } }
+interface Operations { ai_usage?:{attempts_today:number;input_tokens_today:number;output_tokens_today:number;mean_latency_ms:number|null}; queue: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; backup: { configured: boolean; offsite_configured: boolean; last_success_at: string | null; restore_verified: boolean; offsite_last_success_at?: string | null; offsite_error_type?: string | null; last_error_type: string | null; storage?:{database_bytes:number;backup_bytes:number;free_bytes:number;warning:boolean;budget_exceeded?:boolean} }; app: { policy_version: string }; beta_readiness?: { key: string; label: string; ready: boolean }[] }
 interface AnalysisData {
   workload?: Workload;
   overview: {
@@ -321,6 +321,13 @@ export default function SettingsPage() {
           <p className="text-sm">Local backups: {operations.backup.configured ? "configured" : "not configured"}. Offsite export: {operations.backup.offsite_configured ? "configured" : "not configured"}.</p>
           <p className="text-xs text-muted-foreground">Last successful backup: {operations.backup.last_success_at ?? "none reported"}. Restore verification: {operations.backup.restore_verified ? "passed for the last successful backup" : "not verified"}.{operations.backup.last_error_type ? ` Last backup error: ${operations.backup.last_error_type}.` : ""}</p>
           <p className="text-xs text-muted-foreground">Last successful offsite export: {operations.backup.offsite_last_success_at ?? "none verified"}.{operations.backup.offsite_error_type ? ` Offsite export error: ${operations.backup.offsite_error_type}.` : ""}</p>
+          {operations.beta_readiness && <div className="text-sm">
+            <p className="font-medium">Ready for other athletes: {operations.beta_readiness.filter((c) => c.ready).length} of {operations.beta_readiness.length}</p>
+            <ul className="mt-1 space-y-0.5 text-xs">{operations.beta_readiness.map((c) => (
+              <li key={c.key}><span aria-hidden="true">{c.ready ? "✓" : "○"}</span> {c.label}<span className="sr-only">{c.ready ? ": done" : ": not yet"}</span></li>
+            ))}</ul>
+            <p className="mt-1 text-xs text-muted-foreground">Steps: docs/beta-runbook.md.</p>
+          </div>}
           <p className="text-xs text-muted-foreground">Configuration alone does not prove recovery. Keep a verified offsite backup. Coaching policy {operations.app.policy_version}.</p>
         </>}
       </CardContent></Card>
