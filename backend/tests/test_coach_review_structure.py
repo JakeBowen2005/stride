@@ -178,6 +178,7 @@ def test_taper_threshold_keeps_two_thirds_of_the_session():
 def test_race_effort_long_run_text_does_not_say_easy_for_the_whole_run():
     wp = week_phase(MONDAY, 'race', '100k', MONDAY + timedelta(weeks=6, days=5))
     assert wp.phase == 'peak'
+    wp.back_to_back = False  # back-to-back peak weeks are Terrain long runs instead
     day = ultra_long_run(MONDAY + timedelta(days=5), '100k', 70, wp,
                          {'easy_pace_low': 500, 'easy_pace_high': 560}, 'trail')
     assert day['title'] == 'Race-Effort Long Run'

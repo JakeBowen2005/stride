@@ -86,7 +86,7 @@ def _laps(pres: dict, easy: float) -> list[tuple[str, float, float]]:
     return laps
 
 
-def _run_day(day: date, race: date, profile: dict, struggle: bool, skip: list[int]) -> None:
+def _run_day(day: date, race: date, profile: dict, struggle: bool, skip: list[int], share: float = 1.0) -> None:
     easy = profile["easy_pace"]
     with SessionLocal() as db:
         if not db.query(DailyWellness).filter_by(user_id=1, date=day.isoformat()).first():
@@ -107,6 +107,8 @@ def _run_day(day: date, race: date, profile: dict, struggle: bool, skip: list[in
                         continue
                 else:
                     miles = round(miles * .8, 1)
+            elif share < 1 and not hard:
+                miles = round(miles * share, 1)  # runs cut short, workouts done, feel normal
             laps = _laps(pres, easy) if pres.get("segments") else []
             extra = miles * MI - sum(m for _, m, _ in laps)
             if laps and extra > 200:
@@ -126,7 +128,7 @@ def _run_day(day: date, race: date, profile: dict, struggle: bool, skip: list[in
         db.commit()
 
 
-def simulate(profile: dict, *, struggle: bool = False, start: date = START) -> dict:
+def simulate(profile: dict, *, struggle: bool = False, share: float = 1.0, start: date = START) -> dict:
     """Run one season. Returns {race_date, blocks: [preview], days: [planned day rows], errors}."""
     Base.metadata.drop_all(bind=engine)  # every season starts from an empty schema
     Base.metadata.create_all(bind=engine)
@@ -152,7 +154,7 @@ def simulate(profile: dict, *, struggle: bool = False, start: date = START) -> d
                         log["errors"].append((day.isoformat(), preview["violations"]))
                     approve_draft(1, preview["id"], db)
                     log["blocks"].append(preview)
-            _run_day(day, race, profile, struggle, skip)
+            _run_day(day, race, profile, struggle, skip, share)
             day += timedelta(days=1)
         with SessionLocal() as db:
             # The approved schedule, day by day: the latest approved plan covering each date

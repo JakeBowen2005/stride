@@ -11,6 +11,7 @@ Key principles:
 """
 
 from datetime import date, timedelta
+import math
 
 from app.core.pacing import format_pace, goal_paces, pace_range
 from app.core.workout_data import long_run_prescription, race_pace_miles
@@ -27,6 +28,7 @@ from app.core.plan_validator import enforce_no_back_to_back_hard, fit_week_to_bu
 from app.core.special_weeks import (
     back_to_back_day,
     build_race_week,
+    DRESS_REHEARSAL_WEEKS_BEFORE_TAPER,
     apply_post_race_rest,
     hill_session,
     ultra_long_run,
@@ -40,6 +42,11 @@ DEFAULT_LONG_RUN_DAY = 5
 # Longest single run by road goal (miles, minutes at easy pace): Daniels caps the long run
 # near 150 min; 5K/10K need endurance support, not marathon-length runs.
 ROAD_LONG_RUN_CAP = {"5k": (15, 120), "10k": (16, 135), "half": (18, 150), "marathon": (22, 210)}
+# Developing marathoners with a time goal finish every other build/peak long run at goal
+# marathon pace once they have some controlled-workout experience: miles at MP by phase.
+MP_FINISH_MIN_LEVEL = 2
+MP_FINISH_MILES = {"beginner": {"build": 2, "peak": 3}, "intermediate": {"build": 3, "peak": 4}}
+MP_FINISH_MIN_LONG = 8.0
 DEFAULT_REST_DAY = 6
 
 
@@ -68,6 +75,26 @@ def calculate_plan_params() -> dict:
         "num_weeks": num_weeks,
         "first_prescribe_date": today,
     }
+
+
+def _add_mp_finish(week_days: list[dict], phase: str, experience: str, goal_mp: float, easy_pace: float) -> list[str]:
+    """The week's long run ends with miles at goal marathon pace (same distance: no added volume)."""
+    long = next((d for d in week_days if d['type'] == 'long_run' and d.get('prescribed', True)
+                 and d['distance_miles'] >= MP_FINISH_MIN_LONG), None)
+    if not long:
+        return []
+    miles = long['distance_miles']
+    mp_miles = min(MP_FINISH_MILES.get(experience, MP_FINISH_MILES['intermediate'])[phase], math.floor(miles * .35 * 2) / 2)
+    # A goal pace far beyond current easy running is run by effort, not by the watch.
+    pace = goal_mp if goal_mp >= easy_pace - 150 else None
+    target = f"marathon pace ({format_pace(pace)}/mi)" if pace else "marathon effort (steady, controlled)"
+    description = (f"{miles - mp_miles:g}mi easy, then the last {mp_miles:g}mi at {target}. "
+                   "Settle into it: controlled, not hard. Ease back if the pace feels like a race.")
+    long.update({'title': 'Long Run with MP Finish', 'description': description,
+                 'purpose': 'Practises goal marathon pace on tired legs, the skill race day asks for.',
+                 'prescription': long_run_prescription([('easy', miles - mp_miles), ('race_pace', mp_miles, pace)],
+                                                       description, easy_pace)})
+    return [f"Long run finishes with {mp_miles:g} mi at goal marathon pace; weekly volume holds that week."]
 
 
 def _round_half(d: float) -> float:
@@ -102,6 +129,7 @@ def generate_plan(
     terrain: str | None = None,
     target_weekly_mileage: float | None = None,
     assessment: str | None = None,
+    assessment_completion: float | None = None,  # share of the last block run, when it was a hold
     completed_by_date: dict[str, float] | None = None,
     prior_hard_dates: set[str] | None = None,
     reported_mileage: float | None = None,
@@ -186,6 +214,7 @@ def generate_plan(
         num_weeks=num_weeks,
         target_weekly_mileage=target_weekly_mileage,
         assessment=assessment,
+        completion=assessment_completion,
         deload_week=deload_week,
         reported_mileage=reported_mileage, completed_weeks=completed_weeks,
         developmental=developing, previous_block=previous_block, race_weeks=race_weeks,
@@ -412,7 +441,21 @@ def generate_plan(
                 and weeks_before_taper(wk_phase, goal_distance) == 1):
             # The longest run comes three weeks out; the last pre-taper week repeats, never extends, it.
             long_cap = min(long_cap or longest_long, longest_long)
+        mp_finish = (developing and goal_distance == 'marathon' and target_time_seconds and current_paces.get('goal_race_pace')
+                     and wk_phase.phase in ('build', 'peak') and not wk_is_deload and not returning and not holding
+                     and weeks_before_taper(wk_phase, goal_distance) not in (None, 1)
+                     and wk_start.isocalendar().week % 2 == 0
+                     and development_state.get('current_level', 1) >= MP_FINISH_MIN_LEVEL)
+        if mp_finish:
+            # One lever at a time: the marathon-pace finish is this week's progression,
+            # so volume repeats the week before.
+            previous = weeks[-1]['budget_miles'] if weeks else (completed_weeks or [0])[-1]
+            if previous and wk_target > previous:
+                wk_target = round(previous, 1)
         week_days, wk_target, notes = compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning)
+        if mp_finish:
+            notes.extend(_add_mp_finish(week_days, wk_phase.phase, experience_level, current_paces['goal_race_pace'],
+                                        easy_pace_seconds))
         race_pace = max([race_pace_miles(d) for d in week_days if d['type'] == 'long_run'], default=0)
         # "Flat" is the week before: the previous plan week, or the last completed week.
         previous = weeks[-1]['budget_miles'] if weeks else (completed_weeks or [0])[-1]
@@ -826,7 +869,8 @@ def _build_week(
     # Ultra back-to-back weekend: reserve the day next to the long run before placing
     # workouts, so no quality session lands beside the pair (prefer the day after)
     b2b_idx = None
-    if ultra and phase.back_to_back:
+    rehearsal_week = phase.phase == 'peak' and weeks_before_taper(phase, goal_distance) == DRESS_REHEARSAL_WEEKS_BEFORE_TAPER
+    if ultra and phase.back_to_back and not rehearsal_week:  # the dress rehearsal stands alone
         for cand in (long_run_idx + 1, long_run_idx - 1):
             if (0 <= cand < 7 and day_assignments.get(cand) == "easy"
                     and abs((cand - start_date.weekday()) % 7 - (long_run_idx - start_date.weekday()) % 7) == 1):
@@ -975,7 +1019,8 @@ def _build_week(
             days.append(None)  # filled once the main long run exists (it may come later in the week)
 
         elif assignment == "long" and ultra:
-            days.append(ultra_long_run(day_date, goal_distance, target_mileage, phase, current_paces, terrain))
+            days.append(ultra_long_run(day_date, goal_distance, target_mileage, phase, current_paces, terrain,
+                                       before_taper=weeks_before_taper(phase, goal_distance)))
 
         elif assignment == "long":
             distance = mileage_dist.get('long', target_mileage * .28) if developing else _round_half(mileage_dist.get("long", target_mileage * 0.28))

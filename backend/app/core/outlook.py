@@ -67,13 +67,13 @@ def goal_outlook(*, goal_type: str, distance: str | None, race_weeks_away: float
         VOLUME_TARGETS.get(distance, (None, None))[band] if goal_type == 'race' else destination)
     if volume:
         add('volume', f'Build to {volume:g} mi/week', round(baseline, 1), volume, 'mi/week',
-            _weeks_to_grow(baseline, volume, weekly_rate, 4 if developing else 6),
+            _weeks_to_grow(baseline, volume, weekly_rate, 4 if developing else 7),
             'Grows at most one step at a time; down weeks absorb the work.')
 
     long_target = LONG_RUN_TARGETS.get(distance, (None, None))[band] if goal_type == 'race' else None
     if long_target:
         # Long runs grow with weekly volume (about 40% of the week for developing marathoners)
-        long_weeks = _weeks_to_grow(recent_long_run or 1, long_target, weekly_rate, 4 if developing else 6)
+        long_weeks = _weeks_to_grow(recent_long_run or 1, long_target, weekly_rate, 4 if developing else 7)
         add('long_run', f'Long run of {long_target:g} miles', round(recent_long_run, 1), long_target, 'miles',
             long_weeks, 'Rises with weekly volume, never as a one-off jump.')
 
@@ -147,6 +147,8 @@ def block_review(assessment: dict | None, load: dict | None, notes: list[str] | 
         'reduce': 'The block was interrupted. Missed miles are not made up; the next block eases back in.',
         'recovery': 'Several runs felt bad. Recovery comes before the next build.',
     }.get(a.get('decision'), 'Not enough of the last block was run to judge it yet.')
+    if a.get('decision') == 'hold' and load.get('mode') == 'reduce':
+        learned = 'Part of the block was missed, so the next one is sized to what you are completing.'
 
     changes = []
     budgets = load.get('weekly_budgets') or []

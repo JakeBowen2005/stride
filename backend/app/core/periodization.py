@@ -275,7 +275,7 @@ def check_readiness(
             from app.core.outlook import LONG_RUN_TARGETS, TAPER_WEEKS, VOLUME_TARGETS, _weeks_to_grow
             band = 1 if experience in ("advanced", "expert") else 0
             usable = weeks - TAPER_WEEKS[distance]
-            deload_every = 6 if band else 4
+            deload_every = 7 if band else 4
             label = {"half": "half marathon", "marathon": "marathon"}[distance]
             long_target, mpw_target = LONG_RUN_TARGETS[distance][band], VOLUME_TARGETS[distance][band]
             if longest_run_miles > 0 and _weeks_to_grow(longest_run_miles, long_target, .08, deload_every) > usable:
