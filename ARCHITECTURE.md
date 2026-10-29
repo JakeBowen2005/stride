@@ -182,3 +182,13 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
   completed weeks), not the deload-dragged 4-week average, so peak no longer drops below build. Marathon
   race-pace long runs stay in build/peak at the `support` stage too. Race week keeps more volume for short
   races (`RACE_WEEK_VOLUME_BY_DISTANCE`, `RACE_WEEK_MAX_EASY`).
+- **Falling behind** (`load_policy.SHORT_BLOCK_COMPLETION`): a block under 85% of planned miles sizes the next
+  one to what was run (`planned × (completion + 5%)`, between the 4-week average and the training level) instead
+  of holding the unfinished plan. After two consecutive short blocks, `plans.falling_behind_decision` asks the
+  athlete to keep the goal, race for completion, pick a later race or a shorter distance.
+- **Developing marathon-pace finishes** (`plan_engine._add_mp_finish`): beginner/intermediate marathoners with a
+  time goal and development level ≥ 2 finish every other build/peak long run with 2–4 mi at goal pace (effort if
+  the goal is far beyond current easy pace). Same distance; that week's volume holds.
+- **Deloads**: advanced every 7th week, expert every 8th (`experience.py`).
+- **Ultra peak**: a dress-rehearsal long run two weeks before the taper (no back-to-back day), terrain long runs
+  on the other back-to-back peak weeks, race-effort long runs otherwise.

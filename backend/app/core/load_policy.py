@@ -36,6 +36,7 @@ REDUCE_STEP = 0.10  # when the destination is below current load, come down 10%/
 DELOAD_FACTOR = 0.75
 HOLD_FACTOR = 1.0
 REDUCE_FACTOR = 0.85
+SHORT_BLOCK_COMPLETION = 0.85  # block_assessment.BUILD_COMPLETION: below it a block falls short
 RECOVERY_FACTOR = 0.70
 
 
@@ -191,6 +192,7 @@ def plan_load(
     developmental: bool = False,
     previous_block: dict | None = None,  # last block's stored load: weekly_budgets + mode
     race_weeks: list[bool] | None = None,  # aligned with completed_weeks: True where the week held a race
+    completion: float | None = None,  # share of the last block's planned miles that were run
 ) -> LoadPlan:
     baseline = round(_finite(baseline), 1)
     peak = _finite(peak)
@@ -290,7 +292,16 @@ def plan_load(
             again = assessment == "reduce" and (previous_block or {}).get("mode") == "reduce"
             floor = planned * ({"hold": 1.0, "reduce": 1.0 if again else REDUCE_FACTOR,
                                 "recovery": RECOVERY_FACTOR}[assessment])
-            if budgets[0] < floor:
+            if assessment == "hold" and completion is not None and completion < SHORT_BLOCK_COMPLETION:
+                # Falling behind: size the block to what is being run (plus a little), not to
+                # the plan that wasn't completed. Never below the 4-week average, never above
+                # the training level.
+                sized = max(baseline, min(level, planned * (completion + 0.05)))
+                budgets = [round(sized, 1)] * num_weeks
+                mode = "reduce"
+                reasons[-1] = (f"You ran {completion:.0%} of last block's plan: this block is sized to what you're "
+                               f"completing ({sized:.0f} mi/week), not the full plan. It grows again once blocks are completed.")
+            elif budgets[0] < floor:
                 budgets = [min(planned, floor)] * num_weeks
             if again:
                 reasons.append("Second interrupted block in a row: holding last block's volume instead of shrinking "

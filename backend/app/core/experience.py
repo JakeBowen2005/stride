@@ -15,8 +15,8 @@ class ExperiencePolicy:
 EXPERIENCE_POLICIES = {
     'beginner': ExperiencePolicy(2, 4, 4, 8, 25, 3),
     'intermediate': ExperiencePolicy(1, 3, 3, 6, 30, 4),
-    'advanced': ExperiencePolicy(0, 2, 2, 4, 30, 7),
-    'expert': ExperiencePolicy(0, 2, 1, 4, 30, 8),
+    'advanced': ExperiencePolicy(0, 2, 2, 4, 30, 6),  # deload every 7th week
+    'expert': ExperiencePolicy(0, 2, 1, 4, 30, 7),  # every 8th
 }
 
 
