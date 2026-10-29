@@ -71,3 +71,29 @@ def test_ultra_season_keeps_back_to_back_weekends_and_a_three_week_taper(seasons
                          if race - timedelta(days=7 * n + 6) <= date.fromisoformat(d["date"]) <= race - timedelta(days=7 * n))
     peak = max(week(n) for n in range(4, 10))
     assert week(3) < peak and week(2) < week(3)
+
+
+def _week_miles(log, weeks_out):
+    race = log["race_date"]
+    lo, hi = race - timedelta(days=7 * weeks_out + 6), race - timedelta(days=7 * weeks_out)
+    return sum(d["miles"] for d in log["days"] if lo <= date.fromisoformat(d["date"]) <= hi and d["type"] != "race")
+
+
+def test_half_marathon_peak_holds_the_training_level_reached_in_build(seasons):
+    # Introducing a second hard session holds the demonstrated level, not a deload-dragged average
+    log = _season("adv-half", seasons)
+    build_top = max(_week_miles(log, n) for n in range(6, 9))
+    assert max(_week_miles(log, n) for n in range(1, 5)) >= build_top * 0.95
+
+
+def test_marathon_build_keeps_marathon_pace_long_runs_into_peak(seasons):
+    log = _season("adv-marathon", seasons)
+    race = log["race_date"]
+    mp = [d for d in log["days"] if d["type"] == "long_run" and "MP" in d["title"]]
+    assert len(mp) >= 3
+    assert any((race - date.fromisoformat(d["date"])).days <= 35 for d in mp)  # in the final five weeks
+
+
+def test_short_race_week_keeps_most_of_the_volume(seasons):
+    log = _season("adv-10k", seasons)
+    assert _week_miles(log, 0) >= 0.5 * _week_miles(log, 1)  # was ~0.47 with a flat 5 mi easy-day cap

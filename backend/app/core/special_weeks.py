@@ -11,6 +11,7 @@ import math
 from app.core.pacing import format_pace, pace_range
 from app.core.periodization import (
     POST_RACE_REST_DAYS,
+    RACE_WEEK_MAX_EASY,
     RACE_DISTANCE_MILES,
     ULTRA_LONG_RUN_CAP_MIN,
     ULTRA_LONG_RUN_SHARE,
@@ -124,7 +125,7 @@ def build_race_week(
 
     pre_race_easy = [i for i in range(race_idx) if (week_start + timedelta(days=i)).weekday() not in rest_indices and i != sharpener_idx and i != race_idx - 1]
     budget = max(target_mileage - (sharp["miles"] if sharp else 0) - 2.5, 0)
-    per_easy = _round_half(min(max(budget / len(pre_race_easy), 2.0), 5.0)) if pre_race_easy else 0
+    per_easy = _round_half(min(max(budget / len(pre_race_easy), 2.0), RACE_WEEK_MAX_EASY.get(distance, 5.0))) if pre_race_easy else 0
 
     days = []
     for i in range(7):
