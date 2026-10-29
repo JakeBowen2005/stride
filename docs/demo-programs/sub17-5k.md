@@ -10,9 +10,9 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 ## How each block was decided
 
 - **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (49 → 51 mi/week). Why: Ran 93 of 93 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Building up to 10% over the block (51 → 53 mi/week). Why: Ran 88 of 88 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 3** (Nov 16–Nov 29): **build** → hold. Deload suppressed: the taper starts within 2 weeks and is the recovery. Holding 51 mi/week until then instead of building. Why: Ran 104 of 104 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Building up to 10% over the block (54 → 57 mi/week). Why: Ran 102 of 102 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 2** (Nov 02–Nov 15): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 88 of 88 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 3** (Nov 16–Nov 29): **build** → build. Training level 49.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 84 of 84 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 4** (Nov 30–Dec 13): **build** → hold. Introducing a second substantial session: hold demonstrated weekly volume while testing recovery. Why: Ran 106 of 106 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
 
@@ -20,11 +20,11 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 |---|---|---|---|---|---|
 | 1 | Oct 19 | Build | 49.0 | 13.5 | 25min Continuous Tempo |
 | 2 | Oct 26 | Build | 51.0 | 14.5 | 6x800m + 4x200m, 2x15min Hard |
-| 3 | Nov 02 | Build | 50.5 | 14 | 6x800m + 4x200m, 3x12min Hard |
-| 4 | Nov 09 | Peak | 53.5 | 15 | 3x2K at 5K Goal Pace, 3x11min Threshold |
-| 5 | Nov 16 | Peak | 50.5 | 14.5 | 4x1mi at 5K Goal Pace, 4x8min Threshold |
-| 6 | Nov 23 | Peak | 51.5 | 14.5 | 5x1K at 5K Goal Pace, 4x9min Threshold |
-| 7 | Nov 30 | Race Week | 38.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
+| 3 | Nov 02 | Build | 36.5 | 10 | 5x800m |
+| 4 | Nov 09 | Peak | 47.5 | 13.5 | 3x2K at 5K Goal Pace |
+| 5 | Nov 16 | Peak | 51.5 | 14.5 | 3x2K at 5K Goal Pace, 6x400m Relaxed Repetitions |
+| 6 | Nov 23 | Peak | 54.0 | 15 | 4x1mi at 5K Goal Pace, 8x200m Relaxed Repetitions |
+| 7 | Nov 30 | Race Week | 36.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
 
 ## Week by week
 
@@ -46,47 +46,47 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Sat Oct 31** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 01** · Rest
 
-### Week 3 · Nov 02–Nov 08 · Build · 50.5 mi
-- **Mon Nov 02** · Easy Run + Strides · 6.5 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 03** · 6x800m + 4x200m · 7 mi — 6x800m in 2:34-2:39 (5:10-5:20/mi) with 1:30 jog rest (warm up 1.5mi easy, cool down 1mi easy). *Why:* VO2max stimulus with speed kicker.
-- **Wed Nov 04** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Thu Nov 05** · 3x12min Hard · 10 mi — 3x12min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* 36min total threshold — approaching peak time-based volume.
-- **Fri Nov 06** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Sat Nov 07** · Easy Long Run · 14 mi — 14.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+### Week 3 · Nov 02–Nov 08 · Build · 36.5 mi
+- **Mon Nov 02** · Easy Run + Strides · 5 mi — Conversational effort the whole run — easy means easy.
+- **Tue Nov 03** · 5x800m · 6.5 mi — 5x800m in 2:34-2:39 (5:10-5:20/mi) with 1:30 jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Building VO2max volume.
+- **Wed Nov 04** · Easy Run · 5 mi — Conversational effort the entire time.
+- **Thu Nov 05** · Easy Run · 5 mi — Conversational effort the entire time.
+- **Fri Nov 06** · Easy Run · 5 mi — Conversational effort the entire time.
+- **Sat Nov 07** · Easy Long Run · 10 mi — 10.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 08** · Rest
 
-### Week 4 · Nov 09–Nov 15 · Peak · 53.5 mi
-- **Mon Nov 09** · Easy Run + Strides · 7 mi — Conversational effort the whole run — easy means easy.
+### Week 4 · Nov 09–Nov 15 · Peak · 47.5 mi
+- **Mon Nov 09** · Easy Run + Strides · 6.5 mi — Conversational effort the whole run — easy means easy.
 - **Tue Nov 10** · 3x2K at 5K Goal Pace · 8 mi — 3x2000m in 6:44 (5:25/mi) with 2:30 jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
-- **Wed Nov 11** · Easy Run · 7 mi — Conversational effort the entire time.
-- **Thu Nov 12** · 3x11min Threshold · 9.5 mi — 3x11min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 5K…
-- **Fri Nov 13** · Easy Run · 7 mi — Conversational effort the entire time.
-- **Sat Nov 14** · Easy Long Run · 15 mi — 15.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+- **Wed Nov 11** · Easy Run · 6.5 mi — Conversational effort the entire time.
+- **Thu Nov 12** · Easy Run · 6.5 mi — Conversational effort the entire time.
+- **Fri Nov 13** · Easy Run · 6.5 mi — Conversational effort the entire time.
+- **Sat Nov 14** · Easy Long Run · 13.5 mi — 13.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 15** · Rest
 
-### Week 5 · Nov 16–Nov 22 · Peak · 50.5 mi
-- **Mon Nov 16** · Easy Run + Strides · 6 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 17** · 4x1mi at 5K Goal Pace · 8.5 mi — 4x1mi at 5:25/mi with 2min jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
-- **Wed Nov 18** · Easy Run · 6 mi — Conversational effort the entire time.
-- **Thu Nov 19** · 4x8min Threshold · 9.5 mi — 4x8min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 5K…
-- **Fri Nov 20** · Easy Run · 6 mi — Conversational effort the entire time.
+### Week 5 · Nov 16–Nov 22 · Peak · 51.5 mi
+- **Mon Nov 16** · Easy Run + Strides · 8 mi — Conversational effort the whole run — easy means easy.
+- **Tue Nov 17** · 3x2K at 5K Goal Pace · 8 mi — 3x2000m in 6:44 (5:25/mi) with 2:30 jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
+- **Wed Nov 18** · Easy Run · 8 mi — Conversational effort the entire time.
+- **Thu Nov 19** · 6x400m Relaxed Repetitions · 5 mi — 6x400m with 1:30 jog rest (warm up 1.5mi easy, cool down 1mi easy). *Why:* Controlled faster rhythm without a full interval-session dose.
+- **Fri Nov 20** · Easy Run · 8 mi — Conversational effort the entire time.
 - **Sat Nov 21** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 22** · Rest
 
-### Week 6 · Nov 23–Nov 29 · Peak · 51.5 mi
-- **Mon Nov 23** · Easy Run + Strides · 6.5 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 24** · 5x1K at 5K Goal Pace · 7.5 mi — 5x1000m in 3:22 (5:25/mi) with 1:15 jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
-- **Wed Nov 25** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Thu Nov 26** · 4x9min Threshold · 10 mi — 4x9min at 5:50/mi with 2min jog rest (warm up 1.5mi easy, cool down 1.5mi easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 5K…
-- **Fri Nov 27** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Sat Nov 28** · Easy Long Run · 14.5 mi — 14.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
+### Week 6 · Nov 23–Nov 29 · Peak · 54.0 mi
+- **Mon Nov 23** · Easy Run + Strides · 8.5 mi — Conversational effort the whole run — easy means easy.
+- **Tue Nov 24** · 4x1mi at 5K Goal Pace · 8.5 mi — 4x1mi at 5:25/mi with 2min jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
+- **Wed Nov 25** · Easy Run · 8.5 mi — Conversational effort the entire time.
+- **Thu Nov 26** · 8x200m Relaxed Repetitions · 5 mi — 8x200m with 1:30 jog rest (warm up 1.5mi easy, cool down 1mi easy). *Why:* Relaxed mechanics and coordination with full recovery.
+- **Fri Nov 27** · Easy Run · 8.5 mi — Conversational effort the entire time.
+- **Sat Nov 28** · Easy Long Run · 15 mi — 15.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 29** · Rest
 
-### Week 7 · Nov 30–Dec 06 · Race Week · 38.1 mi
-- **Mon Nov 30** · Easy Run · 7 mi — Easy and short.
-- **Tue Dec 01** · Easy Run · 7 mi — Easy and short.
-- **Wed Dec 02** · Easy Run · 7 mi — Easy and short.
+### Week 7 · Nov 30–Dec 06 · Race Week · 36.1 mi
+- **Mon Nov 30** · Easy Run · 6.5 mi — Easy and short.
+- **Tue Dec 01** · Easy Run · 6.5 mi — Easy and short.
+- **Wed Dec 02** · Easy Run · 6.5 mi — Easy and short.
 - **Thu Dec 03** · Race-Week Sharpener: 4x400m · 5 mi — 4x400m at 5:26/mi (goal 5K pace) with 2min jog (warm up 2mi easy + 4 strides, cool down 1.5mi easy). *Why:* Keeps the legs sharp during the taper without adding fatigue.
-- **Fri Dec 04** · Easy Run · 7 mi — Easy and short.
+- **Fri Dec 04** · Easy Run · 6.5 mi — Easy and short.
 - **Sat Dec 05** · Pre-Race Shakeout · 2 mi — 15-20min very easy + 4x15sec relaxed strides.
 - **Sun Dec 06** · RACE DAY — 5K · 3.1 mi — Goal pace 5:26/mi. *Why:* Everything has been building to this.

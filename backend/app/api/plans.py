@@ -173,6 +173,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     recent_cutoff = (params["start_date"] - timedelta(days=ASSESSMENT_MAX_GAP_DAYS)).isoformat()
     assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
 
+    # How much of the last block was run, before a fatigue result (which has none) can replace it
+    block_completion = assessment.completion if assessment else None
     fatigue = _recent_fatigue_assessment(user_id, active, db)
     if fatigue:
         severity = {None: 0, 'build': 0, 'hold': 1, 'reduce': 2, 'recovery': 3}
@@ -233,6 +235,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         terrain=goal.terrain,
         target_weekly_mileage=goal.target_weekly_mileage,
         assessment=effective_assessment,
+        assessment_completion=block_completion if effective_assessment == 'hold' else None,
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
         reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks, race_weeks=race_weeks,
@@ -792,7 +795,50 @@ def _outlook(user_id: int, db_plan: Plan | None, db: Session) -> dict | None:
     result['accepted_decision'] = json.loads(goal.decision) if goal.decision else None
     if goal.intent == 'completion':
         result['decision'] = None
+    if not result.get('decision'):
+        result['decision'] = falling_behind_decision(user_id, goal, db)
     return result
+
+
+SHORT_BLOCKS_BEFORE_ASKING = 2
+
+
+def falling_behind_decision(user_id: int, goal: Goal, db: Session) -> dict | None:
+    """After two consecutive short blocks (under 85% of planned miles), ask how to approach the goal.
+
+    Each approved plan stores the assessment of the block before it; regenerations reuse a
+    block number, so only the newest plan per block counts. Answered once per pair of blocks.
+    """
+    from app.core.load_policy import SHORT_BLOCK_COMPLETION
+    if goal.goal_type != 'race':
+        return None
+    newest = {}
+    for row in (db.query(Plan).filter(Plan.user_id == user_id, Plan.preview_state.is_(None), Plan.assessment.isnot(None))
+                .order_by(Plan.block_number.desc(), Plan.id.desc())):
+        newest.setdefault(row.block_number, row)
+        if len(newest) == SHORT_BLOCKS_BEFORE_ASKING:
+            break
+    rows = list(newest.values())
+    if len(rows) < SHORT_BLOCKS_BEFORE_ASKING or rows[0].block_number - rows[-1].block_number != len(rows) - 1:
+        return None
+    completions = [json.loads(r.assessment).get('completion') for r in rows]
+    if any(c is None or c >= SHORT_BLOCK_COMPLETION for c in completions):
+        return None
+    answered = json.loads(goal.decision) if goal.decision else None
+    if answered and answered.get('at', '') >= rows[0].start_date:
+        return None
+    share = sum(completions) / len(completions)
+    options = [
+        {'key': 'keep', 'label': 'Keep the goal', 'detail': 'Blocks keep being sized to what you complete; they grow again as you catch up.'},
+        {'key': 'completion', 'label': 'Race it as a completion goal', 'detail': 'Same date, no target time.'},
+        {'key': 'later_race', 'label': 'Choose a later race', 'detail': 'More weeks to build at a pace that fits your life.'},
+        {'key': 'shorter', 'label': 'Switch to a shorter distance', 'detail': 'Race what current training supports.'},
+    ]
+    if goal.intent == 'completion':
+        options = [o for o in options if o['key'] != 'completion']
+    return {'key': 'falling_behind', 'required': True, 'options': options,
+            'question': (f"You've run about {share:.0%} of the planned miles over the last two blocks. "
+                         f"How do you want to approach {goal.description or 'your race'}?")}
 
 
 @router.get("/{user_id}/outlook")
