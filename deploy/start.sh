@@ -34,6 +34,11 @@ cd /app/backend
 python -m app.schema
 export SCHEMA_AUTO_UPGRADE=false
 export EMBEDDED_WORKERS=false
+# One instance on 512MB: the job loop runs inside uvicorn instead of a second Python
+# process. Set STRIDE_IN_PROCESS_WORKER=false to run python -m app.services.worker separately.
+export STRIDE_IN_PROCESS_WORKER="${STRIDE_IN_PROCESS_WORKER:-true}"
+# glibc gives each thread its own malloc arena; the worker's to_thread calls inflate RSS without this.
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > /tmp/stride-backend.pid
@@ -57,8 +62,12 @@ cd /app/frontend
 HOSTNAME=0.0.0.0 PORT="$PORT" node server.js &
 FRONTEND_PID=$!
 cd /app/backend
-python -m app.services.worker &
-WORKER_PID=$!
+if [[ "$STRIDE_IN_PROCESS_WORKER" == true ]]; then
+  WORKER_PID="$BACKEND_PID"
+else
+  python -m app.services.worker &
+  WORKER_PID=$!
+fi
 if [[ "${DATABASE_URL:-sqlite:///}" == sqlite:* ]]; then
   python -m app.services.backups --loop &
   BACKUP_PID=$!

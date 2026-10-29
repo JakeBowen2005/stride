@@ -270,10 +270,13 @@ approval and the appropriate historical-data entitlement.
 
 ### Worker, migrations, and storage deployment
 
-The container runs `python -m app.schema` once before starting the web process,
-then starts `python -m app.services.worker` separately. Web replicas use
-`SCHEMA_AUTO_UPGRADE=false` and `EMBEDDED_WORKERS=false`. Local development still
-supports embedded work. Sync jobs persist per athlete, use leases/retries, and
+The container runs `python -m app.schema` once before starting the web process.
+Web replicas use `SCHEMA_AUTO_UPGRADE=false` and `EMBEDDED_WORKERS=false`, so
+manual syncs are queued. On the single 512MB Render instance the job loop runs
+inside uvicorn (`STRIDE_IN_PROCESS_WORKER=true`, the `start.sh` default) instead of
+a second Python process; set it to `false` to run `python -m app.services.worker`
+separately. The loop logs its process memory every 10 minutes (`Memory rss=…`).
+Local development still supports embedded work. Sync jobs persist per athlete, use leases/retries, and
 resume after a worker restart; PostgreSQL claims use row locks with `SKIP LOCKED`.
 A schema version marker plus missing columns is treated as drift, not silently
 repaired. Future changes require a new Alembic revision; do not edit the frozen
