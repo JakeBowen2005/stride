@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const finePointer = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
@@ -25,8 +25,8 @@ export function LandingNav() {
           </Link>
           <nav className="lp-nav-links" aria-label="Sections">
             <a href="#runners">Who it&apos;s for</a>
-            <a href="#paces">Paces</a>
             <a href="#how">How it works</a>
+            <a href="#paces">Paces</a>
             <a href="#founder">Founder</a>
             <a href="#contact">Contact</a>
           </nav>
@@ -110,9 +110,9 @@ type Profile = { key: string; tab: string; title: string; blurb: string; miles: 
 
 const PROFILES: Profile[] = [
   {
-    key: "new", tab: "First 5K",
+    key: "new", tab: "New runner",
     title: "Start running. Keep running.",
-    blurb: "Four days a week, every one of them easy enough to talk through. We grow the week slowly, because the goal is still running in six months.",
+    blurb: "Four days a week, every one easy enough to talk through, building toward a first 5K or simply running consistently. The goal is still running in six months.",
     miles: 14,
     days: [
       { d: "Mon", mi: 0, kind: "rest", label: "Rest" },
@@ -126,23 +126,23 @@ const PROFILES: Profile[] = [
     points: ["Weekly mileage grows by 10% at most, strictly", "Easy means conversational: we'll tell you to slow down", "A lighter week every fourth week so your legs catch up"],
   },
   {
-    key: "pr", tab: "Chasing a PR",
+    key: "pr", tab: "Racing a PR",
     title: "Two real sessions. Everything else easy.",
-    blurb: "Intervals early in the week, threshold later, a long run on the weekend. Paces come from your goal time and adjust to your actual splits.",
-    miles: 46,
+    blurb: "Whether it's a 5K, 10K or half marathon: speed early in the week, threshold later, a long run on the weekend. Paces come from your goal and recalibrate from your splits.",
+    miles: 50,
     days: [
       { d: "Mon", mi: 6, kind: "easy", label: "Easy" },
-      { d: "Tue", mi: 8, kind: "hard", label: "6×800m" },
+      { d: "Tue", mi: 9, kind: "hard", label: "5×1 mi" },
       { d: "Wed", mi: 6, kind: "easy", label: "Easy" },
-      { d: "Thu", mi: 9, kind: "hard", label: "4×10 min" },
+      { d: "Thu", mi: 10, kind: "hard", label: "3×15 min" },
       { d: "Fri", mi: 0, kind: "rest", label: "Rest" },
-      { d: "Sat", mi: 12, kind: "long", label: "Long" },
+      { d: "Sat", mi: 14, kind: "long", label: "Progression" },
       { d: "Sun", mi: 5, kind: "easy", label: "Easy" },
     ],
-    points: ["Never two hard days back to back", "Miss your splits and the next session holds instead of progressing", "Rolling two-week blocks you approve before they start"],
+    points: ["Never two hard days back to back", "Miss your splits and the next session holds instead of progressing", "Peak, taper and race week counted back from race day"],
   },
   {
-    key: "elite", tab: "High mileage",
+    key: "marathon", tab: "Marathon",
     title: "Built for the 80-mile week.",
     blurb: "Doubles, marathon-pace long runs and longer cycles between down weeks, but only once your history shows you can absorb them.",
     miles: 82,
@@ -155,10 +155,26 @@ const PROFILES: Profile[] = [
       { d: "Sat", mi: 18, kind: "long", label: "Last 5 @ MP" },
       { d: "Sun", mi: 8, kind: "easy", label: "Easy" },
     ],
-    points: ["Down weeks every 7th or 8th week instead of every 4th", "Acute:chronic load watched every day, not every block", "Ultra blocks with time-on-feet long runs and fueling targets"],
+    points: ["Down weeks every 7th or 8th week instead of every 4th", "Doubles only when your training history earns them", "Acute:chronic load watched every day, not every block"],
+  },
+  {
+    key: "ultra", tab: "Ultra",
+    title: "Time on feet, from 50K to 100 miles.",
+    blurb: "Long runs measured in hours with fueling targets, back-to-back weekends, and hills instead of the track when the race is on trail.",
+    miles: 65,
+    days: [
+      { d: "Mon", mi: 0, kind: "rest", label: "Rest" },
+      { d: "Tue", mi: 9, kind: "hard", label: "Hill repeats" },
+      { d: "Wed", mi: 8, kind: "easy", label: "Easy" },
+      { d: "Thu", mi: 10, kind: "hard", label: "Tempo" },
+      { d: "Fri", mi: 6, kind: "easy", label: "Easy" },
+      { d: "Sat", mi: 20, kind: "long", label: "4 hr trail" },
+      { d: "Sun", mi: 12, kind: "long", label: "2 hr B2B" },
+    ],
+    points: ["Back-to-back long runs every other build week", "Fueling targets on every long run", "A readiness check suggests a stepping-stone race if you need one"],
   },
 ];
-const MAX_DAY = 18;
+const MAX_DAY = 20;
 
 /** Three runners, one engine: a segmented switch swaps the sample week. */
 export function RunnerProfiles() {
@@ -300,6 +316,155 @@ export function PaceLab() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+type Bar = { v: number; label?: string; kind?: "work" | "easy" | "fuel" };
+type Workout = {
+  goal: string; day: string; phase: string; volume: string;
+  title: string; detail: string; chart: string; target?: string;
+  bars: Bar[]; why: string; feel: string; next: string;
+};
+
+// One session per goal. Bar values are 0–1 heights; labels sit under the bars.
+const WORKOUTS: Workout[] = [
+  {
+    goal: "5K", day: "Tuesday · Intervals", phase: "Build · week 6", volume: "7.2 mi",
+    title: "6 × 800m", detail: "at 5K goal pace · 90s jog · 1 mi warm-up, 1 mi cool-down",
+    chart: "Your reps", target: "on target",
+    bars: [0.66, 0.6, 0.72, 0.54, 0.66, 0.8].map((v, i) => ({ v, label: ["3:20", "3:21", "3:19", "3:22", "3:20", "3:18"][i], kind: "work" })),
+    why: "VO₂max work a touch faster than goal pace, so race pace starts to feel like cruising.",
+    feel: "Strong · RPE 7", next: "Thursday threshold holds",
+  },
+  {
+    goal: "Half marathon", day: "Thursday · Threshold", phase: "Build · week 4", volume: "9 mi",
+    title: "4 × 10 min", detail: "at threshold · 2 min jog · 2 mi warm-up, 1 mi cool-down",
+    chart: "Each rep", target: "comfortably hard",
+    bars: [0.62, 0.66, 0.68, 0.72].map((v, i) => ({ v, label: `Rep ${i + 1}`, kind: "work" })),
+    why: "Raises lactate threshold, the pace you can hold for an hour and the key limiter for the half.",
+    feel: "Good · RPE 6", next: "Saturday long run progresses",
+  },
+  {
+    goal: "Marathon", day: "Saturday · Long run", phase: "Peak · week 11", volume: "18 mi",
+    title: "18 mi", detail: "13 easy, last 5 at marathon pace · fuel every 45 min",
+    chart: "Mile by mile", target: "finish at goal pace",
+    bars: Array.from({ length: 18 }, (_, i) => ({ v: i < 13 ? 0.38 + (i % 3) * 0.02 : 0.78, label: i === 0 || i === 12 || i === 17 ? String(i + 1) : undefined, kind: i < 13 ? "easy" as const : "work" as const })),
+    why: "Race-specific endurance: practising goal pace on tired legs, the way the last 10K will feel.",
+    feel: "Strong · RPE 7", next: "Monday stays easy",
+  },
+  {
+    goal: "100K", day: "Saturday · Back-to-back", phase: "Build · week 9", volume: "4 hr",
+    title: "4 hr trail", detail: "time on feet, not pace · 2 hr easy tomorrow on tired legs",
+    chart: "Carbs per hour", target: "60–90 g",
+    bars: [0.7, 0.78, 0.82, 0.8].map((v, i) => ({ v, label: `Hr ${i + 1}`, kind: "fuel" })),
+    why: "Teaches your legs and your gut to keep working hours into the day, with a fueling target to practise.",
+    feel: "Steady · RPE 5", next: "Sunday 2 hr confirmed",
+  },
+  {
+    goal: "First 5K", day: "Wednesday · Easy", phase: "Week 3", volume: "3 mi",
+    title: "3 mi easy", detail: "conversational effort · 4 × 20s strides to finish",
+    chart: "Effort", target: "talk the whole way",
+    bars: [0.34, 0.36, 0.35, 0.86, 0.86, 0.86, 0.86].map((v, i) => ({ v, label: i < 3 ? `Mi ${i + 1}` : i === 3 ? "Strides" : undefined, kind: i < 3 ? "easy" : "work" })),
+    why: "Builds the aerobic base everything else sits on. Strides keep your stride quick without any strain.",
+    feel: "Easy · RPE 3", next: "Saturday long run on track",
+  },
+];
+
+/** Hero card: today's session for different goals. Arrows, dots or a swipe move between them. */
+export function WorkoutCarousel() {
+  const [index, setIndex] = useState(0);
+  const [dir, setDir] = useState(1);
+  const [ready, setReady] = useState(false);
+  const drag = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
+  const n = WORKOUTS.length;
+  // One frame after mount, so the first slide's bars rise from their resting height.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const go = (step: number) => { setDir(step); setIndex((i) => (i + step + n) % n); };
+  const jump = (i: number) => { setDir(i > index ? 1 : -1); setIndex(i); };
+
+  // Swipe: a short flick counts as much as a long drag (velocity, not only distance).
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" || drag.current) return;
+    drag.current = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) < Math.abs(dy)) return;
+    const velocity = Math.abs(dx) / Math.max(Date.now() - d.t, 1);
+    if (Math.abs(dx) > 50 || velocity > 0.11) go(dx < 0 ? 1 : -1);
+  };
+
+  return (
+    <div onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
+      className="lp-carousel" role="region" aria-roledescription="carousel" aria-label="Sample workouts by goal">
+      <div className="lp-slides">
+        {WORKOUTS.map((w, i) => {
+          const active = i === index;
+          const offset = active ? 0 : (i < index ? -1 : 1) * dir;
+          return (
+            <div key={w.goal} className="lp-slide" data-active={ready && active} aria-hidden={!active}
+              style={{ ["--from" as string]: `${offset * 18}px` }} role="group" aria-roledescription="slide" aria-label={`${w.goal}: ${w.title}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <span className="lp-chip lp-chip-warm">{w.day}</span>
+                  <span className="lp-chip">{w.phase}</span>
+                </div>
+                <span className="lp-mono shrink-0 text-xs text-[var(--lp-faint)]">{w.volume}</span>
+              </div>
+              <div className="mt-6">
+                <div className="text-xs uppercase tracking-[0.14em] text-[var(--lp-apricot)]">{w.goal} goal</div>
+                <div className="lp-mono mt-2 text-[clamp(2.3rem,6vw,3.1rem)] font-medium leading-none tracking-[-0.04em]">{w.title}</div>
+                <div className="mt-2 text-[15px] text-[var(--lp-muted)]">{w.detail}</div>
+              </div>
+              <div className="mt-7">
+                <div className="mb-2 flex justify-between text-[11px] uppercase tracking-[0.12em] text-[var(--lp-faint)]">
+                  <span>{w.chart}</span>{w.target && <span>{w.target}</span>}
+                </div>
+                <div className="lp-reps" style={{ gridTemplateColumns: `repeat(${w.bars.length}, 1fr)`, gap: w.bars.length > 10 ? 4 : 8 }}>
+                  {w.bars.map((b, j) => (
+                    <div key={j} className="lp-rep">
+                      <div className="lp-rep-bar" data-kind={b.kind} style={{ ["--i" as string]: j, height: `${b.v * 100}%` }} />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 grid" style={{ gridTemplateColumns: `repeat(${w.bars.length}, 1fr)`, gap: w.bars.length > 10 ? 4 : 8 }}>
+                  {w.bars.map((b, j) => (
+                    <span key={j} className="lp-mono overflow-visible whitespace-nowrap text-center text-[11.5px] text-[var(--lp-muted)]">{b.label ?? ""}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-6 rounded-2xl bg-[rgba(255,255,255,0.05)] p-4 text-sm leading-relaxed text-[var(--lp-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
+                <span className="lp-serif text-[17px] italic text-[var(--lp-cream)]">Why: </span>{w.why}
+              </div>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-[13px]">
+                <span className="text-[var(--lp-muted)]">Watch feel: <b className="font-semibold text-[var(--lp-text)]">{w.feel}</b></span>
+                <span className="inline-flex items-center gap-2 text-[#9be7bd]"><span className="h-1.5 w-1.5 rounded-full bg-current" />{w.next}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--lp-line)] pt-5">
+        <div className="flex items-center gap-1.5" role="tablist" aria-label="Choose a goal">
+          {WORKOUTS.map((w, i) => (
+            <button key={w.goal} role="tab" aria-selected={i === index} aria-label={w.goal} onClick={() => jump(i)} className="lp-dot" data-active={i === index} />
+          ))}
+          <span className="ml-2 text-xs text-[var(--lp-faint)]">{WORKOUTS[index].goal}</span>
+        </div>
+        <div className="flex gap-2">
+          <button className="lp-arrow" onClick={() => go(-1)} aria-label="Previous workout"><ChevronLeft size={18} /></button>
+          <button className="lp-arrow" onClick={() => go(1)} aria-label="Next workout"><ChevronRight size={18} /></button>
+        </div>
       </div>
     </div>
   );
