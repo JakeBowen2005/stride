@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Mail, MapPin } from "lucide-react";
-import { LandingNav, PaceLab, Reveal, RunnerProfiles, TiltCard } from "@/components/landing/interactive";
+import { LandingNav, PaceLab, Reveal, RunnerProfiles, TiltCard, WorkoutCarousel } from "@/components/landing/interactive";
 import { CONTACT, LEGAL } from "@/lib/legal";
 import "./landing.css";
 
@@ -11,23 +11,11 @@ export const metadata: Metadata = {
     "Stride writes two weeks of real training at a time, reads every run from your Garmin, and adjusts what comes next. For first-time runners and high-mileage athletes.",
 };
 
-const SESSIONS = [
-  ["6×800m", "at 5K pace, 90s jog"],
-  ["4×10 min", "threshold, 2 min jog"],
-  ["18 mi long run", "last 5 at marathon pace"],
-  ["8×200m", "strides on an easy day"],
-  ["3 mi", "easy, truly conversational"],
-  ["5×1K", "at 3K–5K pace, 2 min jog"],
-  ["2×20 min", "cruise tempo"],
-  ["10×90s hills", "jog down recovery"],
-  ["14 mi progression", "easy to steady to tempo"],
+// Goals Stride trains for, shown in the strip under the hero.
+const GOALS = [
+  "First 5K", "Sub-20 5K", "10K PR", "Half marathon", "First marathon", "Boston qualifier",
+  "50K trail", "50 miler", "100K", "100 miler", "Build to 40 miles a week", "Return from injury", "Run consistently",
 ];
-
-// Today card in the hero: a goal of 22:00 for 5K gives 3:21 per 800m at the engine's interval multiplier.
-const SPLITS = [200, 201, 199, 202, 200, 198];
-const TARGET = 201;
-// Faster reps stand taller: 3:14 fills the column, 3:30 is a stub.
-const barHeight = (sec: number) => ((214 - sec) / 16) * 62 + 24;
 
 const STEPS = [
   { n: "01", t: "Sync", d: "Runs come in from Garmin Connect with their laps, so every rep is measured, not guessed." },
@@ -71,9 +59,8 @@ export default function Welcome() {
                 <span className="lp-h1-line lp-enter lp-serif" style={{ ["--i" as string]: 3 }}>Every day explained.</span>
               </h1>
               <p className="lp-lede lp-enter mt-7 text-[1.125rem]" style={{ ["--i" as string]: 4 }}>
-                Stride is a running coach that writes two weeks of training at a time, with real sessions like
-                <span className="text-[var(--lp-text)]"> 6×800m at 3:21 with a 90-second jog</span>, then reads every run from your watch
-                and adjusts what comes next.
+                Stride is a running coach that builds your training two weeks at a time, with specific workouts for your goal, paced from
+                your target and your fitness. Every run syncs from your watch, and the plan adapts to how you actually responded.
               </p>
               <div className="lp-enter mt-9 flex flex-wrap gap-3" style={{ ["--i" as string]: 5 }}>
                 <Link href="/auth/register" className="lp-btn lp-btn-primary">Create your account <ArrowRight size={16} /></Link>
@@ -86,56 +73,18 @@ export default function Welcome() {
 
             <div className="lp-enter" style={{ ["--i" as string]: 3 }}>
               <TiltCard>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-wrap gap-2">
-                    <span className="lp-chip lp-chip-warm">Tuesday · Intervals</span>
-                    <span className="lp-chip">Build · week 6</span>
-                  </div>
-                  <span className="lp-mono text-xs text-[var(--lp-faint)]">7.2 mi</span>
-                </div>
-                <div className="mt-6">
-                  <div className="lp-mono text-[clamp(2.4rem,6vw,3.25rem)] font-medium leading-none tracking-[-0.04em]">6 × 800m</div>
-                  <div className="mt-2 text-[15px] text-[var(--lp-muted)]">at <span className="lp-mono text-[var(--lp-text)]">3:21</span> · 90s jog · 1 mi warm-up, 1 mi cool-down</div>
-                </div>
-                <div className="relative mt-7">
-                  <div className="mb-2 flex justify-between text-[11px] uppercase tracking-[0.12em] text-[var(--lp-faint)]">
-                    <span>Your reps</span><span>target 3:21</span>
-                  </div>
-                  <div>
-                    <div className="lp-reps relative">
-                      <div className="lp-target-line" style={{ bottom: `${barHeight(TARGET)}%` }} aria-hidden />
-                      {SPLITS.map((s, i) => (
-                        <div key={i} className="lp-rep">
-                          <div className="lp-rep-bar" style={{ ["--i" as string]: i, height: `${barHeight(s)}%` }} />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-2 grid grid-cols-6 gap-2">
-                      {SPLITS.map((s, i) => (
-                        <span key={i} className="lp-mono text-center text-[11.5px] text-[var(--lp-muted)]">{`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 rounded-2xl bg-[rgba(255,255,255,0.05)] p-4 text-sm leading-relaxed text-[var(--lp-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
-                  <span className="lp-serif text-[17px] italic text-[var(--lp-cream)]">Why: </span>
-                  VO₂max work a touch faster than goal pace, so 22:00 starts to feel like cruising.
-                </div>
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-[13px]">
-                  <span className="text-[var(--lp-muted)]">Watch feel: <b className="font-semibold text-[var(--lp-text)]">Strong · RPE 7</b></span>
-                  <span className="inline-flex items-center gap-2 text-[#9be7bd]"><span className="h-1.5 w-1.5 rounded-full bg-current" />Thursday threshold holds</span>
-                </div>
+                <WorkoutCarousel />
               </TiltCard>
             </div>
           </div>
         </section>
 
-        {/* Real sessions */}
-        <div className="lp-marquee" aria-label="Examples of Stride workouts">
+        {/* Goals */}
+        <div className="lp-marquee" aria-label="Goals Stride trains for">
           <div className="lp-marquee-track">
             {[0, 1].map((copy) => (
               <div key={copy} className={copy ? "lp-marquee-item lp-marquee-dup" : "lp-marquee-item"} aria-hidden={copy ? true : undefined}>
-                {SESSIONS.map(([a, b]) => <span key={a}><b>{a}</b> {b}</span>)}
+                {GOALS.map((g) => <span key={g}><b>{g}</b></span>)}
               </div>
             ))}
           </div>
@@ -146,28 +95,13 @@ export default function Welcome() {
           <div className="lp-wrap">
             <div className="mb-12 max-w-3xl">
               <span className="lp-kicker">Who it&apos;s for</span>
-              <h2 className="lp-h2 mt-5">Your first 5K or your <em>fastest one.</em></h2>
+              <h2 className="lp-h2 mt-5">From your first mile <em>to your first hundred.</em></h2>
               <p className="lp-lede mt-5">
-                The same principles scale from 14 miles a week to 80: build slowly, keep easy days easy, make the hard days count.
-                Pick a runner and see the week.
+                New runners, 10K racers, marathoners and ultrarunners all get the same principles: build slowly, keep easy days easy,
+                make the hard days count. What changes is the week. Pick a runner and see theirs.
               </p>
             </div>
             <RunnerProfiles />
-          </div>
-        </section>
-
-        {/* Pace lab */}
-        <section id="paces" className="lp-section scroll-mt-20 pt-0">
-          <div className="lp-wrap">
-            <div className="mb-12 max-w-3xl">
-              <span className="lp-kicker">Specific, not complicated</span>
-              <h2 className="lp-h2 mt-5">Drag your goal. <em>Every pace follows.</em></h2>
-              <p className="lp-lede mt-5">
-                No &ldquo;3 rounds of 5×40 seconds at 4:12–4:44.&rdquo; One clear target per session, derived from the race you&apos;re
-                training for.
-              </p>
-            </div>
-            <PaceLab />
           </div>
         </section>
 
@@ -193,6 +127,21 @@ export default function Welcome() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Pace lab */}
+        <section id="paces" className="lp-section scroll-mt-20 pt-0">
+          <div className="lp-wrap">
+            <div className="mb-12 max-w-3xl">
+              <span className="lp-kicker">Specific, not complicated</span>
+              <h2 className="lp-h2 mt-5">Drag your goal. <em>Every pace follows.</em></h2>
+              <p className="lp-lede mt-5">
+                No &ldquo;3 rounds of 5×40 seconds at 4:12–4:44.&rdquo; One clear target per session, derived from the race you&apos;re
+                training for.
+              </p>
+            </div>
+            <PaceLab />
           </div>
         </section>
 
