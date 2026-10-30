@@ -18,6 +18,7 @@ import {
   cleanPurpose,
 } from "@/lib/format";
 import type { Workout, DayFeedback } from "@/lib/types";
+import { apiUrl, USER_ID } from "@/lib/api";
 
 interface PlanDayProps {
   workout: Workout;
@@ -341,6 +342,15 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 <span className="font-medium">Why: </span>
                 <span className="text-muted-foreground">{workout.purpose}</span>
               </div>
+              {!isPast && !hasActual && !["rest", "race"].includes(workout.type) && (workout.type !== "workout" || workout.prescription) && (
+                // Until Garmin push exists: copy the file to the watch's GARMIN/NewFiles folder over USB.
+                <a href={apiUrl(`/plans/${USER_ID}/sessions/${workout.date}/workout.fit`)} download
+                   onClick={(e) => e.stopPropagation()}
+                   title="Copy this file to your watch's GARMIN/NewFiles folder over USB"
+                   className="inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                  Download for Garmin watch (.fit)
+                </a>
+              )}
             </>
           )}
           {!isPrescribed && !hasActual && (
