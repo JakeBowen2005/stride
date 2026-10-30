@@ -7,17 +7,19 @@ import { cn } from "@/lib/utils";
 export type ThemeChoice = "system" | "light" | "dark";
 export const THEME_KEY = "stride-theme";
 const QUERY = "(prefers-color-scheme: dark)";
+/** Dusk until the athlete picks otherwise: the app shares the landing page's look. */
+const DEFAULT_THEME: ThemeChoice = "dark";
 
 /** Runs in <head> before paint so the page never flashes the wrong theme. */
-export const THEME_BOOT_SCRIPT = `(function(){var d=false;try{var t=localStorage.getItem("${THEME_KEY}")||"system";d=t==="dark"||(t!=="light"&&matchMedia("${QUERY}").matches);}catch(e){d=matchMedia("${QUERY}").matches;}document.documentElement.classList.toggle("dark",d);})()`;
+export const THEME_BOOT_SCRIPT = `(function(){var d=false;try{var t=localStorage.getItem("${THEME_KEY}")||"${DEFAULT_THEME}";d=t==="dark"||(t!=="light"&&matchMedia("${QUERY}").matches);}catch(e){d=true;}document.documentElement.classList.toggle("dark",d);})()`;
 
 const listeners = new Set<() => void>();
-let memoryChoice: ThemeChoice = "system";
+let memoryChoice: ThemeChoice = DEFAULT_THEME;
 
 function readChoice(): ThemeChoice {
   try {
     const value = window.localStorage.getItem(THEME_KEY);
-    return value === "light" || value === "dark" ? value : "system";
+    return value === "light" || value === "dark" || value === "system" ? value : DEFAULT_THEME;
   } catch {
     return memoryChoice;
   }
@@ -63,7 +65,7 @@ const OPTIONS: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
 
 /** System / light / dark switch for Settings: a radiogroup with arrow-key movement. */
 export function ThemePreference() {
-  const choice = useSyncExternalStore(subscribe, readChoice, () => "system" as ThemeChoice);
+  const choice = useSyncExternalStore(subscribe, readChoice, () => DEFAULT_THEME);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const move = (index: number) => {
     const next = OPTIONS[(index + OPTIONS.length) % OPTIONS.length];

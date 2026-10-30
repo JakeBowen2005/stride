@@ -35,6 +35,8 @@ const DISTANCES = [
   { value: "100mi", label: "100 Mile" },
 ];
 const ULTRAS = new Set(["50k", "50mi", "100k", "100mi"]);
+/** "half" → "Half Marathon"; unknown values pass through upper-cased. */
+export const raceDistanceLabel = (value: string) => DISTANCES.find((d) => d.value === value)?.label ?? value.toUpperCase();
 
 const selectClass =
   "h-10 w-full rounded-xl border border-input bg-[var(--glass-inner)] px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";

@@ -18,7 +18,7 @@ import { MetricTiles } from "@/components/home/metric-tiles";
 import { TodayCard, type PlanDayLite } from "@/components/home/today-card";
 import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
-import { MileageStrip } from "@/components/home/mileage-strip";
+import { RecentWeek } from "@/components/home/recent-week";
 import { RecentFeedback, runsAwaitingFeedback } from "@/components/home/recent-feedback";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
@@ -61,7 +61,7 @@ export default function TodayPage() {
     try {
     setError(null);
     const [acts, mileage, goalData, planData, wellnessData, user] = await Promise.all([
-      getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=10`),
+      getJson<Activity[]>(`/analysis/${USER_ID}/activities?limit=30`), // enough for 7 days of doubles and walks
       getJson<WeeklyMileage[]>(`/analysis/${USER_ID}/weekly-mileage?weeks=12`),
       getJson<GoalData>(`/plans/${USER_ID}/goal`),
       getJson<PlanResponse>(`/plans/${USER_ID}/current`, { allowNotFound: true }),
@@ -114,8 +114,9 @@ export default function TodayPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 pt-1">
         <div className="min-w-0">
-          <h1 className="display">
-            {now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+          <div className="kicker">Today</div>
+          <h1 className="display mt-3">
+            {now.toLocaleDateString("en-US", { weekday: "long" })}, <em>{now.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</em>
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {firstName ? `${greeting}, ${firstName}` : greeting}
@@ -127,9 +128,9 @@ export default function TodayPage() {
           {thisWeek && weekDone != null && (
             <div className="sm:text-right">
               <div className="stat-label">This week</div>
-              <div className="num mt-1 text-[30px] font-semibold leading-none tracking-tight">
-                {formatDistance(weekDone)}<span className="text-[15px] font-normal tracking-normal text-muted-foreground"> / {formatDistance(thisWeek.target_mileage)} {unit}</span>
-                {weekPct != null && <span className="ml-2 text-[15px] font-semibold tracking-normal" style={{ color: "var(--accent-warm)" }}>{weekPct}%</span>}
+              <div className="hero-num mt-1.5 text-[34px]">
+                {formatDistance(weekDone)}<span className="font-sans text-[15px] font-normal tracking-normal text-muted-foreground"> / {formatDistance(thisWeek.target_mileage)} {unit}</span>
+                {weekPct != null && <span className="ml-2 font-sans text-[15px] font-semibold tracking-normal" style={{ color: "var(--accent-warm)" }}>{weekPct}%</span>}
               </div>
             </div>
           )}
@@ -150,7 +151,7 @@ export default function TodayPage() {
               Today&apos;s Garmin data hasn&apos;t synced yet. Showing {wellness.as_of}; readiness is hidden until it does.
             </p>
           )}
-          <MileageStrip data={weeklyMileage} />
+          <RecentWeek runs={recentRuns} today={today} onOpen={setSelectedRun} />
           {/* Phone: one column in priority order. Desktop: the wireframe's wide run column + a side column. */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] lg:items-start">
             <div className="contents lg:block lg:min-w-0 lg:space-y-4">
@@ -214,15 +215,15 @@ export default function TodayPage() {
             </div>
 
             <div className="contents lg:block lg:min-w-0 lg:space-y-4">
-              <Section label="Recovery" accent="var(--type-support)" className="order-3" meta="Garmin · tap a tile for its trend">
+              <Section label="Weekly mileage" accent="var(--type-long)" className="order-3" meta="12 weeks">
+                <WeeklyMileageChartWrapper data={weeklyMileage} showTitle={false} />
+              </Section>
+              <Section label="Recovery" accent="var(--type-support)" className="order-4" meta="Garmin · tap a tile for its trend">
                 <div className="space-y-2">
                   <ReadinessStrip wellness={wellness?.today ?? null} signals={wellness?.signals ?? []}
                     mileageRisk={planStale ? null : plan?.athlete?.injury_risk} />
                   <MetricTiles today={wellness?.latest ?? null} history={wellness?.history ?? []} />
                 </div>
-              </Section>
-              <Section label="Weekly mileage" accent="var(--type-long)" className="order-4" meta="12 weeks">
-                <WeeklyMileageChartWrapper data={weeklyMileage} showTitle={false} />
               </Section>
             </div>
           </div>

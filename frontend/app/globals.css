@@ -8,8 +8,9 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
-  /* Numbers use Manrope with tabular figures; no separate monospace face. */
-  --font-mono: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  /* Body in Manrope; hero numbers in Geist Mono and accents in Instrument Serif, as on the landing page. */
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+  --font-serif: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -49,103 +50,106 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* The app shares the landing page's Dusk palette: night navy glass, a peach horizon glow,
+   cream ink and one warm accent. Daybreak is the same idea in daylight. */
 :root {
-  /* Daybreak: the light theme. Pale peach sky over white frosted glass, navy ink. */
-  --background: #eef1f7;
+  /* Daybreak: the light theme. Warm cream sky, white frosted glass, deep navy ink, ember accent. */
+  --background: #f6efe9;
   --app-gradient:
-    radial-gradient(900px 520px at 12% -6%, rgba(255, 196, 160, .85), transparent 64%),
-    radial-gradient(1000px 720px at 100% 100%, rgba(170, 200, 240, .75), transparent 70%),
-    linear-gradient(180deg, #fbe6da 0%, #eef0f6 40%, #dde7f4 100%);
-  --shell: rgba(255, 255, 255, .28);
-  --shell-border: rgba(255, 255, 255, .75);
-  --glass: rgba(255, 255, 255, .58);
-  --glass-strong: rgba(255, 255, 255, .82);
-  --glass-inner: rgba(22, 35, 61, .045);
-  --glass-hover: rgba(255, 255, 255, .74);
-  --glass-border: rgba(22, 35, 61, .10);
-  --glass-shadow: 0 18px 48px rgba(40, 52, 90, .10);
-  --foreground: #16233d;
+    radial-gradient(1100px 520px at 50% -180px, rgba(255, 164, 119, .55), transparent 70%),
+    radial-gradient(800px 520px at 100% 0, rgba(201, 144, 158, .35), transparent 70%),
+    linear-gradient(180deg, #f9e3d6 0%, #f6efe9 420px, #eef0f6 100%);
+  --shell: rgba(255, 255, 255, .32);
+  --shell-border: rgba(255, 255, 255, .8);
+  --glass: rgba(255, 255, 255, .62);
+  --glass-strong: rgba(255, 255, 255, .86);
+  --glass-inner: rgba(27, 22, 48, .045);
+  --glass-hover: rgba(255, 255, 255, .78);
+  --glass-border: rgba(27, 22, 48, .09);
+  --glass-shadow: 0 18px 48px rgba(60, 40, 60, .10), inset 0 1px 0 rgba(255, 255, 255, .8);
+  --foreground: #1b1630;
   --card: var(--glass);
-  --card-foreground: #16233d;
-  --popover: rgba(255, 255, 255, .95);
-  --popover-foreground: #16233d;
-  --primary: #2563b8;
+  --card-foreground: #1b1630;
+  --popover: rgba(255, 255, 255, .96);
+  --popover-foreground: #1b1630;
+  --primary: #c2502a;
   --primary-foreground: #ffffff;
-  --secondary: rgba(22, 35, 61, .06);
-  --secondary-foreground: #16233d;
-  --muted: rgba(22, 35, 61, .06);
-  --muted-foreground: #4a5672;
-  --accent: rgba(22, 35, 61, .08);
-  --accent-foreground: #16233d;
-  --accent-warm: #b4541c;
+  --primary-gloss: linear-gradient(180deg, #e0774d 0%, #c2502a 100%);
+  --secondary: rgba(27, 22, 48, .06);
+  --secondary-foreground: #1b1630;
+  --muted: rgba(27, 22, 48, .06);
+  --muted-foreground: #5b5468;
+  --accent: rgba(27, 22, 48, .08);
+  --accent-foreground: #1b1630;
+  --accent-warm: #b4471c;
   --destructive: #c62828;
-  --border: rgba(22, 35, 61, .12);
-  --input: rgba(22, 35, 61, .2);
-  --ring: #2563b8;
-  --chart-1: #2563b8;
-  --chart-2: #b4541c;
-  --chart-3: #6a4fd6;
+  --border: rgba(27, 22, 48, .11);
+  --input: rgba(27, 22, 48, .2);
+  --ring: #c2502a;
+  --chart-1: #c2502a;
+  --chart-2: #4a5a7e;
+  --chart-3: #8a5f6a;
   --chart-4: #0e7490;
   --chart-5: #c02d63;
   --radius: 0.875rem;
   --sidebar: var(--glass);
-  --sidebar-foreground: #16233d;
-  --sidebar-primary: #2563b8;
+  --sidebar-foreground: #1b1630;
+  --sidebar-primary: #c2502a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(22, 35, 61, .06);
-  --sidebar-accent-foreground: #16233d;
-  --sidebar-border: rgba(22, 35, 61, .12);
-  --sidebar-ring: #2563b8;
+  --sidebar-accent: rgba(27, 22, 48, .06);
+  --sidebar-accent-foreground: #1b1630;
+  --sidebar-border: rgba(27, 22, 48, .11);
+  --sidebar-ring: #c2502a;
 }
 
 .dark {
-  /* Dusk: the dark theme from the wireframes. A navy scrim at the top keeps text on the
-     peach glow above 4.5:1. */
-  --background: #16233d;
+  /* Dusk: the landing page's sky. The glow sits above the content, so text stays on navy. */
+  --background: #0b1222;
   --app-gradient:
-    linear-gradient(180deg, rgba(14, 22, 44, .42) 0, rgba(14, 22, 44, .16) 420px, transparent 760px),
-    radial-gradient(900px 520px at 14% -6%, rgba(255, 140, 90, .58), transparent 64%),
-    radial-gradient(1000px 720px at 100% 100%, #1a2a4a, transparent 70%),
-    linear-gradient(180deg, #8a5f6a 0%, #4a5a7e 34%, #1c2a48 66%, #121c33 100%);
-  --shell: rgba(255, 255, 255, .05);
-  --shell-border: rgba(255, 255, 255, .2);
-  --glass: rgba(20, 32, 60, .42);
-  --glass-strong: rgba(20, 31, 58, .82);
-  --glass-inner: rgba(255, 255, 255, .09);
-  --glass-hover: rgba(30, 44, 78, .55);
-  --glass-border: rgba(255, 255, 255, .24);
-  --glass-shadow: 0 24px 64px rgba(0, 0, 0, .22);
-  --foreground: #ffffff;
+    radial-gradient(1200px 420px at 50% -160px, rgba(255, 140, 90, .34), transparent 70%),
+    radial-gradient(900px 480px at 92% -60px, rgba(138, 95, 106, .42), transparent 70%),
+    radial-gradient(800px 500px at 0% -40px, rgba(74, 90, 126, .55), transparent 70%),
+    linear-gradient(180deg, #232846 0px, #141c34 380px, #0b1222 900px);
+  --shell: rgba(255, 255, 255, .025);
+  --shell-border: rgba(255, 255, 255, .09);
+  --glass: rgba(16, 24, 46, .62);
+  --glass-strong: rgba(14, 21, 40, .86);
+  --glass-inner: rgba(255, 255, 255, .055);
+  --glass-hover: rgba(24, 34, 62, .7);
+  --glass-border: rgba(255, 255, 255, .10);
+  --glass-shadow: 0 30px 80px rgba(4, 8, 20, .45), inset 0 1px 0 rgba(255, 255, 255, .10);
+  --foreground: #f6f1ec;
   --card: var(--glass);
-  --card-foreground: #ffffff;
-  --popover: rgba(22, 33, 60, .96);
-  --popover-foreground: #ffffff;
-  --primary: #2a74c4;
-  --primary-foreground: #ffffff;
-  --secondary: rgba(255, 255, 255, .12);
-  --secondary-foreground: #ffffff;
-  --muted: rgba(255, 255, 255, .1);
-  --muted-foreground: rgba(255, 255, 255, .8);
-  --accent: rgba(255, 255, 255, .14);
-  --accent-foreground: #ffffff;
-  --accent-warm: #ffc59a;
+  --card-foreground: #f6f1ec;
+  --popover: rgba(18, 26, 48, .97);
+  --popover-foreground: #f6f1ec;
+  --primary: #ffa477;
+  --primary-foreground: #2a1408;
+  --primary-gloss: linear-gradient(180deg, #ffd2b4 0%, #ffa477 55%, #ff8c5a 100%);
+  --secondary: rgba(255, 255, 255, .09);
+  --secondary-foreground: #f6f1ec;
+  --muted: rgba(255, 255, 255, .08);
+  --muted-foreground: rgba(246, 241, 236, .68);
+  --accent: rgba(255, 255, 255, .11);
+  --accent-foreground: #f6f1ec;
+  --accent-warm: #ffb38a;
   --destructive: #ff9b9b;
-  --border: rgba(255, 255, 255, .17);
-  --input: rgba(255, 255, 255, .3);
-  --ring: #9cc8ff;
-  --chart-1: #ffc59a;
-  --chart-2: #7fd1ff;
-  --chart-3: #b9a6ff;
+  --border: rgba(255, 255, 255, .11);
+  --input: rgba(255, 255, 255, .22);
+  --ring: #ffb38a;
+  --chart-1: #ffb38a;
+  --chart-2: #96afe6;
+  --chart-3: #c9909e;
   --chart-4: #7fe0d0;
   --chart-5: #ff8fb0;
   --sidebar: var(--glass);
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #2a74c4;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, .1);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, .17);
-  --sidebar-ring: #9cc8ff;
+  --sidebar-foreground: #f6f1ec;
+  --sidebar-primary: #ffa477;
+  --sidebar-primary-foreground: #2a1408;
+  --sidebar-accent: rgba(255, 255, 255, .08);
+  --sidebar-accent-foreground: #f6f1ec;
+  --sidebar-border: rgba(255, 255, 255, .11);
+  --sidebar-ring: #ffb38a;
 }
 
 @layer base {
@@ -162,29 +166,33 @@
 
 /* Data-viz and status tokens (single series ≥3:1 on the glass of each theme) */
 :root {
-  --viz-series-1: #2563b8;
-  --viz-band: rgba(37, 99, 184, .12);
+  --viz-series-1: #c2502a;
+  --viz-band: rgba(194, 80, 42, .12);
   --status-good: #15803d;
   --status-warning: #b7791f;
   --status-serious: #c2410c;
   --status-critical: #c62828;
   --warn: #b4470c;
   --warn-tint: rgba(255, 140, 60, .14);
-  --row-hover: rgba(22, 35, 61, .045);
+  --row-hover: rgba(27, 22, 48, .045);
+  /* Motion: strong curves (emil-design-eng). Never ease-in on UI. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   /* Legacy cockpit names, kept so older call sites resolve to the new palette */
   --ink: var(--foreground);
   --panel-border: var(--glass-border);
 }
 .dark {
-  --viz-series-1: #ffc59a;
-  --viz-band: rgba(255, 197, 154, .18);
+  --viz-series-1: #ffb38a;
+  --viz-band: rgba(255, 179, 138, .16);
   --status-good: #6ee7a0;
   --status-warning: #ffd27a;
   --status-serious: #ffb27a;
   --status-critical: #ff9b9b;
   --warn: #ffb27a;
   --warn-tint: rgba(255, 150, 80, .16);
-  --row-hover: rgba(255, 255, 255, .07);
+  --row-hover: rgba(255, 255, 255, .06);
 }
 
 /* One color per session type. Light colors meet 4.5:1 on white glass; dusk colors are the
@@ -239,7 +247,8 @@
   button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible {
     outline: 2px solid var(--ring); outline-offset: 3px;
   }
-  button:not(:disabled):active { transform: scale(.985); }
+  button:not(:disabled):active { transform: scale(.97); }
+  button { transition-timing-function: var(--ease-out); }
   summary { cursor: pointer; }
   ::selection { background: color-mix(in srgb, var(--primary) 35%, transparent); }
 }
@@ -248,23 +257,42 @@
 .eyebrow { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .font-mono, .num { font-variant-numeric: tabular-nums; }
 .num { font-family: var(--font-sans); }
-/* Big light titles and hero numbers, as in the wireframes */
-.display { font-weight: 300; letter-spacing: -.03em; line-height: 1.02; font-size: clamp(2rem, 1.4rem + 2.6vw, 2.75rem); }
-.hero-num { font-weight: 300; letter-spacing: -.06em; line-height: .9; font-variant-numeric: tabular-nums; }
-.wordmark { font-weight: 800; letter-spacing: -.02em; }
+/* Page titles and hero numbers, in the landing page's voice: tight sans with a serif italic accent. */
+.display { font-weight: 600; letter-spacing: -.035em; line-height: 1.02; font-size: clamp(2.1rem, 1.5rem + 2.6vw, 3rem); }
+.display em, .serif-em { font-family: var(--font-serif); font-style: italic; font-weight: 400; letter-spacing: -.015em; color: var(--accent-warm); }
+.hero-num { font-family: var(--font-mono); font-weight: 500; letter-spacing: -.05em; line-height: .9; font-variant-numeric: tabular-nums; }
+.wordmark { font-weight: 700; letter-spacing: -.03em; display: inline-flex; align-items: center; gap: .55rem; }
+.wordmark::before { content: ""; width: 10px; height: 10px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe2c8, #ff8c5a); box-shadow: 0 0 14px rgba(255, 140, 90, .75); }
+/* Mono uppercase label with a leading rule, as on the landing page. */
+.kicker { display: inline-flex; align-items: center; gap: .6rem; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--accent-warm); }
+.kicker::before { content: ""; width: 18px; height: 1px; background: currentColor; opacity: .7; }
 
 /* ── Glass surfaces ───────────────────────────────────────────────────────
-   .glass: a top-level frosted panel (blurred). .glass-tile: a surface inside one
-   (no blur of its own). .lift: hover brightens and raises it. */
-.glass { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 26px;
-  -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); box-shadow: var(--glass-shadow); }
+   .glass: a top-level frosted panel (blurred), with a specular top edge. .glass-tile: a surface
+   inside one (no blur of its own). .lift: hover brightens and raises it (fine pointers only). */
+.glass { background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 120px), var(--glass);
+  border: 1px solid var(--glass-border); border-radius: 26px;
+  -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: var(--glass-shadow); }
 .glass-tile { background: var(--glass-inner); border-radius: 16px; }
 .glass-strong { background: var(--glass-strong); border: 1px solid var(--glass-border);
   -webkit-backdrop-filter: blur(28px) saturate(150%); backdrop-filter: blur(28px) saturate(150%); }
-.lift { transition: background-color .18s ease, transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
-.lift:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(0, 0, 0, .12); }
-.glass.lift:hover { background: var(--glass-hover); }
-.glass-tile.lift:hover { background: color-mix(in srgb, var(--glass-inner) 100%, var(--foreground) 6%); }
+.lift { transition: background-color 200ms ease, transform 200ms var(--ease-out), box-shadow 200ms ease, border-color 200ms ease; }
+.lift:active { transform: scale(.985); }
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(0, 0, 0, .16); }
+  .glass.lift:hover { background: var(--glass-hover); }
+  .glass-tile.lift:hover { background: color-mix(in srgb, var(--glass-inner) 100%, var(--foreground) 6%); }
+}
+/* The primary call to action: the landing page's glossy peach (ember in Daybreak), with a sheen on hover. */
+.btn-gloss { position: relative; overflow: hidden; background: var(--primary-gloss) !important; color: var(--primary-foreground);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 -1px 0 rgba(0, 0, 0, .12); }
+.btn-gloss::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .45) 50%, transparent 65%); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-gloss:hover::after { transform: translateX(120%); transition: transform 700ms var(--ease-out); }
+}
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 99px; flex: none; }
 .pill { display: inline-flex; align-items: center; gap: .375rem; border-radius: 999px; }
 
@@ -274,10 +302,10 @@
 }
 
 /* ── Cockpit classes, now glass ───────────────────────────────────────── */
-.panel { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 24px; overflow: hidden;
+.panel { background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 120px), var(--glass); border: 1px solid var(--glass-border); border-radius: 24px; overflow: hidden;
   -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); box-shadow: var(--glass-shadow); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-  padding: .95rem 1.15rem .15rem; font-size: 13px; font-weight: 700; color: var(--foreground); }
+  padding: 1rem 1.15rem .2rem; font-size: 13.5px; font-weight: 650; letter-spacing: -.01em; color: var(--foreground); }
 .panel-head h2 { font: inherit; margin: 0; display: inline-flex; align-items: center; gap: .5rem; }
 .panel-head .meta { color: var(--muted-foreground); font-weight: 500; font-size: 12px; text-align: right; }
 .hatch { background-image: repeating-linear-gradient(135deg, var(--hatch, rgba(127,127,127,.08)) 0 2px, transparent 2px 8px); }
@@ -293,7 +321,7 @@
 }
 
 /* A label sitting on top of a component that renders its own Card: one glass surface. */
-.section-stack { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 24px;
+.section-stack { background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 120px), var(--glass); border: 1px solid var(--glass-border); border-radius: 24px;
   -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); box-shadow: var(--glass-shadow); }
 .section-stack > [data-slot=card] { background: transparent; box-shadow: none; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .section-stack > :not(.panel-head):not([data-slot=card]) { margin: .6rem .9rem .9rem; }
@@ -313,5 +341,5 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   button:not(:disabled):active { transform: none; }
-  .lift:hover { transform: none; }
+  .lift:hover, .lift:active { transform: none; }
 }

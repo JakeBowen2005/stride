@@ -72,7 +72,8 @@ export default function HistoryPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="display pt-1">History</h1>
+        <div className="kicker pt-1">Every run, synced</div>
+        <h1 className="display mt-3">Your <em>history</em></h1>
         <div className="glass flex items-center justify-center py-20 text-muted-foreground">
           Loading your runs...
         </div>
@@ -82,7 +83,13 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="display pt-1">History</h1>
+      <div className="pt-1">
+        <div className="kicker">Every run, synced</div>
+        <h1 className="display mt-3">Your <em>history</em></h1>
+      </div>
+
+      {/* Mileage leads: the running comes first, the analysis follows. */}
+      <MileageOverTimeChartWrapper revision={revision} />
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
       <HistoryProfile revision={revision} onInspect={async (id) => {
@@ -92,11 +99,10 @@ export default function HistoryPage() {
 
       <TrainingTrends revision={revision} onInspect={async id=>{const a=await getJson<Activity>(`/analysis/${USER_ID}/activities/${id}`);if(a)setSelected({...a,splits:a.splits||[]});}} />
       </div>
-      <MileageOverTimeChartWrapper revision={revision} />
       <AerobicEfficiencyChartWrapper revision={revision} />
 
       <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
-      <h2 className="text-lg font-bold tracking-tight">Runs</h2>
+      <h2 className="text-2xl font-semibold tracking-[-0.03em]">Runs</h2>
       <Tabs
         value={filter}
         onValueChange={(v) => setFilter(v as FilterType)}

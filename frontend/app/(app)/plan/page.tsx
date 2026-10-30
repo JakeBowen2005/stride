@@ -19,6 +19,8 @@ import { BlockReviewPanel, GoalRoute, type BlockReview, type Outlook } from "@/c
 import { PlanDayDetail } from "@/components/plan-day-detail";
 import { Panel, StatCell } from "@/components/cockpit/panel";
 import { PlanCalendar } from "@/components/cockpit/plan-calendar";
+import { PlanSpotlight } from "@/components/plan-spotlight";
+import { raceDistanceLabel } from "@/components/goal-editor";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SYNC_EVENT } from "@/components/garmin-sync";
 import { formatDateLong, formatDateShort, hoursLabel } from "@/lib/format";
@@ -288,8 +290,8 @@ export default function PlanPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <p className="eyebrow">Your next training days</p>
-        <h1 className="display mt-1">Current Plan</h1>
+        <div className="kicker">Two-week block</div>
+        <h1 className="display mt-3">Current <em>plan</em></h1>
         <div className="glass py-20 text-center text-muted-foreground">
           Loading your plan...
         </div>
@@ -300,8 +302,8 @@ export default function PlanPage() {
   if (noPlan) {
     return (
       <div className="space-y-6">
-        <p className="eyebrow">Your next training days</p>
-        <h1 className="display mt-1">Current Plan</h1>
+        <div className="kicker">Two-week block</div>
+        <h1 className="display mt-3">Current <em>plan</em></h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="py-12 text-center">
@@ -319,8 +321,8 @@ export default function PlanPage() {
   if (!plan) {
     return (
       <div className="space-y-6">
-        <p className="eyebrow">Your next training days</p>
-        <h1 className="display mt-1">Current Plan</h1>
+        <div className="kicker">Two-week block</div>
+        <h1 className="display mt-3">Current <em>plan</em></h1>
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             {error || "No plan available"}
@@ -336,8 +338,8 @@ export default function PlanPage() {
   if (plan.is_stale) {
     return (
       <div className="space-y-6">
-        <p className="eyebrow">Your next training days</p>
-        <h1 className="display mt-1">Current Plan</h1>
+        <div className="kicker">Two-week block</div>
+        <h1 className="display mt-3">Current <em>plan</em></h1>
         {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
         <Card>
           <CardContent className="space-y-3 py-8 text-center">
@@ -412,7 +414,7 @@ export default function PlanPage() {
         ))}
         <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
         {/* The goal tile is the one solid accent, as in the wireframes */}
-        <div className="rounded-[22px] border border-white/30 bg-primary text-primary-foreground shadow-[var(--glass-shadow)] [&_.stat-label]:text-primary-foreground/85 [&_.text-muted-foreground]:text-primary-foreground/85">
+        <div className="btn-gloss rounded-[22px] [&_.stat-label]:text-primary-foreground/80 [&_.text-muted-foreground]:text-primary-foreground/80">
           <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
             sub={plan.load?.destination ? `${unit}/week` : plan.goal.race_date ? `race ${formatDateShort(plan.goal.race_date)}` : undefined} />
         </div>
@@ -442,8 +444,10 @@ export default function PlanPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <h1 className="display">
+          <div className="kicker">{plan.block_number ? `Block ${plan.block_number} · ` : ""}two weeks</div>
+          <h1 className="display mt-3">
             {plan.load ? <><span className="sr-only">Current Plan · </span>{MODE_LABEL[plan.load.mode] ?? plan.load.mode}</> : "Current Plan"}
+            {plan.goal.distance && <> <em>for the {raceDistanceLabel(plan.goal.distance)}</em></>}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{plan.goal.description}</span>
@@ -495,9 +499,9 @@ export default function PlanPage() {
         </div>
       </Panel>}
 
-      {isDesktop && stats}
+      <PlanSpotlight days={allDays} today={today} units={units} onOpen={openDay} />
 
-      <Panel label="Calendar" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
+      <Panel label="Your two weeks" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
         <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />
       </Panel>
 
@@ -507,8 +511,8 @@ export default function PlanPage() {
         </div>
       )}
 
-      {/* Phones see the week first; block numbers follow it. */}
-      {!isDesktop && stats}
+      {/* Block numbers follow the weeks they describe. */}
+      {stats}
 
       <div id="plan-coach" className="panel min-w-0 scroll-mt-24">
         <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}

@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   description: "AI-powered running coach",
   applicationName: "Stride",
   // "Add to Home Screen" on iPhone opens full-screen like a native app
-  appleWebApp: { capable: true, title: "Stride", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Stride", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
@@ -31,8 +31,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbe6da" },
-    { media: "(prefers-color-scheme: dark)", color: "#3a3f5c" },
+    { media: "(prefers-color-scheme: light)", color: "#232846" },
+    { media: "(prefers-color-scheme: dark)", color: "#232846" },
   ],
 };
 
