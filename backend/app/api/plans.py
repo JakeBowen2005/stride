@@ -1203,6 +1203,23 @@ def session_options(user_id: int, session_date: date, category: Literal["thresho
     return build_session_options(plan,row,category,db)
 
 
+@router.get("/{user_id}/sessions/{session_date}/workout.fit")
+def session_fit(user_id: int, session_date: date, db: Session = Depends(get_db)):
+    """The planned session as a Garmin FIT workout file, for copying to the watch over USB."""
+    from fastapi.responses import Response
+    from app.services.fit_workout import workout_fit
+    plan = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    if not plan: raise HTTPException(404, "No active plan")
+    row = db.query(PlannedWorkout).filter_by(plan_id=plan.id,date=session_date.isoformat()).first()
+    if not row: raise HTTPException(404, "Session not found")
+    try:
+        filename, content = workout_fit(row)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return Response(content, media_type="application/vnd.ant.fit",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.post("/{user_id}/sessions/{session_date}")
 def change_session(user_id: int, session_date: date, req: SessionAction, db: Session = Depends(get_db)):
     _begin_schedule_write(db)
