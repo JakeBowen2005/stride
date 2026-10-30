@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Mail, MapPin } from "lucide-react";
 import { LandingNav, PaceLab, Reveal, RunnerProfiles, TiltCard, WorkoutCarousel } from "@/components/landing/interactive";
@@ -200,9 +201,9 @@ export default function Welcome() {
         <section id="founder" className="lp-section scroll-mt-20 pt-0">
           <div className="lp-wrap grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center lg:gap-16">
             <Reveal className="lp-reveal">
-              {/* Drop a photo at public/founder.jpg and swap this monogram for <img src="/founder.jpg" alt="Jake Bowen" /> */}
-              <div className="lp-portrait grid place-items-center">
-                <span className="lp-serif text-[7rem] italic leading-none text-[rgba(251,230,218,0.9)]">JB</span>
+              <div className="lp-portrait">
+                <Image src="/founder.jpg" alt="Jake Bowen racing on a palm-lined road at dawn" fill priority={false}
+                  sizes="(min-width: 1000px) 420px, 100vw" className="object-cover object-[55%_42%]" />
                 <div className="absolute inset-x-0 bottom-0 p-5">
                   <div className="lp-glass rounded-2xl p-4">
                     <div className="font-semibold">Jake Bowen</div>
@@ -213,22 +214,27 @@ export default function Welcome() {
             </Reveal>
             <div>
               <span className="lp-kicker">The founder</span>
-              <h2 className="lp-h2 mt-5">Built by a runner. <em>Tested on real miles first.</em></h2>
+              <h2 className="lp-h2 mt-5">Built by a runner. <em>Tested on every mile.</em></h2>
               <div className="mt-6 space-y-4 text-[1.0625rem] leading-relaxed text-[var(--lp-muted)]">
                 <p>
-                  I&apos;m Jake. I&apos;ve run a 2:58 marathon, I&apos;m chasing a sub-17 5K, and someday I want to finish a 100-miler.
-                  Somewhere in 500 logged runs I got tired of plans that either felt generic or handed me paces I couldn&apos;t hit.
+                  I&apos;m Jake, a computer science student at Cal State Fullerton and a lifelong runner. After years of road racing and
+                  hundreds of logged runs, I kept hitting the same wall: plans were either generic or prescribed paces that had nothing to do
+                  with where my fitness actually was.
                 </p>
                 <p>
-                  So I started writing the plan I actually wanted: simple sessions that look like what competitive runners do, a reason for
-                  every one, and a coach that slows you down before an injury does. Now I&apos;d like to see if it works for you.
+                  Stride is the coach I wanted. Clear, specific sessions with a reason behind each one, grounded in established training
+                  science, and cautious enough to slow you down before an injury does.
+                </p>
+                <p>
+                  I&apos;m now taking that from the roads to the trails, building toward a competitive finish at UTMB in 2030. Stride is
+                  coaching me there, and I&apos;d like it to help you reach your next goal too.
                 </p>
               </div>
-              <div className="mt-8 grid grid-cols-3 gap-3">
-                {[["2:58", "Marathon"], ["70", "Peak mpw"], ["100", "Miles, next"]].map(([v, l]) => (
+              <div className="mt-8 flex flex-wrap gap-3">
+                {[["Current focus", "Road to trail"], ["Long-term goal", "UTMB · 2030"]].map(([l, v]) => (
                   <div key={l} className="lp-stat">
-                    <div className="lp-mono text-2xl font-medium sm:text-3xl">{v}</div>
-                    <div className="mt-1 text-xs text-[var(--lp-faint)] sm:text-sm">{l}</div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-[var(--lp-faint)]">{l}</div>
+                    <div className="mt-1 text-lg font-semibold tracking-[-0.02em]">{v}</div>
                   </div>
                 ))}
               </div>

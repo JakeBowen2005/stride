@@ -66,12 +66,13 @@ export function PlanCalendar({ weeks, units, selectedDate, onSelect }: {
                       selected && "ring-2 ring-[var(--ring)] ring-offset-0")}
                     style={{
                       background: hard ? tint : "var(--glass-inner)",
-                      borderColor: isToday ? "var(--foreground)" : "var(--glass-border)",
+                      borderColor: isToday ? "var(--accent-warm)" : "var(--glass-border)",
                       borderWidth: isToday ? 1.5 : 1,
+                      boxShadow: isToday ? "0 0 28px color-mix(in srgb, var(--accent-warm) 28%, transparent)" : undefined,
                       ["--hatch" as string]: hard ? `color-mix(in srgb, ${color} 14%, transparent)` : undefined,
                     }}>
                     <span className="flex items-center justify-between gap-1 text-[11px] text-muted-foreground">
-                      <span className="num">{dow} {formatDateShort(w.date)}</span>
+                      <span className={cn("num", isToday && "font-bold text-[var(--accent-warm)]")}>{isToday ? "Today" : `${dow} ${formatDateShort(w.date)}`}</span>
                       {w.actual && <span aria-hidden="true" style={{ color: "var(--accent-warm)" }}>✓</span>}
                     </span>
                     <span className="line-clamp-3 break-words text-[13px] font-semibold leading-snug">{title}</span>
@@ -132,11 +133,12 @@ function CompactCalendar({ weeks, units, selectedDate, onSelect, today }: {
                       selected && "ring-2 ring-[var(--ring)]")}
                     style={{
                       background: hard ? tint : "var(--glass-inner)",
-                      borderColor: w.date === today ? "var(--foreground)" : "transparent",
+                      borderColor: w.date === today ? "var(--accent-warm)" : "transparent",
                       borderWidth: w.date === today ? 1.5 : 1,
+                      boxShadow: w.date === today ? "0 0 18px color-mix(in srgb, var(--accent-warm) 28%, transparent)" : undefined,
                       ["--hatch" as string]: hard ? `color-mix(in srgb, ${color} 14%, transparent)` : undefined,
                     }}>
-                    <span className={cn("text-[11px]", w.date === today ? "font-bold" : "text-muted-foreground")}>{day}</span>
+                    <span className={cn("text-[11px]", w.date === today ? "font-bold text-[var(--accent-warm)]" : "text-muted-foreground")}>{day}</span>
                     <span className="num text-sm font-semibold leading-none">{w.type === "rest" ? "–" : distanceInUnits(miles, units)}</span>
                     <span aria-hidden="true" className="flex h-2.5 items-center gap-0.5">
                       <span className="size-1.5 rounded-full" style={{ background: color }} />

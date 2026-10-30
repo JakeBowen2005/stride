@@ -130,7 +130,8 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="display pt-1">Settings</h1>
+        <div className="kicker pt-1">Account</div>
+        <h1 className="display mt-3">Your <em>settings</em></h1>
         <div className="glass py-20 text-center text-muted-foreground">Loading...</div>
       </div>
     );
@@ -141,19 +142,12 @@ export default function SettingsPage() {
   const workload = analysis?.workload ?? analysis?.injury_risk;
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3 pt-1"><h1 className="display">Settings</h1><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
+      <div className="flex items-end justify-between gap-3 pt-1"><div><div className="kicker">Account</div><h1 className="display mt-3">Your <em>settings</em></h1></div><form action="/auth/logout" method="post"><Button type="submit" variant="outline" size="sm">Sign out</Button></form></div>
       {user && scheduleChanged(approvedSchedule, user) && <p role="status" className="glass rounded-[22px] px-4 py-3 text-sm">Your preferences have changed since this block was approved. <Link href="/plan" className="underline">Review a revised block</Link> to apply the new schedule. Your current sessions keep their approved schedule.</p>}
 
       {/* Two columns of glass cards on wide screens; one column on phones */}
       <div className="grid items-start gap-4 lg:grid-cols-2">
       <div className="space-y-4">
-      <Card>
-        <CardContent className="space-y-3 pt-0">
-          <h2 className="text-[13px] font-bold">Appearance</h2>
-          <p className="text-sm text-muted-foreground">System follows your phone or computer. Daybreak is light; Dusk is dark.</p>
-          <ThemePreference />
-        </CardContent>
-      </Card>
 
       {/* Profile */}
       <Card>
@@ -229,6 +223,14 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+
+      <Card>
+        <CardContent className="space-y-3 pt-0">
+          <h2 className="text-[13px] font-bold">Appearance</h2>
+          <p className="text-sm text-muted-foreground">Dusk is the default, matching the Stride site. Daybreak is light; System follows your phone or computer.</p>
+          <ThemePreference />
+        </CardContent>
+      </Card>
       </div>
       <div className="space-y-4">
       {/* Personal Records */}
