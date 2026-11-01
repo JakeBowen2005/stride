@@ -19,6 +19,8 @@ import { TodayCard, type PlanDayLite } from "@/components/home/today-card";
 import type { WellnessResponse } from "@/components/home/types";
 import { WeekProgress } from "@/components/home/week-progress";
 import { RecentWeek } from "@/components/home/recent-week";
+import { NextBlockBanner } from "@/components/next-block-banner";
+import type { NextPreview } from "@/lib/plan-state";
 import { RecentFeedback, runsAwaitingFeedback } from "@/components/home/recent-feedback";
 import { ReadinessStrip } from "@/components/home/readiness-strip";
 import { RunDetailSheet } from "@/components/run-detail-sheet";
@@ -34,6 +36,7 @@ interface GoalData {
 }
 
 interface PlanResponse {
+  next_preview?: NextPreview;
   is_stale?: boolean;
   athlete?: { injury_risk?: string | null };
   phase?: { label: string; phase: string } | null;
@@ -152,6 +155,7 @@ export default function TodayPage() {
             </p>
           )}
           <RecentWeek runs={recentRuns} today={today} onOpen={setSelectedRun} />
+          <NextBlockBanner preview={plan?.next_preview} />
           {/* Phone: one column in priority order. Desktop: the wireframe's wide run column + a side column. */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] lg:items-start">
             <div className="contents lg:block lg:min-w-0 lg:space-y-4">

@@ -23,6 +23,7 @@ class User(Base):
     workout_format: Mapped[str] = mapped_column(String(10), default="distance")  # "distance" or "time"
 
     timezone: Mapped[str | None] = mapped_column(String(80))
+    theme: Mapped[str | None] = mapped_column(String(10), nullable=True)
     ai_consent: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
     # Running background

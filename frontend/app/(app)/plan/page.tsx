@@ -9,7 +9,8 @@ import { PlanOptionsDialog } from "@/components/plan-options-dialog";
 
 import { distanceInUnits, paceInUnits, unitLabel, type Units } from "@/lib/units";
 import { apiUrl, getJson, USER_ID } from "@/lib/api";
-import { loadPlanState, nextBlockAvailable } from "@/lib/plan-state";
+import { loadPlanState, type NextPreview } from "@/lib/plan-state";
+import { NextBlockBanner } from "@/components/next-block-banner";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,14 @@ interface ApiPlan {
   expectations?: WeekExpectation[];
   id: number;
   preview?: boolean;
+  provisional?: boolean;
+  preview_scope?: "current" | "next";
+  stale?: boolean;
+  next_preview?: NextPreview;
+  since_preview?: string[];
+  projected_through?: string;
+  projected_days?: { date: string; title: string; miles: number }[];
+  violations?: { code: string; date: string; message: string }[];
   /** "schedule": only run days changed, so only the touched days moved. */
   revision?: "schedule";
   /** One plain line per week comparing this draft with the approved block. */
@@ -208,7 +217,10 @@ export default function PlanPage() {
   const [currentPreferences, setCurrentPreferences] = useState<AthletePreferences | null>(null);
   const [switchRequest, setSwitchRequest] = useState<{ date: string; nonce: number } | null>(null);
   const [units, setUnits] = useState<Units>("miles");
-  const [plan, setPlan] = useState<ApiPlan | null>(null);
+  const [currentPlan, setCurrentPlan] = useState<ApiPlan | null>(null);
+  const [nextPlan, setNextPlan] = useState<ApiPlan | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<"current" | "next">("current");
+  const plan = selectedBlock === "next" && nextPlan ? nextPlan : currentPlan;
   const [activePlan, setActivePlan] = useState<ApiPlan | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -235,7 +247,9 @@ export default function PlanPage() {
       setError(null);
       const state = await loadPlanState<ApiPlan>();
       setActivePlan(state.active);
-      setPlan(state.visible);
+      setCurrentPlan(state.visible);
+      setNextPlan(state.next);
+      setSelectedBlock((block) => block === "next" && !state.next ? "current" : block);
       setNoPlan(!state.visible);
       setPlanRevision((n) => n + 1);
     } catch {
@@ -252,7 +266,7 @@ export default function PlanPage() {
       const res = await fetch(apiUrl(`/plans/${USER_ID}/preview`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lighter, scope, mode }),
+        body: JSON.stringify({ lighter, scope, mode, provisional: scope === "next" && activePlan?.next_preview?.provisional === true }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -261,12 +275,20 @@ export default function PlanPage() {
       }
       setNotice(null);
       await fetchPlan();
+      setSelectedBlock(scope);
+      setSelectedDate(null); setInspectorOpen(false);
     } catch {
       setError("Failed to connect to server");
     } finally {
       setGenerating(false);
     }
-  }, [fetchPlan]);
+  }, [fetchPlan, activePlan]);
+
+  const openNext = () => {
+    if (nextPlan && !nextPlan.stale && !!nextPlan.provisional === !!activePlan?.next_preview?.provisional) {
+      setSelectedBlock("next"); setSelectedDate(null); setInspectorOpen(false);
+    } else { void generatePlan(false, "next"); }
+  };
 
   async function finishPreview(action: "approve" | "discard") {
     if (!plan) return;
@@ -276,6 +298,7 @@ export default function PlanPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not save your choice");
       await fetchPlan();
+      setSelectedBlock("current"); setSelectedDate(null); setInspectorOpen(false);
       setNotice(action === "approve" ? "Plan approved. Your training block is active." : "Preview discarded. Your current plan is unchanged.");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not reach Stride"); }
     finally { setGenerating(false); }
@@ -284,7 +307,9 @@ export default function PlanPage() {
   useEffect(() => {
     const id = setTimeout(fetchPlan, 0);
     window.addEventListener(SYNC_EVENT, fetchPlan);
-    return () => { clearTimeout(id); window.removeEventListener(SYNC_EVENT, fetchPlan); };
+    window.addEventListener("focus", fetchPlan);
+    const rollover = setInterval(() => { if (document.visibilityState === "visible") void fetchPlan(); }, 60_000);
+    return () => { clearTimeout(id); clearInterval(rollover); window.removeEventListener(SYNC_EVENT, fetchPlan); window.removeEventListener("focus", fetchPlan); };
   }, [fetchPlan]);
 
   if (loading) {
@@ -348,7 +373,7 @@ export default function PlanPage() {
               Generate a fresh 2-week block. It&apos;s built from your latest Garmin runs, current fitness and{" "}
               {plan.goal.race_date ? "where you are relative to race day" : "your goal"}.
             </p>
-            <Button onClick={() => generatePlan(false, "next")} disabled={generating}>
+            <Button onClick={openNext} disabled={generating}>
               {generating ? "Building your plan…" : "Generate this week's plan"}
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -412,7 +437,7 @@ export default function PlanPage() {
           <div key={i} className="glass rounded-[22px]"><StatCell size="sm" key={i} label={`W${i + 1} plan / act`} value={<>{distance(t.planned)}<span className="text-muted-foreground"> / {t.actual > 0 ? distance(t.actual) : "—"}</span></>}
             sub={i === 1 && weekTotals[0].planned > 0 && !firstWeekPartial ? `${t.planned >= weekTotals[0].planned ? "+" : ""}${Math.round((t.planned / weekTotals[0].planned - 1) * 100)}% vs W1` : unit} /></div>
         ))}
-        <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · four completed weeks${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
+        <div className="glass rounded-[22px]"><StatCell size="sm" label="Block baseline" value={distance(plan.load?.baseline)} sub={`${unit}/week · ${plan.provisional ? "includes projected finish" : "four completed weeks"}${plan.athlete.baseline_as_of ? ` · as of ${formatDateShort(plan.athlete.baseline_as_of)}` : " · saved when approved"}`} /></div>
         {/* The goal tile is the one solid accent, as in the wireframes */}
         <div className="btn-gloss rounded-[22px] [&_.stat-label]:text-primary-foreground/80 [&_.text-muted-foreground]:text-primary-foreground/80">
           <StatCell size="sm" label="Goal" value={plan.load?.destination ? distance(plan.load.destination) : plan.goal.distance?.toUpperCase() || undefined}
@@ -442,7 +467,11 @@ export default function PlanPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
+      {activePlan?.next_preview && activePlan.next_preview.state !== "hidden" && <div role="group" aria-label="Training block" className="block-switch flex w-fit gap-1 rounded-xl border p-1">
+        <button type="button" aria-pressed={selectedBlock === "current"} disabled={generating} className="rounded-lg px-4 py-2 text-sm" onClick={() => { setSelectedBlock("current"); setSelectedDate(null); setInspectorOpen(false); }}>This block</button>
+        <button type="button" aria-pressed={selectedBlock === "next"} disabled={generating || ["upcoming", "blocked"].includes(activePlan.next_preview.state)} className="rounded-lg px-4 py-2 text-sm disabled:opacity-40" onClick={openNext}>Next block</button>
+      </div>}
+      <div key={selectedBlock} className="block-arrival flex flex-wrap items-end justify-between gap-3 pt-1">
         <div className="min-w-0">
           <div className="kicker">{plan.block_number ? `Block ${plan.block_number} · ` : ""}two weeks</div>
           <h1 className="display mt-3">
@@ -457,14 +486,14 @@ export default function PlanPage() {
             )}
             {plan.goal.race_date && <span>Race {formatDateShort(plan.goal.race_date)}</span>}
             {plan.is_deload && <Badge variant="secondary" className="text-xs">Deload</Badge>}
-            <span>{plan.preview ? "Draft for review" : "Approved block · log runs and feel ratings to adjust it as you go"}</span>
+            <span>{plan.provisional ? "Provisional preview" : plan.preview ? "Draft for review" : "Approved block · log runs and feel ratings to adjust it as you go"}</span>
           </div>
         </div>
         {!plan.preview && (
           <PlanOptionsDialog
             aiConfigured={aiConfigured}
             busy={generating}
-            nextBlockLabel={nextBlockAvailable(plan.end_date, today) ? `starts after ${formatDateShort(plan.end_date)}` : null}
+            nextBlockLabel={activePlan?.next_preview && ["available", "ready"].includes(activePlan.next_preview.state) ? `starts ${formatDateShort(activePlan.next_preview.next_start)}` : null}
             onAskCoach={(concern) => {
               setCoachRequest({ concern, nonce: Date.now() });
               setCoachOpen(true);
@@ -473,33 +502,51 @@ export default function PlanPage() {
             onSwitchSession={switchSource ? () => { setSwitchRequest({ date: switchSource.date, nonce: Date.now() }); openDay(switchSource.date); } : undefined}
             onLighter={() => generatePlan(true)}
             onRevise={() => generatePlan()}
-            onNextBlock={() => generatePlan(false, "next")}
+            onNextBlock={openNext}
           />
         )}
       </div>
 
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {selectedBlock === "current" && <NextBlockBanner preview={activePlan?.next_preview} busy={generating} onOpen={openNext} />}
+      {plan.preview && !!plan.violations?.length && <div role="alert" className="rounded-2xl border border-destructive/40 p-4 text-sm">
+        <p className="font-medium">This draft needs a schedule change before approval</p>
+        <ul className="mt-2 space-y-1 text-muted-foreground">{plan.violations.map((v) => <li key={`${v.code}-${v.date}`}>{v.message}</li>)}</ul>
+      </div>}
       {preferenceMismatch && builtFor && currentPreferences && <div role="status" className="glass flex flex-wrap items-center justify-between gap-3 rounded-[22px] px-4 py-3 text-sm">
         <p>This block was built for {describeSchedule(builtFor.days_per_week, builtFor.rest_days)}. Your settings now say {describeSchedule(currentPreferences.days_per_week, (currentPreferences.rest_days || "").split(","))}.</p>
-        <Button size="sm" disabled={generating} onClick={() => generatePlan(false, "current", "schedule")}>{generating ? "Building…" : "Update my plan"}</Button>
+        <Button size="sm" disabled={generating} onClick={() => generatePlan(false, selectedBlock === "next" ? "next" : "current", selectedBlock === "next" ? "full" : "schedule")}>{generating ? "Building…" : selectedBlock === "next" ? "Refresh next preview" : "Update my plan"}</Button>
       </div>}
-      {plan.preview && <Panel label="Review this block" accent="var(--type-threshold)">
+      {plan.provisional && <Panel label="An early look · next block" accent="var(--type-easy)">
+        <p className="text-sm">This is provisional. Your current block stays active through {formatDateShort(plan.projected_through || activePlan!.end_date)}.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Built as if you finish the remaining scheduled runs. After this block ends, Stride rebuilds from what you actually ran and asks you to approve the final version.</p>
+        {!!plan.projected_days?.length && <details className="mt-3 text-sm"><summary className="cursor-pointer text-muted-foreground">Assumed runs ({plan.projected_days.length})</summary><ul className="mt-2 space-y-1">{plan.projected_days.map((d) => <li key={d.date}>{formatDateShort(d.date)} · {d.title} · {distance(d.miles)} {unit}</li>)}</ul></details>}
+        {plan.stale && <p role="status" className="mt-3 text-sm text-muted-foreground">Your training or settings changed. Refresh this preview to see the latest outlook.</p>}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button variant={activePlan?.next_preview?.provisional ? "outline" : "default"} disabled={generating} onClick={() => generatePlan(false, "next")}>{activePlan?.next_preview?.provisional ? "Refresh preview" : "Build final block"}</Button>
+          <Button variant="outline" disabled={generating} onClick={() => generatePlan(true, "next")}>Make it lighter</Button>
+          <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Discard preview</Button>
+        </div>
+      </Panel>}
+      {plan.preview && !plan.provisional && <Panel label="Review this block" accent="var(--type-threshold)">
         <p className="text-sm text-muted-foreground">{plan.revision === "schedule"
           ? "Only the days your new schedule touches changed: workouts and long runs are exactly as approved. Your current plan stays active until you approve."
           : "Your current plan stays active until you approve. Make it lighter reduces volume, keeping workout paces unchanged."}</p>
         {!!plan.change_summary?.length && <ul className="mt-2 space-y-0.5 text-sm">{plan.change_summary.map((line) => <li key={line}>{line}</li>)}</ul>}
+        {!!plan.since_preview?.length && <div className="mt-3"><p className="text-sm font-medium">Since your preview</p><ul className="mt-1 space-y-1 text-sm text-muted-foreground">{plan.since_preview.map((line) => <li key={line}>{line}</li>)}</ul></div>}
         {!!plan.changes?.length && <ul className="mt-2 space-y-1 text-xs text-muted-foreground">{plan.changes.map((c) => (
           <li key={c.date}><span className="font-medium text-foreground">{formatDateShort(c.date)}</span>: {c.before} → {c.after}. {c.reason}</li>
         ))}</ul>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button disabled={generating} onClick={() => finishPreview("approve")}>Approve</Button>
-          <Button variant="outline" disabled={generating} onClick={() => generatePlan(true)}>Make it lighter</Button>
-          {activePlan && !activePlan.is_stale && <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Keep current plan</Button>}
+          <Button disabled={generating || plan.stale || !!plan.violations?.length} onClick={() => finishPreview("approve")}>Approve</Button>
+          <Button variant="outline" disabled={generating} onClick={() => generatePlan(true, plan.preview_scope || "current")}>Make it lighter</Button>
+          {plan.stale && <Button variant="outline" disabled={generating} onClick={() => generatePlan(false, plan.preview_scope || "current")}>Refresh draft</Button>}
+          {activePlan && <Button variant="ghost" disabled={generating} onClick={() => finishPreview("discard")}>Discard draft</Button>}
         </div>
       </Panel>}
 
-      <PlanSpotlight days={allDays} today={today} units={units} onOpen={openDay} />
+      {selectedBlock === "current" && <PlanSpotlight days={allDays} today={today} units={units} onOpen={openDay} />}
 
       <Panel label="Your two weeks" meta="hatched = quality / long · tap a day" bodyClassName="p-2.5 sm:p-3">
         <PlanCalendar weeks={weeks} units={units} selectedDate={selected?.date ?? null} onSelect={(w) => openDay(w.date)} />
@@ -514,7 +561,7 @@ export default function PlanPage() {
       {/* Block numbers follow the weeks they describe. */}
       {stats}
 
-      <div id="plan-coach" className="panel min-w-0 scroll-mt-24">
+      {!plan.preview && <div id="plan-coach" className="panel min-w-0 scroll-mt-24">
         <button type="button" aria-expanded={coachOpen} aria-controls="plan-coach-body" onClick={() => setCoachOpen((v) => !v)}
           className="panel-head w-full pb-3 text-left transition-colors hover:bg-[var(--row-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary">
           <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="dot" style={{ background: "var(--accent-warm)" }} />Coach perspective · this week &amp; next</span>
@@ -526,7 +573,7 @@ export default function PlanPage() {
         <div id="plan-coach-body" hidden={!coachOpen} className="px-4 pb-4 sm:px-5">
           <CoachingReview key={`coach-${plan.id}`} planId={plan.id} onPlanChanged={() => fetchPlan()} request={plan.preview ? null : coachRequest} showLabel={false} refreshKey={planRevision} />
         </div>
-      </div>
+      </div>}
       <TrainingExpectations weeks={plan.expectations || []} />
       {(plan.review || plan.outlook) && (
         <div className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 [&>section]:h-full">

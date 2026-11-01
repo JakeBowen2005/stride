@@ -10,6 +10,8 @@ Built by Jake Bowen (CS junior at CSUF, 2:58 marathoner, targeting sub-17 5K).
 - **Reads workouts from your laps** — Garmin laps are turned into workout summaries ("6x800 (3:02, 3:04…)"), so paces calibrate from what you actually ran, with no typing needed
 - **Keeps your Strava history** — the 467 runs imported from Strava earlier are matched to their Garmin copies, not duplicated
 - **Generates 2-week rolling plans** — grounded in current fitness, not goal time. Mileage ramps conservatively using headroom-based progression
+- **Preview the next block early** — a read-only look during the current block's last three days. Rebuild from actual training after the block ends, review what changed, then approve. Date exceptions and saved day switches are follow-up work.
+- **Account appearance** — Dusk, Daybreak and System preferences save to the athlete's profile and follow them across devices
 - **Periodizes toward race day** — set a race date and each week is placed in base → build → peak → taper → race week → recovery, with a real taper and race-week sharpener
 - **Ultra support (50K–100 mi)** — time-on-feet long runs with fueling targets, back-to-back weekends, hill work for trail/mountain races, and readiness checks that suggest a stepping-stone race when a goal is too big too soon
 - **Classifies every run** — workout, long run, easy, recovery based on Garmin event type, training effect, lap analysis, and notes

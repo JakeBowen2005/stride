@@ -66,6 +66,7 @@ class ProfileUpdate(BaseModel):
     only provided fields change, so re-running setup is safe and repeatable."""
     name: str | None = None
     timezone: str | None = None
+    theme: Literal["system", "light", "dark"] | None = None
     ai_consent: bool | None = None
     day_time_budgets: dict[str,int] | None = None
     age: int | None = Field(default=None, ge=10, le=100)
@@ -107,7 +108,7 @@ def update_profile(user_id: int, data: ProfileUpdate, db: Session = Depends(get_
             raise HTTPException(422,'Use valid weekdays and 15–720 available minutes (or 0 for unavailable).')
         fields['day_time_budgets']=json.dumps(limits)
     # Validate the merged schedule: PATCH-like requests must not bypass constraints.
-    required = {'units', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
+    required = {'units', 'theme', 'workout_format', 'days_per_week', 'rest_days', 'long_run_day', 'name'}
     if any(key in required and value is None for key, value in fields.items()):
         raise HTTPException(422, "Schedule and display preferences cannot be null.")
     rest = fields.get('rest_days', (user.rest_days or '').split(','))
@@ -275,6 +276,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 
     return {
         "id": user.id,
+        "theme": user.theme,
         "name": user.name,
         "day_time_budgets": json.loads(user.day_time_budgets or "{}"),
         "timezone": user.timezone, "today": athlete_today().isoformat(), "ai_consent": bool(user.ai_consent),

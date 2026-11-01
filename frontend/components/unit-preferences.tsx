@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { apiUrl, USER_ID } from "@/lib/api";
 import type { Units } from "@/lib/units";
+import { syncUserTheme } from "@/components/theme-preference";
 
 export const PREFERENCES_EVENT = "stride:preferences-changed";
 const ClockContext = createContext<string | undefined>(undefined);
@@ -19,7 +20,7 @@ export function UnitPreferences({ children }: { children: React.ReactNode }) {
     const abort = new AbortController();
     const load = () => {
       fetch(apiUrl(`/users/${USER_ID}`), { signal: abort.signal }).then(async response => {
-        if (response.ok) { const user = await response.json(); setTimezone(user.timezone || undefined); setUnits(user.units === "km" ? "km" : "miles"); }
+        if (response.ok) { const user = await response.json(); syncUserTheme(user); setTimezone(user.timezone || undefined); setUnits(user.units === "km" ? "km" : "miles"); }
       }).catch(() => { /* The page's normal data loader exposes connection errors. */ });
     };
     load();

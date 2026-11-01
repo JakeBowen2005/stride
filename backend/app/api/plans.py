@@ -33,6 +33,7 @@ class PlanRequest(BaseModel):
     start_date: date | None = None  # ISO date, defaults to smart calculation
     lighter: bool = False
     scope: Literal["current", "next"] = "current"
+    provisional: bool = False
     # "schedule": only run days / rest days / long-run day changed; keep the approved block
     # and move the fewest days (core/schedule_revision.py). "full" rebuilds the block.
     mode: Literal["full", "schedule"] = "full"
@@ -66,6 +67,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     """Generate an inactive preview; approval is the only activation path."""
     _begin_schedule_write(db)
     req = req or PlanRequest()
+    if req.provisional and (req.scope != "next" or req.start_date or req.mode != "full"):
+        raise HTTPException(422, "An early preview must use next scope without a custom start date")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -109,14 +112,35 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Current-block revision preserves its boundaries. A true next block is
     # available after completion; it never silently replaces today's schedule.
     active = db.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    projected = {}
+    earlier_preview = None
     if req.scope == 'next':
         if not active:
             raise HTTPException(409, "Approve a current block first")
-        if athlete_today().isoformat() <= active.end_date:
+        if req.provisional:
+            eligibility = _next_preview(active, db)
+            if not eligibility['provisional'] or eligibility['state'] not in {'available', 'ready'}:
+                raise HTTPException(409, eligibility.get('reason') or "Early previews open during the last three days of your block")
+            actuals = _activities_by_date(user_id, athlete_today().isoformat(), active.end_date, db)
+            projected = {w.date: w for w in active.planned_workouts
+                         if athlete_today().isoformat() <= w.date <= active.end_date
+                         and w.date not in actuals and w.session_status not in {'skipped', 'moved'}}
+        elif athlete_today().isoformat() <= active.end_date:
             raise HTTPException(409, "Finish this block before creating the next one; use current-block revision for changes now")
+        earlier_preview = _draft_query(user_id, 'next', db).order_by(Plan.id.desc()).first()
+        if earlier_preview and earlier_preview.start_date == (date.fromisoformat(active.end_date) + timedelta(days=1)).isoformat():
+            req.lighter = req.lighter or bool(json.loads(earlier_preview.preview_data).get('lighter'))
         if req.start_date and req.start_date.isoformat() <= active.end_date:
             raise HTTPException(422, "A next block cannot start inside the previous block")
-    if req.start_date:
+    keep_next_window = (req.scope == 'next' and not req.start_date and (
+        athlete_today() <= date.fromisoformat(active.end_date) + timedelta(days=1)
+        or (earlier_preview and earlier_preview.start_date == (date.fromisoformat(active.end_date) + timedelta(days=1)).isoformat()
+            and athlete_today().isoformat() <= earlier_preview.end_date)))
+    if req.provisional or keep_next_window:
+        start = date.fromisoformat(active.end_date) + timedelta(days=1)
+        params = {"start_date": start, "end_date": start + timedelta(days=13), "num_weeks": 2,
+                  "first_prescribe_date": start if req.provisional else max(start, athlete_today())}
+    elif req.start_date:
         start = req.start_date
         params = {"start_date": start, "end_date": None, "num_weeks": 2, "first_prescribe_date": None}
     elif req.scope == 'current' and active and active.start_date <= athlete_today().isoformat() <= active.end_date:
@@ -136,7 +160,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Real training already done in this block's first week, and real hard runs just
     # before it — so a midweek plan prescribes only what's left and can't stack a
     # workout on yesterday's long run.
-    window_start = (min(params["start_date"], fpd) - timedelta(days=3)).isoformat()
+    window_start = (min(params["start_date"], fpd) - timedelta(days=5 if req.scope == 'next' else 3)).isoformat()
     recent = _activities_by_date(user_id, window_start, (fpd - timedelta(days=1)).isoformat(), db)
     completed_by_date = {
         d: sum(a.distance_meters for a in acts) / 1609.34
@@ -147,13 +171,24 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         if (fpd - timedelta(days=3)).isoformat() <= d < fpd.isoformat()
         and any(_is_hard_activity(a, baseline) for a in acts)
     }
+    prior_hard_dates.update(d for d, w in projected.items()
+                           if (fpd - timedelta(days=3)).isoformat() <= d < fpd.isoformat()
+                           and w.type in {'workout', 'long_run', 'race'})
+    prior_long_dates = {d for d, acts in recent.items() if d < params['start_date'].isoformat()
+                        and any(_is_long_activity(a, baseline) for a in acts)} if req.scope == 'next' else set()
+    prior_long_dates.update(d for d, w in projected.items() if w.type == 'long_run' and not w.b2b)
 
     # Deloads come from what was actually run, not from how many times a plan was generated
     from app.core.load_policy import deload_due
     from app.services.analyzer import compute_weekly_mileage
 
-    this_monday = (athlete_today() - timedelta(days=athlete_today().weekday())).isoformat()
+    history_as_of = fpd if req.provisional else athlete_today()
+    this_monday = (history_as_of - timedelta(days=history_as_of.weekday())).isoformat()
     weekly = {w['week_start']: w['actual'] for w in compute_weekly_mileage(user_id, db, weeks=10)}
+    for d, w in projected.items():
+        day = date.fromisoformat(d)
+        key = (day - timedelta(days=day.weekday())).isoformat()
+        weekly[key] = weekly.get(key, 0) + (w.distance_miles or 0)
     monday = date.fromisoformat(this_monday)
     full_weeks = [weekly.get((monday - timedelta(weeks=i)).isoformat(), 0) for i in range(8, 0, -1)]
     baseline = round(sum(full_weeks[-4:]) / 4, 1)
@@ -171,7 +206,11 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # that ran out months ago is history, not evidence (the baseline already reflects it).
     prev_plan = db.query(Plan).filter(Plan.user_id == user_id, Plan.is_active == True).first()
     recent_cutoff = (params["start_date"] - timedelta(days=ASSESSMENT_MAX_GAP_DAYS)).isoformat()
-    assessment = _assess_previous_block(prev_plan, db) if prev_plan and prev_plan.end_date >= recent_cutoff else None
+    assessment = _assess_previous_block(prev_plan, db, as_of=fpd if req.provisional else None,
+                                        projected=projected) if prev_plan and prev_plan.end_date >= recent_cutoff else None
+    if req.provisional and assessment:
+        assessment.reasons = ['Provisional assessment: remaining scheduled runs are assumed complete.'] + [
+            reason.replace('checked against your laps', 'completed history plus projected runs') for reason in assessment.reasons]
 
     # How much of the last block was run, before a fatigue result (which has none) can replace it
     block_completion = assessment.completion if assessment else None
@@ -212,6 +251,16 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
                                 PlannedWorkout.date >= lookback, PlannedWorkout.date < fpd.isoformat())
                             if w.date in ran), default=0)
     effective_assessment = "recovery" if req.lighter else assessment.decision if assessment else None
+    preview_caps = None
+    preview_reference = None
+    if not req.provisional and earlier_preview and earlier_preview.start_date == params['start_date'].isoformat():
+        previous = json.loads(earlier_preview.preview_data)
+        if previous.get('provisional'):
+            preview_caps = [w['target_mileage'] for w in previous['weeks']]
+            preview_reference = previous['weeks']
+        else:
+            preview_caps = previous.get('preview_volume_caps')
+            preview_reference = previous.get('preview_reference')
     plan_data = generate_plan(
         goal_type=goal.goal_type,
         goal_distance=goal.race_distance,
@@ -238,23 +287,46 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         assessment_completion=block_completion if effective_assessment == 'hold' else None,
         completed_by_date=completed_by_date,
         prior_hard_dates=prior_hard_dates,
+        prior_long_dates=prior_long_dates,
         reported_mileage=user.current_weekly_mileage, completed_weeks=full_weeks, race_weeks=race_weeks,
         continuous_run_minutes=user.continuous_run_minutes,
-        run_walk_weeks=_run_days_since(user, db),
+        run_walk_weeks=_run_days_since(user, db, as_of=history_as_of,
+                                      projected_dates={d for d, w in projected.items() if w.distance_miles}),
         previous_block=json.loads(prev_plan.load) if assessment and prev_plan and prev_plan.load else None,
         fatigue_recovery=bool(fatigue),
         workout_format=user.workout_format or 'distance',
         quality_evidence=quality_evidence, previous_quality_stage=prior_quality,
         weekly_run_days=[len({a.date.date() for a in quality_activities
-                             if monday - timedelta(weeks=i) <= a.date.date() < monday - timedelta(weeks=i-1)})
+                             if monday - timedelta(weeks=i) <= a.date.date() < monday - timedelta(weeks=i-1)}
+                            | {date.fromisoformat(d) for d, w in projected.items() if w.distance_miles
+                               and monday - timedelta(weeks=i) <= date.fromisoformat(d) < monday - timedelta(weeks=i-1)})
                          for i in range(4, 0, -1)],
-        recent_long_run_miles=max((a.distance_meters / 1609.34 for a in quality_activities
-                                  if athlete_today() - timedelta(days=28) <= a.date.date() <= athlete_today()), default=0),
+        recent_long_run_miles=max([a.distance_meters / 1609.34 for a in quality_activities
+                                  if athlete_today() - timedelta(days=28) <= a.date.date() <= athlete_today()]
+                                 + [w.distance_miles for w in projected.values() if w.type == 'long_run'], default=0),
         allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
         recent_race_pace_miles=recent_race_pace,
+        weekly_volume_caps=preview_caps,
     )
-    _save_run_walk_progress(user, analysis["overview"]["experience_level"], goal, db)
+    if preview_caps:
+        plan_data['preview_volume_caps'] = preview_caps
+        plan_data['notes'].append('The final weekly budgets are capped at your early preview; missed miles are never repaid.')
+    if not req.provisional:
+        _save_run_walk_progress(user, analysis["overview"]["experience_level"], goal, db)
+    plan_data['preview_scope'] = req.scope
+    plan_data['provisional'] = req.provisional
+    plan_data['lighter'] = req.lighter
+    if req.provisional:
+        plan_data['projected_through'] = active.end_date
+        plan_data['projected_days'] = [{'date': d, 'title': w.title, 'miles': w.distance_miles}
+                                       for d, w in sorted(projected.items()) if w.distance_miles]
+        plan_data['notes'].insert(0, 'Provisional: assumes the remaining scheduled runs are completed. Rebuilt from actual training after this block ends.')
+    elif preview_reference:
+        from app.core.change_guard import summarize_change
+        plan_data['preview_reference'] = preview_reference
+        plan_data['since_preview'] = summarize_change(preview_reference, plan_data['weeks'])
+        plan_data['since_preview'].insert(0, 'Rebuilt from your actual training and current settings. Review this final block before approving.')
     plan_data["notes"].insert(0, "Reduced recovery load already provides a lighter block; no additional deload added."
                               if is_deload_due and effective_assessment in ("reduce", "recovery") else deload_reason)
     if assessment:
@@ -274,7 +346,8 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         "easy_pace_seconds": easy_pace_seconds,
         "quality_policy": plan_data["quality_policy"],
         "current_weekly_mileage": baseline,
-        "baseline_as_of": athlete_today().isoformat(), "baseline_definition": "four completed calendar weeks",
+        "baseline_as_of": athlete_today().isoformat(),
+        "baseline_definition": "four calendar weeks including the projected finish" if req.provisional else "four completed calendar weeks",
         "peak_weekly_mileage": current_fitness["peak_weekly_mileage"],
         "experience_level": analysis["overview"]["experience_level"],
         "injury_risk": analysis["injury_risk"]["assessment"],
@@ -293,7 +366,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     # Persist atomically: the previous plan is only deactivated in the same commit
     # that saves its replacement, so a failure above leaves the old plan usable.
     preview = True
-    db.query(Plan).filter_by(user_id=user_id, preview_state="draft").update({"preview_state": "superseded"})
+    _draft_query(user_id, req.scope, db).update({"preview_state": "superseded"})
     db_plan = Plan(
         user_id=user_id,
         start_date=plan_data["start_date"],
@@ -301,6 +374,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         block_number=plan_data["block_number"],
         is_deload=plan_data["is_deload"],
         is_active=not preview,
+        preview_scope=req.scope,
         pacing_guide=json.dumps(plan_data["pacing_guide"]),
         training_paces=json.dumps(plan_data["training_paces"]),
         notes=json.dumps(plan_data["notes"]),
@@ -423,9 +497,9 @@ def _revise_schedule(user: User, active: Plan, db: Session) -> dict:
         raise HTTPException(409, "Stride couldn't fit your new schedule into this block safely ("
                                  + problems[0] + "). Use Revise with latest runs for a full rebuild.")
 
-    db.query(Plan).filter_by(user_id=user.id, preview_state="draft").update({"preview_state": "superseded"})
-    copied = {"id", "created_at", "is_active", "preview_data", "preview_context", "preview_state"}
-    draft = Plan(**{c.name: getattr(active, c.name) for c in Plan.__table__.columns if c.name not in copied}, is_active=False)
+    _draft_query(user.id, 'current', db).update({"preview_state": "superseded"})
+    copied = {"id", "created_at", "is_active", "preview_data", "preview_context", "preview_state", "preview_scope"}
+    draft = Plan(**{c.name: getattr(active, c.name) for c in Plan.__table__.columns if c.name not in copied}, is_active=False, preview_scope='current')
     snapshot["schedule_preferences"] = preferences
     draft.athlete_snapshot = json.dumps(snapshot)
     load = json.loads(active.load or "{}") or {}
@@ -493,7 +567,7 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
         return json.dumps(snapshot, sort_keys=True) + str(workout.feel_rating) + str(workout.evaluation)
     data = {
         "today": athlete_today().isoformat(),
-        "user": {c.name: getattr(user, c.name) for c in User.__table__.columns},
+        "user": {c.name: getattr(user, c.name) for c in User.__table__.columns if c.name != 'theme'},
         "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
         "active": active.id if active else None,
         "schedule": [stable_day(w) for w in active.planned_workouts] if active else [],
@@ -510,10 +584,48 @@ def preview_plan(user_id: int, req: PlanRequest | None = None, db: Session = Dep
     return generate_training_plan(user_id, req or PlanRequest(), db)
 
 
+def _draft_query(user_id: int, scope: str, db: Session):
+    query = db.query(Plan).filter_by(user_id=user_id, preview_state='draft')
+    # Existing drafts predate scopes and retain their original current-plan UI.
+    return query.filter(or_(Plan.preview_scope == 'current', Plan.preview_scope.is_(None))) if scope == 'current' else query.filter(Plan.preview_scope == 'next')
+
+
+def _next_preview(active: Plan, db: Session) -> dict:
+    today = athlete_today()
+    end = date.fromisoformat(active.end_date)
+    opens = end - timedelta(days=2)
+    start = end + timedelta(days=1)
+    result = {'state': 'hidden', 'opens_on': opens.isoformat(), 'next_start': start.isoformat(),
+              'next_end': (start + timedelta(days=13)).isoformat(), 'draft_id': None,
+              'stale': False, 'provisional': today <= end}
+    goal = db.query(Goal).filter_by(user_id=active.user_id, active=True).first()
+    if not goal or (goal.race_date and goal.race_date < today.isoformat()):
+        return result
+    if today < opens:
+        result['state'] = 'upcoming' if today >= end - timedelta(days=6) else 'hidden'
+        return result
+    if today <= end:
+        if _draft_query(active.user_id, 'current', db).first():
+            return {**result, 'state': 'blocked', 'reason': 'Approve or discard your current-block changes first.'}
+        if goal.race_date and today.isoformat() <= goal.race_date <= active.end_date:
+            return {**result, 'state': 'blocked', 'reason': 'Your next block depends on how race day goes. Preview after this block ends.'}
+        if falling_behind_decision(active.user_id, goal, db):
+            return {**result, 'state': 'blocked', 'reason': 'Review your goal decision before previewing the next block.'}
+    draft = _draft_query(active.user_id, 'next', db).filter(Plan.start_date >= start.isoformat()).order_by(Plan.id.desc()).first()
+    if draft:
+        return {**result, 'state': 'ready', 'draft_id': draft.id,
+                'stale': draft.preview_context != _preview_fingerprint(active.user_id, db)}
+    return {**result, 'state': 'available'}
+
+
 @router.get("/{user_id}/draft")
-def pending_draft(user_id: int, db: Session = Depends(get_db)):
-    draft = db.query(Plan).filter_by(user_id=user_id, preview_state="draft").order_by(Plan.id.desc()).first()
-    return json.loads(draft.preview_data) if draft else None
+def pending_draft(user_id: int, db: Session = Depends(get_db), scope: Literal['current', 'next'] = 'current'):
+    draft = _draft_query(user_id, scope, db).order_by(Plan.id.desc()).first()
+    if not draft:
+        return None
+    data = json.loads(draft.preview_data)
+    data['stale'] = draft.preview_context != _preview_fingerprint(user_id, db)
+    return data
 
 
 @router.post("/{user_id}/drafts/{plan_id}/approve")
@@ -527,12 +639,16 @@ def approve_draft(user_id: int, plan_id: int, db: Session = Depends(get_db)):
         if draft.preview_context != _preview_fingerprint(user_id, db):
             raise HTTPException(409, "Your training or settings changed. Generate a fresh preview before approving.")
         data = json.loads(draft.preview_data)
+        if data.get('provisional'):
+            raise HTTPException(409, "This is an early look. Rebuild from actual training after your current block ends, then approve the final block.")
         if data.get("violations"):
             raise HTTPException(409, "This preview has unresolved schedule constraints")
         _validate_schedule(draft, db)
         db.query(Plan).filter_by(user_id=user_id, is_active=True).update({"is_active": False})
         draft.is_active = True
         draft.preview_state = None
+        if draft.preview_scope == 'next':
+            _draft_query(user_id, 'current', db).update({'preview_state': 'superseded'})
         db.commit()
     except Exception:
         db.rollback()
@@ -680,6 +796,7 @@ def _plan_payload(db_plan: Plan, planned_workouts: list[PlannedWorkout], user_id
         "is_deload": db_plan.is_deload,
         # A plan whose last day is behind us shouldn't be shown as "current"
         "is_stale": db_plan.end_date < today,
+        "next_preview": _next_preview(db_plan, db),
         "phase": _current_phase(weeks, today),
         "load": _visible_load(db_plan, user_id, db),
         "assessment": json.loads(db_plan.assessment) if db_plan.assessment else None,
@@ -705,18 +822,20 @@ def _visible_load(db_plan: Plan, user_id: int, db: Session) -> dict | None:
     return load
 
 
-def _run_days_since(user: User, db: Session) -> list[int]:
+def _run_days_since(user: User, db: Session, *, as_of: date | None = None, projected_dates: set[str] | None = None) -> list[int]:
     """Run days in each completed calendar week since the athlete set their starting point."""
     if user.continuous_run_minutes is None:
         return []
-    monday = athlete_today() - timedelta(days=athlete_today().weekday())
-    start = date.fromisoformat(user.continuous_run_set_on) if user.continuous_run_set_on else monday
+    today = as_of or athlete_today()
+    monday = today - timedelta(days=today.weekday())
+    start = date.fromisoformat(user.continuous_run_set_on) if user.continuous_run_set_on else athlete_today() - timedelta(days=athlete_today().weekday())
     start = max(start - timedelta(days=start.weekday()), monday - timedelta(weeks=8))
     rows = db.query(Activity.date).filter(
         Activity.user_id == user.id, runs_only(),
         Activity.date >= datetime.combine(start, datetime.min.time()),
         Activity.date < datetime.combine(monday, datetime.min.time())).all()
     days = {d.date() for (d,) in rows}
+    days.update(date.fromisoformat(d) for d in projected_dates or set())
     weeks = (monday - start).days // 7
     return [len({d for d in days if start + timedelta(weeks=w) <= d < start + timedelta(weeks=w + 1)}) for w in range(weeks)]
 
@@ -1770,15 +1889,21 @@ def _is_hard_activity(a: Activity, baseline_mpw: float) -> bool:
     return (a.workout_type in HARD_ACTIVITY_TYPES or a.workout_type == 'development') or (miles >= 8 and miles >= 0.25 * baseline_mpw)
 
 
-def _assess_previous_block(prev_plan: Plan, db: Session):
+def _assess_previous_block(prev_plan: Plan, db: Session, *, as_of: date | None = None, projected: dict | None = None):
     from app.core.block_assessment import DayRecord, assess_block
 
-    today = athlete_today().isoformat()
+    today = (as_of or athlete_today()).isoformat()
     start = prev_plan.prescribed_from or prev_plan.start_date
     by_date = _activities_by_date(prev_plan.user_id, prev_plan.start_date, prev_plan.end_date, db)
     records = []
     for pw in prev_plan.planned_workouts:
         if not (start <= pw.date < today):
+            continue
+        if pw.date in (projected or {}):
+            # Assumptions belong only to this assessment, never activity/progression rows.
+            records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
+                                     actual_miles=pw.distance_miles or 0, execution_complete=True,
+                                     demanding_long_run=demanding_long_run(pw)))
             continue
         activities = by_date.get(pw.date, [])
         actual = sum(a.distance_meters for a in activities) / 1609.34

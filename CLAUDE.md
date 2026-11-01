@@ -17,7 +17,7 @@ The core loop: **Onboard → Sync Data → Set Goal → Generate 2-Week Rolling 
 - **Simple but specific.** Running doesn't have to be complicated, but it must be specific to the goal. No "3 rounds of 5 sets of 40-second sprints at 4:12-4:44 pace." Instead: "6x800m at 3:24 (5K goal pace) with 90s jog rest. 1mi warmup, 1mi cooldown."
 - **Easy days easy, hard days hard.** Easy runs emphasize conversational effort. Workouts are genuinely difficult and purposeful.
 - **Never rush mileage.** Injury prevention through conservative mileage building (10% rule for beginners, slightly faster for experienced). Acute:chronic workload ratio monitoring.
-- **Rolling plans, not rigid blocks.** Never generate a full 16-week plan upfront. Generate 2 weeks, analyze how the athlete responds, then generate the next 2 weeks. User confirms each block.
+- **Rolling plans, not rigid blocks.** Never generate a full 16-week plan upfront. Generate 2 weeks, analyze how the athlete responds, then generate the next 2 weeks. User confirms each block. The next block can be previewed provisionally during the current block’s final three days, then rebuilt from actual training and explicitly approved after the current block ends.
 - **Every workout has a why.** The app explains the purpose of each workout ("Today's tempo builds lactate threshold — the key limiter for your half marathon goal").
 - **Data-driven coaching tone.** Feels like a knowledgeable coach, but every recommendation is backed by data and exercise science.
 

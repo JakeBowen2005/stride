@@ -338,6 +338,13 @@
 .recharts-cartesian-grid line { stroke: var(--border); }
 .recharts-tooltip-cursor { fill: var(--row-hover); }
 
+.block-switch { background: var(--glass-inner); }
+.block-switch button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
+.block-switch button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.next-block-banner { border-left: 3px solid var(--type-easy); }
+@keyframes block-arrival { from { opacity: .5; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.block-arrival { animation: block-arrival 220ms cubic-bezier(.25,.8,.25,1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   button:not(:disabled):active { transform: none; }

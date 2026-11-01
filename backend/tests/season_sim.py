@@ -128,11 +128,12 @@ def _run_day(day: date, race: date, profile: dict, struggle: bool, skip: list[in
         db.commit()
 
 
-def simulate(profile: dict, *, struggle: bool = False, share: float = 1.0, start: date = START) -> dict:
+def simulate(profile: dict, *, struggle: bool = False, share: float = 1.0, start: date = START,
+             preview_next: bool = False) -> dict:
     """Run one season. Returns {race_date, blocks: [preview], days: [planned day rows], errors}."""
     Base.metadata.drop_all(bind=engine)  # every season starts from an empty schema
     Base.metadata.create_all(bind=engine)
-    log = {"blocks": [], "days": [], "errors": []}
+    log = {"blocks": [], "days": [], "errors": [], "early_blocks": []}
     traveller = time_machine.travel(datetime.combine(start, time(9)), tick=False)
     traveller.start()
     try:
@@ -155,6 +156,16 @@ def simulate(profile: dict, *, struggle: bool = False, share: float = 1.0, start
                     approve_draft(1, preview["id"], db)
                     log["blocks"].append(preview)
             _run_day(day, race, profile, struggle, skip, share)
+            if preview_next:
+                from app.api.plans import _next_preview
+                with SessionLocal() as db:
+                    active = db.query(Plan).filter_by(user_id=1, is_active=True).first()
+                    if active and day == date.fromisoformat(active.end_date) - timedelta(days=2):
+                        if _next_preview(active, db)['state'] == 'available':
+                            early = generate_training_plan(1, PlanRequest(scope='next', provisional=True), db)
+                            log['early_blocks'].append(early)
+                            if early.get('violations'):
+                                log['errors'].append((day.isoformat(), early['violations']))
             day += timedelta(days=1)
         with SessionLocal() as db:
             # The approved schedule, day by day: the latest approved plan covering each date

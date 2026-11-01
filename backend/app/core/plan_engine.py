@@ -148,6 +148,8 @@ def generate_plan(
     day_time_budgets: dict[str,int] | None = None,
     race_weeks: list[bool] | None = None,  # aligned with completed_weeks: weeks that held a race
     recent_race_pace_miles: float = 0,  # most race-pace miles in a recently completed long run
+    weekly_volume_caps: list[float] | None = None,  # final build may not exceed its provisional preview
+    prior_long_dates: set[str] | None = None,
 ) -> dict:
     """Generate a block.
 
@@ -309,6 +311,8 @@ def generate_plan(
 
     def compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning):
         """Build one week at a weekly target: sessions, already-run days, then fit to the budget."""
+        if weekly_volume_caps and wk < len(weekly_volume_caps):
+            wk_target = min(wk_target, weekly_volume_caps[wk])
         wk_num, wk_start, wk_phase = wk + 1, start_date + timedelta(days=wk * 7), phases[wk]
         notes = []
         week_days = _build_week(
@@ -414,6 +418,8 @@ def generate_plan(
         covered_days = max(0, min(7, (end_date - wk_start).days + 1))
         if covered_days < 7:
             wk_target = round(wk_target * covered_days / 7, 1)
+        if weekly_volume_caps and wk < len(weekly_volume_caps):
+            wk_target = min(wk_target, weekly_volume_caps[wk])
         load.weekly_budgets[wk] = wk_target
 
         wk_workouts = min(workouts_per_week, 1) if wk_is_deload else workouts_per_week
@@ -519,7 +525,7 @@ def generate_plan(
     for w in weeks:
         w["target_mileage"] = round(sum(d["distance_miles"] for d in w["days"]), 1)
         w["quality_sessions"] = sum(d["type"]=="workout" and d.get("prescribed",True) for d in w["days"])
-    violations = validate_plan(weeks, rest_indices, prior_hard_dates)
+    violations = validate_plan(weeks, rest_indices, prior_hard_dates, prior_long_dates or set())
 
     plan = {
         "start_date": start_date.isoformat(),

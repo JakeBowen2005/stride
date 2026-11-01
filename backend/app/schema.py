@@ -4,7 +4,7 @@ from alembic.config import Config
 from alembic import command
 from sqlalchemy import inspect, text
 from app.database import engine
-HEAD='0005_multi_user_prep'
+HEAD='0006_next_block_preview'
 
 
 def upgrade(bind=engine):
@@ -25,7 +25,8 @@ def check(bind=engine):
             raise RuntimeError('Schema upgrade required: python -m app.schema')
         import json
         manifest=json.loads((Path(__file__).resolve().parents[1]/'migrations/schema_v1.json').read_text())
-        for name,column in [('users','day_time_budgets'),('coaching_attempts','latency_ms')]:
+        for name,column in [('users','day_time_budgets'),('coaching_attempts','latency_ms'),
+                            ('users', 'theme'), ('plans', 'preview_scope')]:
             if column not in {c['name'] for c in inspect(conn).get_columns(name)}:
                 raise RuntimeError('Schema drift detected in the schedule/analysis upgrade.')
         for table in manifest:

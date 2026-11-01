@@ -342,7 +342,7 @@ export function PlanDay({ workout, isToday, expanded, onToggle, pinned, onPlanCh
                 <span className="font-medium">Why: </span>
                 <span className="text-muted-foreground">{workout.purpose}</span>
               </div>
-              {!isPast && !hasActual && !["rest", "race"].includes(workout.type) && (workout.type !== "workout" || workout.prescription) && (
+              {!readOnly && !isPast && !hasActual && !["rest", "race"].includes(workout.type) && (workout.type !== "workout" || workout.prescription) && (
                 // Until Garmin push exists: copy the file to the watch's GARMIN/NewFiles folder over USB.
                 <a href={apiUrl(`/plans/${USER_ID}/sessions/${workout.date}/workout.fit`)} download
                    onClick={(e) => e.stopPropagation()}

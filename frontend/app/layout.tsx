@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Manrope } from "next/font/google";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
-import { THEME_BOOT_SCRIPT, ThemeWatcher } from "@/components/theme-preference";
+import { ThemeWatcher } from "@/components/theme-preference";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const manrope = Manrope({
   variable: "--font-manrope",

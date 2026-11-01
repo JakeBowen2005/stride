@@ -33,6 +33,7 @@ class Plan(Base):
     preview_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     preview_context: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preview_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    preview_scope: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     # Relationships
     planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(
