@@ -121,6 +121,31 @@ def off_plan(prescription: dict | None, executed: dict | None, *, substitution_c
         "substituted", "different_session"}
 
 
+def covers_prescription(prescription: dict | None, executed: dict | None) -> bool:
+    """A coherent quality session with at least the prescribed work (3x8min threshold on a
+    3x1200m day): the day's hard work was done, though it doesn't step the prescribed ladder."""
+    if not executed or executed.get("category") not in QUALITY or not executed.get("reps"):
+        return False
+    planned, done = work_minutes(prescription, executed)
+    return planned is not None and done is not None and done >= planned
+
+
+# Last rep this much slower than the first: the dose wasn't run under control.
+CONTROLLED_FADE_SEC = 10
+
+
+def demonstrated_work(executed: dict | None) -> tuple[str, float] | None:
+    """(category, dose) of a controlled quality session: threshold minutes or interval meters."""
+    if not executed or executed.get("category") not in QUALITY or not executed.get("reps"):
+        return None
+    reps = executed["reps"]
+    if reps[-1]["pace_sec_per_mile"] - reps[0]["pace_sec_per_mile"] > CONTROLLED_FADE_SEC:
+        return None
+    if executed["category"] == "threshold":
+        return "threshold", sum(r["duration_s"] for r in reps) / 60
+    return "intervals", sum(r["distance_m"] for r in reps)
+
+
 def fmt_pace(seconds: float) -> str:
     seconds = round(seconds)
     return f"{seconds // 60}:{seconds % 60:02d}"

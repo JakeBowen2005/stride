@@ -408,6 +408,32 @@ def get_ladder(category: str, distance: str = "5k", phase: str = "build") -> lis
     return result
 
 
+def _level_work(category: str, template: dict) -> float | None:
+    """A level's work dose: threshold minutes, or interval meters."""
+    spec = template.get("work_spec") or {}
+    if category == "threshold":
+        if spec.get("reps") and spec.get("seconds"):
+            return spec["reps"] * spec["seconds"] / 60
+        return template.get("quality_minutes")
+    if spec.get("reps") and spec.get("meters"):
+        return spec["reps"] * spec["meters"]
+    return template["quality_miles"] * 1609.34 if template.get("quality_miles") else None
+
+
+def level_for_work(category: str, distance: str, work: float) -> int:
+    """Highest level whose dose the athlete has already run (threshold minutes / interval meters).
+
+    Walks up the build ladder and stops at the first level beyond the demonstrated work, so a
+    non-monotonic ladder can never skip past a harder level."""
+    level = 0
+    for template in get_ladder(category, distance, "build"):
+        dose = _level_work(category, template)
+        if dose is None or dose > work + 0.01:
+            break
+        level = template["level"]
+    return level
+
+
 REP_MILES = {"200m": 0.124274, "400m": 0.248548, "600m": 0.372823, "800m": 0.497097,
              "1K": 0.621371, "1k": 0.621371, "1200m": 0.745645, "1mi": 1.0, "1.5mi": 1.5}
 _REP_RE = re.compile(r"(\d+x)(200m|400m|600m|800m|1K|1k|1200m|1\.5mi|1mi) at (\d+:\d{2})(?:-(\d+:\d{2}))?/mi")

@@ -43,10 +43,17 @@ def test_advanced_rebuild_allows_threshold_and_light_second_within_budget():
 
 @pytest.mark.parametrize('changes', [dict(experience_level='beginner'), dict(days_per_week=4),
     dict(completed_weeks=[0,20,25,38]), dict(weekly_run_days=[4,4,2,6]),
-    dict(recent_long_run_miles=5), dict(assessment='hold'), dict(assessment='recovery'),
+    dict(recent_long_run_miles=5), dict(assessment='recovery'),
     dict(fatigue_recovery=True), dict(weekly_run_days=[])])
 def test_second_stimulus_needs_recent_readiness_and_recovery(changes):
     assert all(len(w) <= 1 for w in workouts(build(**changes)))
+
+
+def test_a_volume_hold_keeps_the_earned_second_stimulus():
+    # Hold limits volume, not workouts (one lever at a time)
+    held, built = build(assessment='hold'), build()
+    assert [len(w) for w in workouts(held)] == [len(w) for w in workouts(built)] == [2, 2]
+    assert held['load']['weekly_budgets'][1] <= held['load']['weekly_budgets'][0]
 
 
 def test_quality_does_not_preview_higher_level_while_adding_second_or_mileage():
