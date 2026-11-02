@@ -39,6 +39,7 @@ class DayRecord:
     substituted: bool = False
     covered: bool = False  # a substitution with at least the prescribed work: the hard day was done
     demanding_long_run: bool = False  # MP/steady/structured hard segments require quality evidence
+    week_longest: float = 0.0  # longest single day that week: a long run moved to another day still counts
 
 
 @dataclass
@@ -89,8 +90,8 @@ def assess_block(days: list[DayRecord]) -> BlockAssessment:
                   and d.session_status not in {"skipped", "moved"} for d in quality)
     incomplete = len(quality) - quality_done - substituted - unknown
     longs = [d for d in run_days if d.type == "long_run"]
-    long_done = sum(d.actual_miles >= d.planned_miles * LONG_RUN_DONE_SHARE
-                    and d.session_status not in {"skipped", "moved"} for d in longs)
+    long_done = sum(max(d.actual_miles, d.week_longest) >= d.planned_miles * LONG_RUN_DONE_SHARE
+                    and d.session_status != "skipped" for d in longs)
     feels = [d.feel for d in days if d.feel is not None]
     low = sum(1 for f in feels if f <= 4)
     avg = sum(feels) / len(feels) if feels else None

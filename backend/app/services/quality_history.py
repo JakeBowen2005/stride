@@ -97,10 +97,23 @@ def quality_history(user_id, db, today=None):
                     hard_by_week.setdefault(monday, set()).add(day)
         if row.type == 'long_run' and (latest_long is None or day>latest_long[0]):
             latest_long=(day,feel)
-        if row.type == 'long_run' and day >= (today-timedelta(days=28)).isoformat() and feel is not None and feel >= 6:
-            miles = sum(a.distance_meters for a in activities) / 1609.34
-            if miles >= row.distance_miles * .9:
-                successful['long_run'].add(day)
+    def day_feels(day):
+        return [a.effective_feel for a in by_date.get(day, []) if a.effective_feel is not None]
+    for day, row in latest.items():
+        # Long run done: its distance run on any day that week (moved or swapped runs count),
+        # and recovered from: no low rating that day or the two after. No watch rating isn't a failure.
+        if row.type != 'long_run' or row.session_status == 'skipped' or day < (today-timedelta(days=28)).isoformat():
+            continue
+        monday = date.fromisoformat(day) - timedelta(days=date.fromisoformat(day).weekday())
+        week = [(monday + timedelta(days=i)).isoformat() for i in range(7)]
+        ran = {d: sum(a.distance_meters for a in by_date.get(d, [])) / 1609.34 for d in week if d <= today.isoformat()}
+        long_day = max(ran, key=ran.get, default=None)
+        if not long_day or not row.distance_miles or ran[long_day] < row.distance_miles * .9:
+            continue
+        feels = day_feels(long_day) + ([row.feel_rating] if row.feel_rating is not None and long_day == day else [])
+        after = [f for i in (1, 2) for f in day_feels((date.fromisoformat(long_day) + timedelta(days=i)).isoformat())]
+        if all(f >= 6 for f in feels) and all(f > 4 for f in after):
+            successful['long_run'].add(day)
     ratings = [(day, a.effective_feel) for day, items in by_date.items() for a in items if a.effective_feel is not None]
     # Planned-day feedback also counts as recovery evidence, once per date.
     ratings += [(day, row.feel_rating) for day, row in latest.items() if day in by_date and row.feel_rating is not None]

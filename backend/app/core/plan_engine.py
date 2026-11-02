@@ -379,6 +379,7 @@ def generate_plan(
             if developing:
                 notes.extend(developmental.fit_week(week_days, wk_target, easy_desc_all, restructure_long, long_cap))
             else:
+                shape_easy_days(week_days, wk_target, experience_level, wk_phase.phase, wk_is_deload)
                 notes.extend(fit_week_to_budget(week_days, wk_target, easy_desc_all, restructure_long))
         return week_days, wk_target, notes
 
@@ -461,6 +462,11 @@ def generate_plan(
             if previous and wk_target > previous:
                 wk_target = round(previous, 1)
         week_days, wk_target, notes = compose_week(wk, wk_target, long_cap, wk_workouts, wk_is_deload, returning)
+        if (goal_type in {'mileage', 'general'} and not developing and experience_level != 'beginner'
+                and quality.stage == 'support' and (quality.evidence or {}).get('long_run_successes', 0) >= 1
+                and not wk_is_deload and not returning and not fatigue_recovery
+                and assessment not in {'reduce', 'recovery'} and wk_start.isocalendar().week % 2 == 1):
+            notes.extend(_add_steady_finish(week_days, current_paces))
         if mp_finish:
             notes.extend(_add_mp_finish(week_days, wk_phase.phase, experience_level, current_paces['goal_race_pace'],
                                         easy_pace_seconds))
@@ -1148,6 +1154,55 @@ def _rest_day(day_date: date, day_name: str) -> dict:
         "purpose": "Physical and mental recovery.",
         "distance_miles": 0, "warmup": None, "cooldown": None,
     }
+
+
+STEADY_FINISH_MIN_MILES = 10  # shorter long runs stay easy
+
+
+def _add_steady_finish(week_days: list[dict], paces: dict) -> list[str]:
+    """Every other week, a mileage/general athlete who recently completed and recovered from a long
+    run finishes it with 2-3 mi at steady effort, the way race goals get marathon-pace finishes. Same distance; one quality session is light
+    support that week, so the finish doesn't stack on two hard workouts."""
+    for day in week_days:
+        if (day['type'] == 'long_run' and day.get('prescribed', True) and not day.get('b2b')
+                and day['distance_miles'] >= STEADY_FINISH_MIN_MILES):
+            lr = _long_run_structure(day['distance_miles'], 'steady_finish', paces)
+            day.update({k: lr[k] for k in ('title', 'description', 'purpose', 'prescription')})
+            return ['Long run finishes at steady effort this week (every other week): '
+                    'controlled, comfortably below threshold.']
+    return []
+
+
+SHAPED_WEEK_MIN_MILES = 35  # below this, easy days are already short enough to be alike
+
+
+def shape_easy_days(week_days: list[dict], budget: float, experience: str, phase: str, deload: bool) -> None:
+    """Experienced runners' easy days aren't identical: a short recovery run the day after the
+    long run and one medium-long run midweek, as far from this week's and next week's long runs as it can be.
+    Sets each day's ``easy_role``; fit_week_to_budget sizes the days by it (total unchanged)."""
+    if (experience == 'beginner' or budget < SHAPED_WEEK_MIN_MILES or deload
+            or phase in {'taper', 'race_week', 'recovery'}):
+        return
+    plain = [d for d in week_days if d.get('prescribed', True) and d['type'] == 'easy' and d['title'] == 'Easy Run']
+    if len(plain) < 3:  # keep at least one plain easy day between the two roles
+        return
+    long_run = next((d for d in week_days if d['type'] == 'long_run' and not d.get('b2b')), None)
+    if not long_run:
+        return
+    long_day = date.fromisoformat(long_run['date'])
+    after = (long_day + timedelta(days=1)).isoformat()
+    recovery = next((d for d in plain if d['date'] == after), None)
+    if recovery:
+        recovery.update({'easy_role': 'recovery', 'title': 'Recovery Run',
+                         'description': 'Short and very easy, slower than your usual easy pace. '
+                                        'It loosens the legs after the long run; nothing to prove today.',
+                         'purpose': 'Recovery from the long run while keeping the aerobic routine.'})
+    gap = lambda d: abs((date.fromisoformat(d['date']) - long_day).days)
+    candidates = [d for d in plain if d is not recovery and gap(d) >= 2]
+    if candidates:
+        medium = max(candidates, key=lambda d: (min(gap(d), 7 - gap(d)), -date.fromisoformat(d['date']).toordinal()))
+        medium.update({'easy_role': 'medium_long', 'title': 'Medium-Long Run',
+                       'purpose': 'A second longer aerobic run in the week: endurance without another hard day.'})
 
 
 def _distribute_mileage(

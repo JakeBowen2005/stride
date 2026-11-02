@@ -11,7 +11,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 
 - **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 10% over the block (49 → 51 mi/week). Why: Ran 93 of 93 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 - **Block 2** (Nov 02–Nov 15): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 88 of 88 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 3** (Nov 16–Nov 29): **build** → build. Training level 49.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 84 of 84 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 3** (Nov 16–Nov 29): **build** → build. Training level 49.5 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 85 of 85 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 - **Block 4** (Nov 30–Dec 13): **build** → hold. Introducing a second substantial session: hold demonstrated weekly volume while testing recovery. Why: Ran 106 of 106 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
@@ -21,7 +21,7 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 | 1 | Oct 19 | Build | 49.0 | 13.5 | 25min Continuous Tempo |
 | 2 | Oct 26 | Build | 51.0 | 14.5 | 6x800m + 4x200m, 2x15min Hard |
 | 3 | Nov 02 | Build | 36.5 | 10 | 5x800m |
-| 4 | Nov 09 | Peak | 47.5 | 13.5 | 3x2K at 5K Goal Pace |
+| 4 | Nov 09 | Peak | 48.5 | 13.5 | 3x2K at 5K Goal Pace |
 | 5 | Nov 16 | Peak | 51.5 | 14.5 | 3x2K at 5K Goal Pace, 6x400m Relaxed Repetitions |
 | 6 | Nov 23 | Peak | 54.0 | 15 | 4x1mi at 5K Goal Pace, 8x200m Relaxed Repetitions |
 | 7 | Nov 30 | Race Week | 36.1 | — | Race-Week Sharpener: 4x400m, RACE DAY — 5K |
@@ -55,12 +55,12 @@ Synthetic advanced runner deep in a 5K build, six weeks from race day.
 - **Sat Nov 07** · Easy Long Run · 10 mi — 10.0mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 08** · Rest
 
-### Week 4 · Nov 09–Nov 15 · Peak · 47.5 mi
-- **Mon Nov 09** · Easy Run + Strides · 6.5 mi — Conversational effort the whole run — easy means easy.
+### Week 4 · Nov 09–Nov 15 · Peak · 48.5 mi
+- **Mon Nov 09** · Easy Run + Strides · 6 mi — Conversational effort the whole run — easy means easy.
 - **Tue Nov 10** · 3x2K at 5K Goal Pace · 8 mi — 3x2000m in 6:44 (5:25/mi) with 2:30 jog rest (warm up 2mi easy, cool down 1.5mi easy). *Why:* Goal-pace reps: rehearses 5K race rhythm so it feels familiar on race day.
-- **Wed Nov 11** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Thu Nov 12** · Easy Run · 6.5 mi — Conversational effort the entire time.
-- **Fri Nov 13** · Easy Run · 6.5 mi — Conversational effort the entire time.
+- **Wed Nov 11** · Medium-Long Run · 9 mi — Conversational effort the entire time.
+- **Thu Nov 12** · Easy Run · 6 mi — Conversational effort the entire time.
+- **Fri Nov 13** · Easy Run · 6 mi — Conversational effort the entire time.
 - **Sat Nov 14** · Easy Long Run · 13.5 mi — 13.5mi easy at 7:35-8:25/mi. Conversational the entire time. *Why:* Builds aerobic endurance, capillary density, and fat-burning efficiency.
 - **Sun Nov 15** · Rest
 

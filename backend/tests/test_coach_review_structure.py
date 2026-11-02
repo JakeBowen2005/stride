@@ -96,7 +96,7 @@ def test_beginner_marathon_doc_has_no_tied_sunday_and_no_down_week_before_taper(
     taper = min(n for n, w in weeks.items() if w[0] == 'Taper')
     peak_volume = max(w[1] for n, w in weeks.items() if n < taper)
     assert all(weeks[n][1] >= peak_volume * .9 for n in (taper - 2, taper - 1))  # no calendar down week
-    longs = {n: max(d[3] for d in w[2] if 'Long Run' in d[2]) for n, w in weeks.items() if any('Long Run' in d[2] for d in w[2])}
+    longs = {n: max(d[3] for d in w[2] if 'Long Run' in d[2] and 'Medium-Long' not in d[2]) for n, w in weeks.items() if any('Long Run' in d[2] for d in w[2])}
     assert max(longs, key=lambda n: (longs[n], -n)) <= taper - 2  # longest run ≥ 3 weeks before race week
 
 
@@ -157,10 +157,10 @@ def test_biggest_marathon_pace_long_run_is_three_weeks_out():
     assert _biggest_mp_long_run(lib, 65)['name'] == 'MP Block Long Run'
     weeks = doc_weeks('sub3-marathon')
     taper = min(n for n, w in weeks.items() if w[0] == 'Taper')
-    titles = {n: next(d[2] for d in w[2] if 'Long Run' in d[2]) for n, w in weeks.items() if n < taper}
+    titles = {n: next(d[2] for d in w[2] if 'Long Run' in d[2] and 'Medium-Long' not in d[2]) for n, w in weeks.items() if n < taper}
     assert titles[taper - 2] == 'MP Block Long Run'
     assert titles[taper - 1] == 'Easy Long Run'
-    long_miles = {n: next(d[3] for d in w[2] if 'Long Run' in d[2]) for n, w in weeks.items() if n < taper}
+    long_miles = {n: next(d[3] for d in w[2] if 'Long Run' in d[2] and 'Medium-Long' not in d[2]) for n, w in weeks.items() if n < taper}
     assert long_miles[taper - 1] <= long_miles[taper - 2]
 
 

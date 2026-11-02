@@ -26,7 +26,11 @@ MIN_EASY_FLOOR = 2.0  # used only when the budget can't support 3-mile easy days
 MAX_EASY = 10.0  # easy-day cap at normal volume; scales up for high-mileage weeks
 MAX_EASY_SHARE = 0.18  # ...to 18% of the week (e.g. 13.5 mi at 75 mpw)
 MIN_LONG_SHARE = 0.20  # long run won't be cut below 20% of the week
-LONG_RUN_SPACING_DAYS = 5  # a Stride heuristic: two long runs need most of a week between them
+LONG_RUN_SPACING_DAYS = 5
+# Easy-day shape for experienced runners (plan_engine.shape_easy_days): a medium-long run carries
+# ~1.5x an easy day, the run after the long run ~0.6x. Plain easy days share what's left.
+EASY_ROLE_WEIGHT = {"medium_long": 1.5, "recovery": 0.6}
+MEDIUM_LONG_GAP = 2.0  # a medium-long run stays this much shorter than the long run  # a Stride heuristic: two long runs need most of a week between them
 
 
 def _round_half(d: float) -> float:
@@ -112,12 +116,27 @@ def fit_week_to_budget(
 
     e = easy_days()
     if e:
-        per = per_easy()
         max_easy = max(MAX_EASY, budget * MAX_EASY_SHARE)
-        per = min(max(per, MIN_EASY_FLOOR), max_easy)
-        each = _round_half(per)
-        for d in e:
-            d["distance_miles"] = each
+        weights = [EASY_ROLE_WEIGHT.get(d.get("easy_role"), 1.0) for d in e]
+        unit = remaining() / sum(weights)
+        long_miles = longs[0]["distance_miles"] if longs and longs[0]["type"] == "long_run" else None
+        for d, weight in zip(e, weights):
+            miles = min(max(unit * weight, MIN_EASY_FLOOR), max_easy)
+            if d.get("easy_role") == "recovery":
+                miles = max(miles, min(MIN_EASY, unit))
+            elif d.get("easy_role") == "medium_long" and long_miles:
+                miles = min(miles, max(unit, long_miles - MEDIUM_LONG_GAP))
+            d["distance_miles"] = _round_half(miles)
+        if any(d.get("easy_role") for d in e):
+            # Miles a capped role day couldn't hold go to the plain easy days, within their cap
+            plain = [d for d in e if not d.get("easy_role")]
+            spare = remaining() - sum(d["distance_miles"] for d in e)
+            while plain and spare >= 0.5:
+                d = min(plain, key=lambda x: x["distance_miles"])
+                if d["distance_miles"] + 0.5 > max_easy:
+                    break
+                d["distance_miles"] += 0.5
+                spare -= 0.5
         # Repair rounding without adding load: trim the last easy days by half miles
         total = locked + sum(d["distance_miles"] for d in live)
         i = len(e) - 1
