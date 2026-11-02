@@ -29,6 +29,18 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 logger = logging.getLogger("stride.plans")
 
 
+def _engine_version() -> str:
+    """Hash of the backend code: a preview built by older code is stale after a deploy."""
+    from pathlib import Path
+    digest = hashlib.sha256()
+    for path in sorted(Path(__file__).resolve().parents[1].rglob("*.py")):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+ENGINE_VERSION = _engine_version()
+
+
 class PlanRequest(BaseModel):
     start_date: date | None = None  # ISO date, defaults to smart calculation
     lighter: bool = False
@@ -255,7 +267,9 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     preview_reference = None
     if not req.provisional and earlier_preview and earlier_preview.start_date == params['start_date'].isoformat():
         previous = json.loads(earlier_preview.preview_data)
-        if previous.get('provisional'):
+        if previous.get('engine_version') != ENGINE_VERSION:
+            pass  # built by older code: neither a cap nor a reference for the rebuilt block
+        elif previous.get('provisional'):
             preview_caps = [w['target_mileage'] for w in previous['weeks']]
             preview_reference = previous['weeks']
         else:
@@ -315,6 +329,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
     if not req.provisional:
         _save_run_walk_progress(user, analysis["overview"]["experience_level"], goal, db)
     plan_data['preview_scope'] = req.scope
+    plan_data['engine_version'] = ENGINE_VERSION
     plan_data['provisional'] = req.provisional
     plan_data['lighter'] = req.lighter
     if req.provisional:
@@ -567,6 +582,7 @@ def _preview_fingerprint(user_id: int, db: Session) -> str:
         return json.dumps(snapshot, sort_keys=True) + str(workout.feel_rating) + str(workout.evaluation)
     data = {
         "today": athlete_today().isoformat(),
+        "engine": ENGINE_VERSION,
         "user": {c.name: getattr(user, c.name) for c in User.__table__.columns if c.name != 'theme'},
         "goals": [{c.name: getattr(g, c.name) for c in Goal.__table__.columns} for g in goals],
         "active": active.id if active else None,

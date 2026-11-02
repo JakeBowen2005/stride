@@ -114,3 +114,26 @@ def test_jakes_next_block_builds_on_what_he_ran():
     assert titles[0] != titles[1], "week 2 should progress, not repeat week 1"
     budgets = plan["load"]["weekly_budgets"]
     assert budgets[0] >= 40 and budgets[1] <= budgets[0] * 1.1 + 0.5, budgets
+
+
+def test_a_preview_from_older_code_is_stale_and_caps_nothing(monkeypatch):
+    """Nov 1: the flat 42.5 mi preview made before the fix kept showing after the deploy."""
+    from app.api import plans
+    with time_machine.travel("2026-10-31 08:00:00", tick=False):
+        seed()
+        monkeypatch.setattr(plans, "ENGINE_VERSION", "old-code")
+        early = client.post("/api/plans/1/preview", json={"scope": "next", "provisional": True})
+        assert early.status_code == 200, early.text
+        with SessionLocal() as db:  # what the old engine built: a flat, low block
+            draft = db.query(Plan).filter_by(preview_state="draft", preview_scope="next").one()
+            data = json.loads(draft.preview_data)
+            for week in data["weeks"]:
+                week["target_mileage"] = 30
+            draft.preview_data = json.dumps(data)
+            db.commit()
+        monkeypatch.setattr(plans, "ENGINE_VERSION", "new-code")
+        assert client.get("/api/plans/1/draft", params={"scope": "next"}).json()["stale"] is True
+    with time_machine.travel("2026-11-02 08:00:00", tick=False):
+        plan = client.post("/api/plans/1/preview", json={"scope": "next"}).json()
+    assert "preview_volume_caps" not in plan
+    assert plan["load"]["weekly_budgets"][0] > 30, plan["load"]["weekly_budgets"]
