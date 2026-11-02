@@ -207,4 +207,17 @@ See `docs/reviews/2026-11-01-next-preview/coach-evaluation.md`.
   6.5+ with none at 4 or lower, and no workout cut short builds even if workouts couldn't be checked.
 - **Hold limits volume, not workouts**: a hold no longer forces one quality session or freezes the
   week-2 workout step (reduce and recovery still do).
+- **Shaped easy days** (`plan_engine.shape_easy_days`, `plan_validator.EASY_ROLE_WEIGHT`): at 35+ mi/week
+  for non-beginners (not in taper, race week, recovery or deload weeks), the run after the long run is a
+  Recovery Run (~0.6x an easy day) and one midweek easy day is a Medium-Long Run (~1.5x, at least 2 mi
+  shorter than the long run). `fit_week_to_budget` splits the easy miles by these weights; the weekly
+  total doesn't change.
+- **Steady-finish long runs** (`plan_engine._add_steady_finish`): mileage/general goals at the support
+  stage with a recent completed long run finish the long run (10+ mi) with 2-3 mi steady on odd ISO weeks.
+- **Long-run credit**: the block counts a long run done when its distance was run on any day that week
+  (moved runs included). Quality evidence counts it when no rating that day is below 6 and none in the
+  two days after is 4 or lower; a missing watch rating isn't a failure.
+- **Previews from older code** (`plans.ENGINE_VERSION`): a hash of the backend source is part of the
+  preview fingerprint, so a deploy makes saved previews stale, and their weekly miles no longer cap the
+  rebuilt block.
 

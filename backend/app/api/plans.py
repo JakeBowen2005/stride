@@ -1911,6 +1911,11 @@ def _assess_previous_block(prev_plan: Plan, db: Session, *, as_of: date | None =
     today = (as_of or athlete_today()).isoformat()
     start = prev_plan.prescribed_from or prev_plan.start_date
     by_date = _activities_by_date(prev_plan.user_id, prev_plan.start_date, prev_plan.end_date, db)
+    def week_longest(day: str) -> float:
+        monday = date.fromisoformat(day) - timedelta(days=date.fromisoformat(day).weekday())
+        days = [(monday + timedelta(days=i)).isoformat() for i in range(7)]
+        return max([sum(a.distance_meters for a in by_date.get(d, [])) / 1609.34 for d in days if d < today]
+                   + [(projected or {})[d].distance_miles or 0 for d in days if d in (projected or {})], default=0)
     records = []
     for pw in prev_plan.planned_workouts:
         if not (start <= pw.date < today):
@@ -1973,7 +1978,8 @@ def _assess_previous_block(prev_plan: Plan, db: Session, *, as_of: date | None =
         records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
                                  actual_miles=actual, feel=min(feels) if feels else None,
                                  execution_complete=verified, demanding_long_run=demanding_long_run(pw), evaluation_decision=evaluation.get("decision"),
-                                 session_status=pw.session_status, substituted=substituted, covered=covered))
+                                 session_status=pw.session_status, substituted=substituted, covered=covered,
+                                 week_longest=week_longest(pw.date) if pw.type == "long_run" else 0.0))
     return assess_block(records)
 
 

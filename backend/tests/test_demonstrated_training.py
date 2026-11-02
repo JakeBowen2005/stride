@@ -114,6 +114,18 @@ def test_jakes_next_block_builds_on_what_he_ran():
     assert titles[0] != titles[1], "week 2 should progress, not repeat week 1"
     budgets = plan["load"]["weekly_budgets"]
     assert budgets[0] >= 40 and budgets[1] <= budgets[0] * 1.1 + 0.5, budgets
+    # A coach's week, not five identical easy days: a medium-long run, a recovery run after the
+    # long run, and a steady finish on the long run every other week.
+    for week in plan["weeks"]:
+        by_title = {d["title"]: d["distance_miles"] for d in week["days"]}
+        assert by_title["Medium-Long Run"] > by_title["Easy Run"] > by_title["Recovery Run"] >= 3, by_title
+        days = week["days"]
+        long_index = next(i for i, d in enumerate(days) if d["type"] == "long_run")
+        assert days[long_index + 1]["title"] == "Recovery Run"
+    longs = [d["title"] for w in plan["weeks"] for d in w["days"] if d["type"] == "long_run"]
+    assert sorted(longs) == ["Easy Long Run", "Steady Finish Long Run"], longs
+    long_criterion = next(c for c in plan["quality_policy"]["criteria"] if c["label"].startswith("Long run"))
+    assert long_criterion["met"], plan["quality_policy"]
 
 
 def test_a_preview_from_older_code_is_stale_and_caps_nothing(monkeypatch):
@@ -137,3 +149,29 @@ def test_a_preview_from_older_code_is_stale_and_caps_nothing(monkeypatch):
         plan = client.post("/api/plans/1/preview", json={"scope": "next"}).json()
     assert "preview_volume_caps" not in plan
     assert plan["load"]["weekly_budgets"][0] > 30, plan["load"]["weekly_budgets"]
+
+
+def test_easy_days_stay_alike_for_beginners_and_low_mileage():
+    from app.core.plan_engine import shape_easy_days
+    def week():
+        days = [{"date": f"2026-11-0{2 + i}", "type": t, "title": title, "distance_miles": 5}
+                for i, (t, title) in enumerate([("easy", "Easy Run"), ("workout", "W"), ("easy", "Easy Run"),
+                                                ("easy", "Easy Run"), ("easy", "Easy Run"), ("long_run", "Long"),
+                                                ("easy", "Easy Run")])]
+        return days
+    for experience, miles in (("beginner", 45), ("advanced", 30)):
+        days = week()
+        shape_easy_days(days, miles, experience, "general", False)
+        assert not any(d.get("easy_role") for d in days)
+    days = week()
+    shape_easy_days(days, 45, "advanced", "general", False)
+    assert [d.get("easy_role") for d in days] == [None, None, "medium_long", None, None, None, "recovery"]
+
+
+def test_long_run_moved_to_another_day_counts():
+    longs = [DayRecord(date="sat", type="long_run", planned_miles=10, actual_miles=4, feel=7,
+                       session_status="moved", week_longest=10.0)]
+    days = longs + [DayRecord(date=f"d{i}", type="easy", planned_miles=5, actual_miles=5, feel=7) for i in range(6)]
+    assert assess_block(days).long_runs_done == 1
+    days[0].week_longest = 4.0
+    assert assess_block(days).long_runs_done == 0

@@ -1,8 +1,10 @@
 # Why the Nov 2–15 preview is so flat (coach evaluation, Nov 1 2026)
 
-> **Status:** fixes 1–4 built Nov 1 (`tests/test_demonstrated_training.py` uses Jake's block as the
-> fixture: the next block now builds to 48 mi/week with 3x8min threshold plus a second, lighter
-> session). Fixes 5–8 are not built yet.
+> **Status:** fixes 1–7 built Nov 1 (`tests/test_demonstrated_training.py` uses Jake's block as the
+> fixture). The next block now builds to 48 mi/week: 3x8min threshold plus relaxed reps, an 8 mi
+> medium-long run, a recovery run after the long run, and a 13.5 mi long run with a steady finish in
+> week 1. Fix 8 is replaced by marking previews from older code stale (they no longer cap the rebuild).
+> The flat preview Jake saw after #74 deployed was one of these: saved before the deploy.
 
 Jake's two weeks: 40.1 and 45.1 mi, with 3x8min threshold, 6x400m, 2x12min threshold, a 10 mi
 long run each week, and an 11 mi midweek day. The preview for the next block was 42.5 mi in both
