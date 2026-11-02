@@ -10,24 +10,24 @@ Synthetic experienced trail athlete in a 100K build, nine weeks out, with climbi
 ## How each block was decided
 
 - **Block 1** (Oct 19–Nov 01): **build** → build. Building up to 12% over the block (64 → 68 mi/week). Why: Ran 120 of 120 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 2** (Nov 02–Nov 15): **build** → build. Baseline 60.6 mi/week (4-week average of completed runs). Why: Ran 110 of 110 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
+- **Block 2** (Nov 02–Nov 15): **build** → build. Baseline 60.8 mi/week (4-week average of completed runs). Why: Ran 111 of 111 planned miles (100%). Hit 2 of 2 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
 - **Block 3** (Nov 16–Nov 29): **build** → deload. Deload in week 1: ~25% less volume to absorb training. Why: Ran 128 of 128 planned miles (100%). Hit 4 of 4 workouts as prescribed (checked against your laps). Ran 3 of 3 long runs in full.
-- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 63.7 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 110 of 110 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
-- **Block 5** (Dec 14–Dec 27): **build** → build. Training level 65.2 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 116 of 116 planned miles (100%). Hit 5 of 5 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 4** (Nov 30–Dec 13): **build** → build. Training level 63.7 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 109 of 109 planned miles (100%). Hit 3 of 3 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
+- **Block 5** (Dec 14–Dec 27): **build** → build. Training level 64.8 mi/week (your last two full-volume weeks; down weeks don't reset it). Why: Ran 114 of 114 planned miles (100%). Hit 5 of 5 workouts as prescribed (checked against your laps). Ran 2 of 2 long runs in full.
 
 ## At a glance
 
 | Week | Starts | Phase | Miles | Long run | Quality |
 |---|---|---|---|---|---|
 | 1 | Oct 19 | Build | 55.0 | 22.5 | 4x10min Run-Hike Climbs |
-| 2 | Oct 26 | Build | 67.5 | 13 + 23.5 | 3x8min Threshold |
-| 3 | Nov 02 | Peak | 64.0 | 22.5 | 3x8min Threshold, 4x10min Run-Hike Climbs |
-| 4 | Nov 09 | Peak | 64.0 | 11 + 20 | 3x9min Threshold |
-| 5 | Nov 16 | Peak | 46.5 | 16.5 | 2x9min Threshold |
-| 6 | Nov 23 | Peak | 63.0 | 25 | 4x7min Threshold |
-| 7 | Nov 30 | Peak | 67.5 | 23.5 | 4x7min Threshold, 8x1min Light Fartlek |
-| 8 | Dec 07 | Taper | 48.0 | 16.5 | 2x9min Threshold, 10x30sec Light Pickups |
-| 9 | Dec 14 | Taper | 35.5 | 13 | 2x11min Threshold |
+| 2 | Oct 26 | Build | 68.0 | 13 + 23.5 | 3x9min Threshold |
+| 3 | Nov 02 | Peak | 64.5 | 22.5 | 4x6min Threshold, 4x10min Run-Hike Climbs |
+| 4 | Nov 09 | Peak | 64.0 | 11.5 + 20.5 | 4x7min Threshold |
+| 5 | Nov 16 | Peak | 46.5 | 16.5 | 3x6min Threshold |
+| 6 | Nov 23 | Peak | 62.5 | 25.5 | 4x9min Threshold |
+| 7 | Nov 30 | Peak | 67.0 | 23.5 | 4x9min Threshold, 8x1min Light Fartlek |
+| 8 | Dec 07 | Taper | 47.5 | 16.5 | 2x12min Threshold, 10x30sec Light Pickups |
+| 9 | Dec 14 | Taper | 35.5 | 12.5 | 2x12min Threshold |
 | 10 | Dec 21 | Race Week | 89.1 | — | Race-Week Sharpener: Steady Pickups, RACE DAY — 100K |
 
 ## Week by week
@@ -41,18 +41,18 @@ Synthetic experienced trail athlete in a 100K build, nine weeks out, with climbi
 - **Sat Oct 24** · Ultra Long Run · 22.5 mi — 4h50 on trail (~22.5mi), easy conversational effort. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 60g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Oct 25** · Rest
 
-### Week 2 · Oct 26–Nov 01 · Build · 67.5 mi
+### Week 2 · Oct 26–Nov 01 · Build · 68.0 mi
 - **Mon Oct 26** · Easy Run + Strides · 8 mi — Conversational effort the whole run — easy means easy.
-- **Tue Oct 27** · 3x8min Threshold · 7 mi — 3x8min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Tue Oct 27** · 3x9min Threshold · 7.5 mi — 3x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
 - **Wed Oct 28** · Easy Run · 8 mi — Conversational effort the entire time.
 - **Thu Oct 29** · Easy Run · 8 mi — Conversational effort the entire time.
 - **Fri Oct 30** · Back-to-Back Long Run (day 1, shorter) · 13 mi — 2h50 (~13mi) easy, hiking the climbs. Tomorrow's long run starts on these tired legs — that's the point. *Why:* Running on pre-fatigued legs mimics the back half of an ultra, with less damage than one huge run.
 - **Sat Oct 31** · Ultra Long Run · 23.5 mi — 5h10 on trail (~23.5mi), easy conversational effort. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 60g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Nov 01** · Rest
 
-### Week 3 · Nov 02–Nov 08 · Peak · 64.0 mi
+### Week 3 · Nov 02–Nov 08 · Peak · 64.5 mi
 - **Mon Nov 02** · Easy Run + Strides · 9 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 03** · 3x8min Threshold · 7 mi — 3x8min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Tue Nov 03** · 4x6min Threshold · 7.5 mi — 4x6min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
 - **Wed Nov 04** · Easy Run · 9 mi — Conversational effort the entire time.
 - **Thu Nov 05** · 4x10min Run-Hike Climbs · 7.5 mi — 4x10min with 5min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Power-hike climbs: steep vertical at sustainable ultra effort, a skill you will use for hours on race day.
 - **Fri Nov 06** · Easy Run · 9 mi — Conversational effort the entire time.
@@ -60,57 +60,57 @@ Synthetic experienced trail athlete in a 100K build, nine weeks out, with climbi
 - **Sun Nov 08** · Rest
 
 ### Week 4 · Nov 09–Nov 15 · Peak · 64.0 mi
-- **Mon Nov 09** · Easy Run + Strides · 8.5 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 10** · 3x9min Threshold · 7.5 mi — 3x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
-- **Wed Nov 11** · Easy Run · 8.5 mi — Conversational effort the entire time.
-- **Thu Nov 12** · Easy Run · 8.5 mi — Conversational effort the entire time.
-- **Fri Nov 13** · Back-to-Back Long Run (day 1, shorter) · 11 mi — 2h25 (~11mi) easy, hiking the climbs. Tomorrow's long run starts on these tired legs — that's the point. *Why:* Running on pre-fatigued legs mimics the back half of an ultra, with less damage than one huge run.
-- **Sat Nov 14** · Terrain Long Run · 20 mi — 4h20 on trail (~20mi), easy effort on terrain like the race's: power-hike the steep climbs and run the descents smooth and controlled. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
+- **Mon Nov 09** · Easy Run + Strides · 8 mi — Conversational effort the whole run — easy means easy.
+- **Tue Nov 10** · 4x7min Threshold · 8 mi — 4x7min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Wed Nov 11** · Easy Run · 8 mi — Conversational effort the entire time.
+- **Thu Nov 12** · Easy Run · 8 mi — Conversational effort the entire time.
+- **Fri Nov 13** · Back-to-Back Long Run (day 1, shorter) · 11.5 mi — 2h30 (~11.5mi) easy, hiking the climbs. Tomorrow's long run starts on these tired legs — that's the point. *Why:* Running on pre-fatigued legs mimics the back half of an ultra, with less damage than one huge run.
+- **Sat Nov 14** · Terrain Long Run · 20.5 mi — 4h25 on trail (~20.5mi), easy effort on terrain like the race's: power-hike the steep climbs and run the descents smooth and controlled. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Nov 15** · Rest
 
 ### Week 5 · Nov 16–Nov 22 · Peak · 46.5 mi
 - **Mon Nov 16** · Easy Run + Strides · 6 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 17** · 2x9min Threshold · 6 mi — 2x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Tue Nov 17** · 3x6min Threshold · 6 mi — 3x6min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
 - **Wed Nov 18** · Easy Run · 6 mi — Conversational effort the entire time.
 - **Thu Nov 19** · Easy Run · 6 mi — Conversational effort the entire time.
 - **Fri Nov 20** · Easy Run · 6 mi — Conversational effort the entire time.
 - **Sat Nov 21** · Race-Effort Long Run · 16.5 mi — 3h35 on trail (~16.5mi): easy conversational effort for the first and last thirds, goal race effort for the middle third on race-like terrain. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Nov 22** · Rest
 
-### Week 6 · Nov 23–Nov 29 · Peak · 63.0 mi
-- **Mon Nov 23** · Easy Run + Strides · 7.5 mi — Conversational effort the whole run — easy means easy.
-- **Tue Nov 24** · 4x7min Threshold · 8 mi — 4x7min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
-- **Wed Nov 25** · Easy Run · 7.5 mi — Conversational effort the entire time.
-- **Thu Nov 26** · Easy Run · 7.5 mi — Conversational effort the entire time.
-- **Fri Nov 27** · Easy Run · 7.5 mi — Conversational effort the entire time.
-- **Sat Nov 28** · Dress-Rehearsal Long Run · 25 mi — 5h25 on trail (~25mi): your dress rehearsal. Race kit, race-day food and drink at your race fueling rate, and race-day pacing from the first step (conversational for an ultra). Start before dawn or finish after dark with your headlamp: night miles are a race skill. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
+### Week 6 · Nov 23–Nov 29 · Peak · 62.5 mi
+- **Mon Nov 23** · Easy Run + Strides · 7 mi — Conversational effort the whole run — easy means easy.
+- **Tue Nov 24** · 4x9min Threshold · 9 mi — 4x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Wed Nov 25** · Easy Run · 7 mi — Conversational effort the entire time.
+- **Thu Nov 26** · Easy Run · 7 mi — Conversational effort the entire time.
+- **Fri Nov 27** · Easy Run · 7 mi — Conversational effort the entire time.
+- **Sat Nov 28** · Dress-Rehearsal Long Run · 25.5 mi — 5h30 on trail (~25.5mi): your dress rehearsal. Race kit, race-day food and drink at your race fueling rate, and race-day pacing from the first step (conversational for an ultra). Start before dawn or finish after dark with your headlamp: night miles are a race skill. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Nov 29** · Rest
 
-### Week 7 · Nov 30–Dec 06 · Peak · 67.5 mi
-- **Mon Nov 30** · Easy Run + Strides · 10.5 mi — Conversational effort the whole run — easy means easy.
-- **Tue Dec 01** · 4x7min Threshold · 8 mi — 4x7min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
-- **Wed Dec 02** · Easy Run · 10.5 mi — Conversational effort the entire time.
+### Week 7 · Nov 30–Dec 06 · Peak · 67.0 mi
+- **Mon Nov 30** · Easy Run + Strides · 10 mi — Conversational effort the whole run — easy means easy.
+- **Tue Dec 01** · 4x9min Threshold · 9 mi — 4x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Raises your lactate threshold: comfortably hard running at the pace you could hold for about an hour, the key limiter for your 10…
+- **Wed Dec 02** · Easy Run · 10 mi — Conversational effort the entire time.
 - **Thu Dec 03** · 8x1min Light Fartlek · 4.5 mi — 8x1min with 1min jog rest (warm up 15min easy, cool down 10min easy). *Why:* Maintain controlled faster aerobic running with easy recoveries.
-- **Fri Dec 04** · Easy Run · 10.5 mi — Conversational effort the entire time.
+- **Fri Dec 04** · Easy Run · 10 mi — Conversational effort the entire time.
 - **Sat Dec 05** · Race-Effort Long Run · 23.5 mi — 5h05 on trail (~23.5mi): easy conversational effort for the first and last thirds, goal race effort for the middle third on race-like terrain. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Dec 06** · Rest
 
-### Week 8 · Dec 07–Dec 13 · Taper · 48.0 mi
-- **Mon Dec 07** · Easy Run + Strides · 7 mi — Conversational effort the whole run — easy means easy.
-- **Tue Dec 08** · 2x9min Threshold · 6 mi — 2x9min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Short and controlled: keeps threshold rhythm sharp while volume drops before the race.
-- **Wed Dec 09** · Easy Run · 7 mi — Conversational effort the entire time.
+### Week 8 · Dec 07–Dec 13 · Taper · 47.5 mi
+- **Mon Dec 07** · Easy Run + Strides · 6.5 mi — Conversational effort the whole run — easy means easy.
+- **Tue Dec 08** · 2x12min Threshold · 7 mi — 2x12min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Short and controlled: keeps threshold rhythm sharp while volume drops before the race.
+- **Wed Dec 09** · Easy Run · 6.5 mi — Conversational effort the entire time.
 - **Thu Dec 10** · 10x30sec Light Pickups · 4.5 mi — 10x30sec with 1:30 jog rest (warm up 15min easy, cool down 10min easy). *Why:* Small changes of rhythm without a sustained hard effort.
-- **Fri Dec 11** · Easy Run · 7 mi — Conversational effort the entire time.
+- **Fri Dec 11** · Easy Run · 6.5 mi — Conversational effort the entire time.
 - **Sat Dec 12** · Ultra Long Run · 16.5 mi — 3h35 on trail (~16.5mi), easy conversational effort. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Dec 13** · Rest
 
 ### Week 9 · Dec 14–Dec 20 · Taper · 35.5 mi
 - **Mon Dec 14** · Easy Run + Strides · 4 mi — Conversational effort the whole run — easy means easy.
-- **Tue Dec 15** · 2x11min Threshold · 6.5 mi — 2x11min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Short and controlled: keeps threshold rhythm sharp while volume drops before the race.
+- **Tue Dec 15** · 2x12min Threshold · 7 mi — 2x12min at 6:50/mi with 2min jog rest (warm up 15min easy, cool down 15min easy). *Why:* Short and controlled: keeps threshold rhythm sharp while volume drops before the race.
 - **Wed Dec 16** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Thu Dec 17** · Easy Run · 4 mi — Conversational effort the entire time.
 - **Fri Dec 18** · Easy Run · 4 mi — Conversational effort the entire time.
-- **Sat Dec 19** · Ultra Long Run · 13 mi — 2h45 on trail (~13mi), easy conversational effort. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
+- **Sat Dec 19** · Ultra Long Run · 12.5 mi — 2h45 on trail (~12.5mi), easy conversational effort. Power-hike grades steeper than ~15% — practice it, it's a race skill. Fuel 75g carbs/hr + 300-600mg sodium/hr with race-day products. *Why:* Builds durability and time on feet, and trains the gut to take in fuel while running.
 - **Sun Dec 20** · Rest
 
 ### Week 10 · Dec 21–Dec 27 · Race Week · 89.1 mi

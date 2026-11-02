@@ -285,7 +285,9 @@ def generate_plan(
         load.weekly_budgets = [min(b,anchor) for b in load.weekly_budgets]
         load.mode = 'hold'
         load.reasons.append('Introducing a second substantial session: hold demonstrated weekly volume while testing recovery.')
-    if goal_type == 'mileage' or adding_hard_session:
+    # Mileage goals progress volume, so the workout holds within a block (one lever at a time),
+    # unless the volume itself is held: then the workout is the lever.
+    if (goal_type == 'mileage' and load.mode != 'hold') or adding_hard_session:
         allow_preview = False
 
     rest_indices = sorted(set([DAY_NAMES.index(d) for d in rest_days if d in DAY_NAMES]+[DAY_NAMES.index(d) for d,v in (day_time_budgets or {}).items() if d in DAY_NAMES and v==0]))

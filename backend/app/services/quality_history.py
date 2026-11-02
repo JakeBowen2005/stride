@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
 
-from app.core.session_match import executed_session, off_plan
+from app.core.session_match import covers_prescription, demonstrated_work, executed_session, off_plan
 from app.core.workout_data import execution_from_activities, loads
 from app.models.activity import Activity, runs_only
 from app.models.plan import Plan, PlannedWorkout
@@ -52,11 +52,17 @@ def quality_history(user_id, db, today=None):
         feel = min(feels) if feels else None
         spec = loads(row.prescription)
         evaluation = json.loads(row.evaluation) if row.evaluation else {}
-        if spec and off_plan(spec, executed_session(activities, spec.get('easy_pace_sec_per_mile') or easy_reference())):
+        detected = executed_session(activities, spec.get('easy_pace_sec_per_mile') or easy_reference()) if spec else None
+        if spec and off_plan(spec, detected):
             # A different, coherent quality session is neither a failed nor a successful step of
-            # this ladder. A poor feel rating is still a recovery signal.
+            # this ladder. A poor feel rating is still a recovery signal. With at least the
+            # prescribed work, run under control and recovered from, it is quality evidence.
             if feel is not None and feel <= 4:
                 failures.add(day)
+            elif feel is not None and feel >= 6 and covers_prescription(spec, detected) and demonstrated_work(detected):
+                successful['primary'].add(day)
+                d = date.fromisoformat(day)
+                hard_by_week.setdefault((d - timedelta(days=d.weekday())).isoformat(), set()).add(day)
             continue
         execution = execution_from_activities(activities, spec) if spec else None
         category = (spec or {}).get('category')

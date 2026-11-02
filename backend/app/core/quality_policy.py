@@ -61,7 +61,8 @@ def select_quality_policy(goal_type, experience, days_per_week, weekly_miles, we
         {'label':'Long run completed and recovered well', 'met':evidence.get('long_run_successes',0)>=1 and (evidence.get('latest_long_run_feel') or 0)>=6},
         {'label':'Recent recovery feedback supports progression', 'met':recovery_ok},
     ]
-    if goal_type=='comeback' or fatigue or assessment in {'hold','reduce','recovery'} or evidence.get('recent_failure') or evidence.get('recent_low_feel'):
+    # A hold limits volume, not workouts: one lever at a time.
+    if goal_type=='comeback' or fatigue or assessment in {'reduce','recovery'} or evidence.get('recent_failure') or evidence.get('recent_low_feel'):
         return QualityPolicy('single','Recovery or interrupted training takes priority; consolidate with at most one quality session.',criteria,evidence)
     if goal_type in {'mileage','race'} and all(c['met'] for c in criteria):
         return QualityPolicy('dual','Completed quality, consistent volume and recovery support two substantial goal-specific sessions. Repeat volume when introducing the second hard session.',criteria,evidence)

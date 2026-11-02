@@ -192,3 +192,19 @@ See [coaching trust hardening](docs/coaching-trust-hardening.md) for activity id
 - **Deloads**: advanced every 7th week, expert every 8th (`experience.py`).
 - **Ultra peak**: a dress-rehearsal long run two weeks before the taper (no back-to-back day), terrain long runs
   on the other back-to-back peak weeks, race-effort long runs otherwise.
+
+## Demonstrated training (Nov 1 2026)
+
+See `docs/reviews/2026-11-01-next-preview/coach-evaluation.md`.
+- **Ladder floor from laps** (`plans._demonstrated_levels`, `workout_ladders.level_for_work`): the biggest
+  controlled threshold or interval session in the last 6 weeks on a day planned as threshold or interval
+  work sets a minimum ladder level, so a goal switch can't restart a 2x12min runner at 2x6min. Races, runs
+  rated 4 or lower, fading reps, long runs and hill days don't count.
+- **Covering substitutions** (`session_match.covers_prescription`): a different quality session with at
+  least the planned work counts as done in the block assessment and as quality evidence. It still doesn't
+  step the prescribed ladder directly.
+- **Absorbed blocks build** (`block_assessment.ABSORBED_*`): every planned mile run, rated runs averaging
+  6.5+ with none at 4 or lower, and no workout cut short builds even if workouts couldn't be checked.
+- **Hold limits volume, not workouts**: a hold no longer forces one quality session or freezes the
+  week-2 workout step (reduce and recovery still do).
+

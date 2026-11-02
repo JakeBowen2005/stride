@@ -18,6 +18,11 @@ from dataclasses import asdict, dataclass, field
 MIN_ASSESSABLE_DAYS = 5
 BUILD_COMPLETION = 0.85
 REDUCE_COMPLETION = 0.60
+# Every planned mile run, rated runs averaging well with none at 4 or lower, and no workout cut
+# short or regressed: the athlete absorbed the block, so workouts that couldn't be checked as
+# prescribed (a different session, no laps) don't hold the volume. Missing ratings aren't enough.
+ABSORBED_COMPLETION = 1.0
+ABSORBED_AVG_FEEL = 6.5
 LONG_RUN_DONE_SHARE = 0.90  # Endurance adherence; never evidence of completing hard reps.
 
 
@@ -32,6 +37,7 @@ class DayRecord:
     evaluation_decision: str | None = None
     session_status: str | None = None
     substituted: bool = False
+    covered: bool = False  # a substitution with at least the prescribed work: the hard day was done
     demanding_long_run: bool = False  # MP/steady/structured hard segments require quality evidence
 
 
@@ -71,10 +77,14 @@ def assess_block(days: list[DayRecord]) -> BlockAssessment:
     completion = completed / planned if planned else 0.0
     quality = [d for d in run_days if d.type in ("workout", "race") or d.demanding_long_run]
     def verified_quality(d):
-        return (d.execution_complete is True and d.evaluation_decision not in {"regress", "insufficient"}
-                and d.session_status not in {"skipped", "moved"} and not d.substituted)
+        if d.session_status in {"skipped", "moved"}:
+            return False
+        if d.substituted:
+            return d.covered and d.actual_miles > 0
+        return d.execution_complete is True and d.evaluation_decision not in {"regress", "insufficient"}
     quality_done = sum(verified_quality(d) for d in quality)
-    substituted = sum(d.substituted and d.actual_miles > 0 for d in quality)
+    covered = sum(d.substituted and d.covered and d.actual_miles > 0 for d in quality)
+    substituted = sum(d.substituted and not d.covered and d.actual_miles > 0 for d in quality)
     unknown = sum(d.execution_complete is None and d.actual_miles > 0 and not d.substituted
                   and d.session_status not in {"skipped", "moved"} for d in quality)
     incomplete = len(quality) - quality_done - substituted - unknown
@@ -94,7 +104,10 @@ def assess_block(days: list[DayRecord]) -> BlockAssessment:
     )
     a.reasons.append(f"Ran {completed:.0f} of {planned:.0f} planned miles ({completion:.0%}).")
     if quality:
-        a.reasons.append(f"Hit {quality_done} of {len(quality)} workouts as prescribed (checked against your laps).")
+        a.reasons.append(f"Hit {quality_done} of {len(quality)} workouts{'' if covered else ' as prescribed'} (checked against your laps).")
+        if covered:
+            a.reasons.append(f"{covered} of those were a different session with at least the planned work: "
+                             "the hard day counts as done.")
         if substituted:
             a.reasons.append(f"{substituted} workout(s) were a different session than planned: good training, but they don't move your workout level up.")
         if unknown:
@@ -112,6 +125,11 @@ def assess_block(days: list[DayRecord]) -> BlockAssessment:
     elif completion < REDUCE_COMPLETION:
         a.decision = "reduce"
         a.reasons.append("The block was interrupted: easing back rather than making up missed miles.")
+    elif (completion >= ABSORBED_COMPLETION and low == 0 and avg is not None and avg >= ABSORBED_AVG_FEEL
+          and quality and quality_done / len(quality) < 0.5 and incomplete == 0
+          and not any(d.demanding_long_run and not verified_quality(d) for d in longs)):
+        a.reasons.append("Every planned mile run and recovering well: building, though not every workout "
+                         "could be checked as prescribed.")
     elif (completion < BUILD_COMPLETION or low >= 2 or (quality and quality_done / len(quality) < 0.5)
           or any(d.demanding_long_run and not verified_quality(d) for d in longs)):
         a.decision = "hold"

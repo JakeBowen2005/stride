@@ -38,9 +38,14 @@ def test_no_promotion_without_completed_quality_and_recovery(evidence):
     assert quality(evidence=evidence).stage!='dual'
 
 
-@pytest.mark.parametrize('assessment',['hold','reduce','recovery'])
+@pytest.mark.parametrize('assessment',['reduce','recovery'])
 def test_recovery_always_overrides_expert_status(assessment):
     assert quality('expert',assessment=assessment).stage=='single'
+
+
+def test_a_volume_hold_keeps_earned_workouts():
+    # Hold limits volume, not workouts: one lever at a time.
+    assert quality('expert',assessment='hold').stage==quality('expert').stage=='dual'
 
 
 def test_beginner_requires_more_demonstrated_training_than_advanced():

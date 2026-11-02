@@ -304,7 +304,7 @@ def generate_training_plan(user_id: int, req: PlanRequest = None, db: Session = 
         recent_long_run_miles=max([a.distance_meters / 1609.34 for a in quality_activities
                                   if athlete_today() - timedelta(days=28) <= a.date.date() <= athlete_today()]
                                  + [w.distance_miles for w in projected.values() if w.type == 'long_run'], default=0),
-        allow_preview=not (assessment and assessment.decision in ("hold", "reduce", "recovery")),
+        allow_preview=not (assessment and assessment.decision in ("reduce", "recovery")),  # hold keeps volume, not workouts
         deload_is_due=is_deload_due and effective_assessment not in ("reduce", "recovery"),
         recent_race_pace_miles=recent_race_pace,
         weekly_volume_caps=preview_caps,
@@ -1911,11 +1911,12 @@ def _assess_previous_block(prev_plan: Plan, db: Session, *, as_of: date | None =
         execution = execution_from_activities(activities, prescribed) if prescribed else None
         evaluation = json.loads(pw.evaluation) if pw.evaluation else {}
         verified = None
-        substituted = False
+        substituted = covered = False
         if pw.type == "workout" and prescribed:
-            from app.core.session_match import executed_session, off_plan
+            from app.core.session_match import covers_prescription, executed_session, off_plan
             detected = executed_session(activities, easy_pace_for(prescribed, prev_plan.user_id, db))
             substituted = off_plan(prescribed, detected, substitution_confirmed=bool(pw.swapped))
+            covered = substituted and covers_prescription(prescribed, detected)
             if execution and execution.get("confidence") in {"high", "medium"}:
                 completion = execution.get("completion")
                 verified = completion >= 1 if completion is not None else None
@@ -1956,7 +1957,7 @@ def _assess_previous_block(prev_plan: Plan, db: Session, *, as_of: date | None =
         records.append(DayRecord(date=pw.date, type=pw.type, planned_miles=pw.distance_miles or 0,
                                  actual_miles=actual, feel=min(feels) if feels else None,
                                  execution_complete=verified, demanding_long_run=demanding_long_run(pw), evaluation_decision=evaluation.get("decision"),
-                                 session_status=pw.session_status, substituted=substituted))
+                                 session_status=pw.session_status, substituted=substituted, covered=covered))
     return assess_block(records)
 
 
@@ -2176,6 +2177,44 @@ def _extract_prescribed_pace(description: str) -> float | None:
     return None
 
 
+DEMONSTRATED_WINDOW_DAYS = 42
+
+
+def _demonstrated_levels(user_id: int, goal_distance: str, db: Session) -> dict[str, int]:
+    """Ladder level of the biggest controlled threshold / interval session in the last six weeks.
+
+    Read from Garmin laps, whatever the plan said that day: a harder substitution is still the
+    dose the athlete has shown. Runs rated 4 or lower and fading reps don't count."""
+    from app.core.session_match import demonstrated_work, executed_session
+    from app.core.workout_ladders import level_for_work
+    from app.services.garmin import recent_easy_pace
+    since = athlete_today() - timedelta(days=DEMONSTRATED_WINDOW_DAYS)
+    activities = db.query(Activity).filter(
+        Activity.user_id == user_id, runs_only(), Activity.splits.isnot(None),
+        Activity.date >= datetime.combine(since, datetime.min.time()),
+        Activity.date < datetime.combine(athlete_today() + timedelta(days=1), datetime.min.time())).all()
+    # Only days planned as threshold or interval work: marathon-pace segments in a long run and
+    # hill / run-hike climbs read as threshold laps but aren't that dose.
+    def planned_categories(row):
+        original = json.loads(row.original_prescription).get("prescription") if row.original_prescription else None
+        return {(loads(row.prescription) or {}).get("category"), (loads(original) or {}).get("category")}
+    workout_days = {row.date for row in db.query(PlannedWorkout).join(Plan).filter(
+        Plan.user_id == user_id, Plan.preview_state.is_(None), PlannedWorkout.type == "workout",
+        PlannedWorkout.date >= since.isoformat()) if planned_categories(row) & {"threshold", "intervals"}}
+    activities = [a for a in activities if a.date.date().isoformat() in workout_days]
+    easy = recent_easy_pace(user_id, db) if activities else None
+    best: dict[str, float] = {}
+    for activity in activities:
+        if ((activity.effective_feel is not None and activity.effective_feel <= 4)
+                or "race" in {activity.workout_type, activity.event_type}):
+            continue  # a race effort is not a training dose
+        work = demonstrated_work(executed_session([activity], easy))
+        if work:
+            best[work[0]] = max(best.get(work[0], 0), work[1])
+    return {category: level for category, dose in best.items()
+            if (level := level_for_work(category, goal_distance or "general", dose))}
+
+
 def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k") -> dict:
     """Load or initialize workout progression state for plan generation.
 
@@ -2194,6 +2233,7 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
     goal = db.query(Goal).filter(Goal.user_id == user_id, Goal.active == True).first()  # noqa: E712
     if user and uses_developmental(user.experience_level, goal.goal_type if goal else None, goal_distance):
         categories.append('development')
+    demonstrated = _demonstrated_levels(user_id, goal_distance, db) if 'development' not in categories else {}
     for category in categories:
         prog = db.query(WorkoutProgression).filter_by(user_id=user_id, category=category, program_key=key).first()
         if not prog:
@@ -2209,6 +2249,11 @@ def _load_progression_state(user_id: int, db: Session, goal_distance: str = "5k"
                 prog = WorkoutProgression(user_id=user_id, category=category, program_key=key,
                                           current_level=1, current_pace_sec=pace, sessions_at_level=0, format_rotation=0)
                 db.add(prog)
+        if category in demonstrated and demonstrated[category] > (prog.current_level or 1):
+            # Never prescribe below what the athlete just ran under control (a goal switch
+            # starts a fresh program at level 1; a 2x12min runner shouldn't get 2x6min).
+            prog.current_level = demonstrated[category]
+            prog.sessions_at_level = 0
         db.flush()
         result[category] = {"current_level": prog.current_level, "current_pace_sec": prog.current_pace_sec,
                             "format_rotation": prog.format_rotation, "last_execution": prog.last_execution,
